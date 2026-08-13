@@ -55,6 +55,11 @@ def get_drive_service():
     """Authenticates with Google Drive using secrets.toml."""
     try:
         creds_dict = dict(st.secrets["google_service_account"])
+        
+        # --- FIX FOR PEM INVALID LENGTH / UNESCAPED NEWLINES ---
+        if "private_key" in creds_dict:
+            creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
+            
         creds = service_account.Credentials.from_service_account_info(
             creds_dict,
             scopes=['https://www.googleapis.com/auth/drive.readonly']
@@ -425,23 +430,15 @@ with tab_dashboard:
                     st.markdown(f"## 📝 COACHING FEEDBACK: {sel_coaching_date}")
                     st.markdown(f"**Agent:** {sel_agent} | **Average Call Score during this period:** {avg_call_score:.1f}%")
 
-                    # --- NEW: RECURRING ISSUE DETECTION ---
-                    # Find all calls for this agent before the current date range
+                    # --- RECURRING ISSUE DETECTION ---
                     historical_df = df[(df['Agent'] == sel_agent) & (df['Clean_Date'].dt.date < start_date)]
-                    
-                    # Get unique categories where they scored 1 or 2 in the past
                     past_fails = historical_df[historical_df['Score'].isin([1, 2])]['Category'].unique()
-                    
-                    # Get unique categories where they scored 1 or 2 in this current period
                     current_fails = filtered_df[filtered_df['Score'].isin([1, 2])]['Category'].unique()
-                    
-                    # Find the overlap
                     recurring_issues = [issue for issue in current_fails if issue in past_fails]
                     
                     if recurring_issues:
                         issue_names = ", ".join([f"**{issue}**" for issue in recurring_issues])
                         st.warning(f"🔄 **Recurring Critical Issues Detected:** {issue_names} scored a 1 or 2 during this current date range AND in previous periods.")
-                    # --------------------------------------
                     
                     coach_row = agent_coach_data[agent_coach_data['Date Range'] == sel_coaching_date].iloc[0]
                     default_wins = coach_row['Top 3 Wins'] if pd.notna(coach_row.get('Top 3 Wins')) else "No wins recorded for this period."
@@ -534,7 +531,7 @@ with tab_dashboard:
 
                     st.divider()
 
-                    # --- LEADERBOARD & PRIORITIES (Always shown at bottom) ---
+                    # --- LEADERBOARD & PRIORITIES ---
                     col_board, col_coach = st.columns([2, 1])
 
                     with col_board:
