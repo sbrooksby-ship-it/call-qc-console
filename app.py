@@ -621,7 +621,7 @@ with tab_ai:
     st.header("💬 Gemini Call Transcript Intelligence")
     st.markdown("Ask questions across call transcripts stored in your secure Google Drive folder.")
     
-    # 1. Fetch available subfolders (weeks) from Drive
+    # Fetch available subfolders (weeks) from Drive
     subfolders = get_drive_subfolders(FOLDER_ID)
     
     col_folder, col_refresh = st.columns([3, 1])
@@ -636,14 +636,12 @@ with tab_ai:
             st.cache_data.clear()
             st.success("Drive cache refreshed!")
 
-    # 2. Determine target folder ID based on dropdown selection
     if selected_option == "📁 All Transcripts (All Weeks)":
         active_target_id = FOLDER_ID
     else:
         folder_name_clean = selected_option.replace("📅 ", "")
         active_target_id = subfolders.get(folder_name_clean, FOLDER_ID)
         
-    # 3. Load Transcripts for active selection
     transcripts_data = fetch_all_transcripts(active_target_id)
     
     if "No transcript files found" in transcripts_data or "Error" in transcripts_data:
@@ -661,13 +659,75 @@ with tab_ai:
             with st.chat_message(message["role"]):
                 st.markdown(message["content"])
                 
-        # Handle User Input with Word-by-Word Real-Time Streaming
+        # Handle User Input with Animated 13 Eating 14 Loading Screen
         if user_prompt := st.chat_input("Ask a question about these call transcripts:"):
             st.session_state.chat_history.append({"role": "user", "content": user_prompt})
             with st.chat_message("user"):
                 st.markdown(user_prompt)
                 
             with st.chat_message("assistant"):
+                # Render the animated "13 eating 14" loading container
+                loader_placeholder = st.empty()
+                loader_placeholder.markdown("""
+                <div style="background-color: #0f172a; padding: 20px; border-radius: 12px; border: 2px dashed #ef4444; margin-bottom: 15px; text-align: center;">
+                    <style>
+                        @keyframes munch {
+                            0%, 100% { transform: scale(1) rotate(0deg); }
+                            50% { transform: scale(1.22) rotate(-10deg); }
+                        }
+                        @keyframes getEaten {
+                            0% { transform: translateX(80px) scale(1) rotate(0deg); opacity: 1; }
+                            60% { transform: translateX(12px) scale(0.6) rotate(20deg); opacity: 0.9; }
+                            100% { transform: translateX(-15px) scale(0) rotate(90deg); opacity: 0; }
+                        }
+                        @keyframes crumbs {
+                            0% { opacity: 0; transform: scale(0.2) translate(0, 0); }
+                            50% { opacity: 1; }
+                            100% { opacity: 0; transform: scale(1.3) translate(-25px, 20px); }
+                        }
+                        .monster-13 {
+                            display: inline-block;
+                            font-size: 54px;
+                            font-weight: 900;
+                            color: #ef4444;
+                            font-family: 'Impact', 'Arial Black', sans-serif;
+                            animation: munch 0.4s infinite ease-in-out;
+                            position: relative;
+                            text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
+                        }
+                        .food-14 {
+                            display: inline-block;
+                            font-size: 40px;
+                            font-weight: 900;
+                            color: #3b82f6;
+                            font-family: 'Impact', 'Arial Black', sans-serif;
+                            animation: getEaten 0.8s infinite linear;
+                            position: relative;
+                            margin-left: -10px;
+                            text-shadow: 1px 1px 3px rgba(0,0,0,0.5);
+                        }
+                        .crumb {
+                            display: inline-block;
+                            font-size: 18px;
+                            animation: crumbs 0.8s infinite linear;
+                        }
+                        .loading-text {
+                            color: #cbd5e1;
+                            font-size: 15px;
+                            font-weight: 600;
+                            margin-top: 8px;
+                            font-family: system-ui, -apple-system, sans-serif;
+                        }
+                    </style>
+                    <div style="display: flex; align-items: center; justify-content: center; gap: 8px; height: 65px; overflow: hidden;">
+                        <span class="monster-13">13 🍪</span>
+                        <span class="food-14">14</span>
+                        <span class="crumb">✨</span>
+                    </div>
+                    <div class="loading-text">13 is munching on 14 while Gemini analyzes your transcripts...</div>
+                </div>
+                """, unsafe_allow_html=True)
+                
                 try:
                     model = genai.GenerativeModel('gemini-3.1-flash-lite')
                     full_prompt = f"""
@@ -683,14 +743,17 @@ with tab_ai:
                     {user_prompt}
                     """
                     
-                    # Word-by-word streaming for real-time speed
+                    # Word-by-word streaming
                     response = model.generate_content(full_prompt, stream=True)
                     
                     def stream_generator():
+                        # Clear the loading animation as soon as words start coming through
+                        loader_placeholder.empty()
                         for chunk in response:
                             yield chunk.text
 
                     full_response = st.write_stream(stream_generator)
                     st.session_state.chat_history.append({"role": "assistant", "content": full_response})
                 except Exception as e:
+                    loader_placeholder.empty()
                     st.error(f"Error communicating with Gemini API: {e}")
