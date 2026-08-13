@@ -56,7 +56,7 @@ def get_drive_service():
     try:
         creds_dict = dict(st.secrets["google_service_account"])
         
-        # --- FIX FOR PEM INVALID LENGTH / UNESCAPED NEWLINES ---
+        # FIX FOR PEM INVALID LENGTH / UNESCAPED NEWLINES
         if "private_key" in creds_dict:
             creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
             
@@ -70,8 +70,23 @@ def get_drive_service():
         return None
 
 @st.cache_data(ttl=300)
-def fetch_all_transcripts(folder_id):
-    """Recursively fetches text content from all files inside the Google Drive folder AND subfolders."""
+def get_drive_subfolders(folder_id):
+    """Fetches list of subfolders (e.g. weeks) inside the main Drive folder."""
+    service = get_drive_service()
+    if not service:
+        return {}
+    try:
+        query = f"'{folder_id}' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false"
+        results = service.files().list(q=query, fields="files(id, name)").execute()
+        folders = results.get('files', [])
+        return {f['name']: f['id'] for f in folders}
+    except Exception as e:
+        st.error(f"Error fetching subfolders from Drive: {e}")
+        return {}
+
+@st.cache_data(ttl=300)
+def fetch_all_transcripts(target_folder_id):
+    """Recursively fetches text content from all files inside a specific folder AND subfolders."""
     service = get_drive_service()
     if not service:
         return ""
@@ -84,11 +99,9 @@ def fetch_all_transcripts(folder_id):
             items = results.get('files', [])
             
             for item in items:
-                # If it's a subfolder, open it and search inside
                 if item['mimeType'] == 'application/vnd.google-apps.folder':
                     combined_text += get_files_recursively(item['id'], path_prefix=f"{path_prefix}{item['name']}/")
                 else:
-                    # It's a file, download its text content
                     file_id = item['id']
                     file_name = f"{path_prefix}{item['name']}"
                     
@@ -97,15 +110,15 @@ def fetch_all_transcripts(folder_id):
                         content = request.execute().decode('utf-8', errors='ignore')
                         combined_text += f"\n\n--- TRANSCRIPT FILE: {file_name} ---\n{content}\n"
                     except Exception:
-                        pass # Skip non-text files or permissions issues gracefully
+                        pass
                         
             return combined_text
         except Exception as e:
             return f"Error fetching from folder {current_folder_id}: {e}"
 
-    all_text = get_files_recursively(folder_id)
+    all_text = get_files_recursively(target_folder_id)
     if not all_text.strip():
-        return "No transcript files found in the Google Drive folder or its subfolders."
+        return "No transcript files found in the selected folder."
         
     return all_text
 
@@ -117,7 +130,7 @@ else:
 
 
 # -------------------------------------------------------------------------
-# DICTIONARY & HELPER FUNCTIONS
+# DICTIONARY & HELPER FUNCTIONS FOR SCORECARD
 # -------------------------------------------------------------------------
 question_tooltips = {
     "ARC 1": "Did the team member create genuine ARC with the customer early in the call?",
@@ -288,9 +301,7 @@ with tab_dashboard:
             call_df = call_df.rename(columns={'Score': 'Total Raw Score'})
             call_df['Call Percentage'] = (call_df['Total Raw Score'] / 180) * 100
             
-            # -------------------------------------------------------------------------
-            # 3. FILTERS & COMPARISON MODE
-            # -------------------------------------------------------------------------
+            # FILTERS & COMPARISON MODE
             st.sidebar.header("2. Dashboard Filters")
             
             min_date = df['Clean_Date'].min()
@@ -365,9 +376,7 @@ with tab_dashboard:
             if filtered_call_df.empty:
                 st.warning("No data found for these filters.")
             else:
-                # -------------------------------------------------------------------------
-                # 4. TOP KPI ROW & DELTAS
-                # -------------------------------------------------------------------------
+                # TOP KPI ROW & DELTAS
                 col_empty, col_thresh = st.columns([4, 1])
                 with col_thresh:
                     pass_threshold = st.number_input("PASS THRESHOLD (%)", value=80, step=1)
@@ -420,9 +429,7 @@ with tab_dashboard:
                     if norm_col in norm_tooltips:
                         col_config[col] = st.column_config.Column(help=norm_tooltips[norm_col])
 
-                # -------------------------------------------------------------------------
                 # 1-ON-1 COACHING VIEW vs. STANDARD DASHBOARD VIEW
-                # -------------------------------------------------------------------------
                 if sel_coaching_date != "Hide 1-on-1 View":
                     
                     st.info("🖨️ **How to Export this Scorecard:** Press **Ctrl + P** (or **Cmd + P** on Mac) to open the print menu, then select **'Save as PDF'**.")
@@ -430,7 +437,7 @@ with tab_dashboard:
                     st.markdown(f"## 📝 COACHING FEEDBACK: {sel_coaching_date}")
                     st.markdown(f"**Agent:** {sel_agent} | **Average Call Score during this period:** {avg_call_score:.1f}%")
 
-                    # --- RECURRING ISSUE DETECTION ---
+                    # RECURRING ISSUE DETECTION
                     historical_df = df[(df['Agent'] == sel_agent) & (df['Clean_Date'].dt.date < start_date)]
                     past_fails = historical_df[historical_df['Score'].isin([1, 2])]['Category'].unique()
                     current_fails = filtered_df[filtered_df['Score'].isin([1, 2])]['Category'].unique()
@@ -472,7 +479,7 @@ with tab_dashboard:
                     st.info("To return to the main dashboard charts, change the 'Select Coaching Date Range' dropdown in the sidebar back to 'Hide 1-on-1 View'.")
 
                 else:
-                    # --- COMPARISON MODE RENDER ---
+                    # COMPARISON MODE RENDER
                     if compare_mode:
                         
                         st.markdown("**📑 SECTION PERFORMANCE COMPARISON**")
@@ -506,7 +513,7 @@ with tab_dashboard:
                             else:
                                 st.dataframe(generate_meter_bank(filtered_df_2, sel_agent), use_container_width=True, height=350, column_config=col_config)
 
-                    # --- STANDARD MODE RENDER ---
+                    # STANDARD MODE RENDER
                     else:
                         col_trend, col_sections = st.columns([2, 1])
                         
@@ -531,7 +538,7 @@ with tab_dashboard:
 
                     st.divider()
 
-                    # --- LEADERBOARD & PRIORITIES ---
+                    # LEADERBOARD & PRIORITIES
                     col_board, col_coach = st.columns([2, 1])
 
                     with col_board:
@@ -612,21 +619,38 @@ with tab_dashboard:
 # =========================================================================
 with tab_ai:
     st.header("💬 Gemini Call Transcript Intelligence")
-    st.markdown("Ask questions across all call transcripts stored in your secure Google Drive folder.")
+    st.markdown("Ask questions across call transcripts stored in your secure Google Drive folder.")
     
-    col_refresh, col_status = st.columns([1, 4])
+    # 1. Fetch available subfolders (weeks) from Drive
+    subfolders = get_drive_subfolders(FOLDER_ID)
+    
+    col_folder, col_refresh = st.columns([3, 1])
+    
+    with col_folder:
+        folder_options = ["📁 All Transcripts (All Weeks)"] + [f"📅 {name}" for name in sorted(subfolders.keys())]
+        selected_option = st.selectbox("Select Week / Folder to Analyze:", folder_options)
+        
     with col_refresh:
-        if st.button("🔄 Sync Drive Transcripts"):
+        st.markdown("<br>", unsafe_allow_html=True)
+        if st.button("🔄 Sync Drive"):
             st.cache_data.clear()
-            st.success("Transcripts cache cleared!")
-            
-    # Load Transcripts from Google Drive
-    transcripts_data = fetch_all_transcripts(FOLDER_ID)
+            st.success("Drive cache refreshed!")
+
+    # 2. Determine target folder ID based on dropdown selection
+    if selected_option == "📁 All Transcripts (All Weeks)":
+        active_target_id = FOLDER_ID
+    else:
+        folder_name_clean = selected_option.replace("📅 ", "")
+        active_target_id = subfolders.get(folder_name_clean, FOLDER_ID)
+        
+    # 3. Load Transcripts for active selection
+    transcripts_data = fetch_all_transcripts(active_target_id)
     
     if "No transcript files found" in transcripts_data or "Error" in transcripts_data:
         st.warning(transcripts_data)
+        st.info("💡 **Weekly Organization Tip:** Create folders inside your Google Drive named `08-10_to_08-14` (for Monday–Friday) and drop your transcript `.txt` files inside!")
     else:
-        st.success("🔒 Connected to Google Drive Vault. Transcripts loaded securely into AI memory.")
+        st.success(f"🔒 Loaded transcripts for **{selected_option}** into AI memory.")
         
         # Chat Interface
         if "chat_history" not in st.session_state:
@@ -637,32 +661,36 @@ with tab_ai:
             with st.chat_message(message["role"]):
                 st.markdown(message["content"])
                 
-        # Handle User Input
-        if user_prompt := st.chat_input("Ask a question about your call transcripts (e.g., 'What are the top 3 reasons customers cancel?'):"):
+        # Handle User Input with Word-by-Word Real-Time Streaming
+        if user_prompt := st.chat_input("Ask a question about these call transcripts:"):
             st.session_state.chat_history.append({"role": "user", "content": user_prompt})
             with st.chat_message("user"):
                 st.markdown(user_prompt)
                 
             with st.chat_message("assistant"):
-                with st.spinner("Analyzing call transcripts with Gemini..."):
-                    try:
-                        # Construct system context with Gemini 3.1 Flash Lite
-                        model = genai.GenerativeModel('gemini-3.1-flash-lite')
-                        full_prompt = f"""
-                        You are an expert QA and Customer Service Analyst for Balance of Nature.
-                        Answer the manager's question accurately using ONLY the call transcripts provided below.
-                        If the information is not contained in the transcripts, clearly state that you do not have enough data.
-                        Be concise, objective, and highlight exact quotes or call examples when relevant.
-                        
-                        TRANSCRIPT DATABASE:
-                        {transcripts_data}
-                        
-                        MANAGER'S QUESTION:
-                        {user_prompt}
-                        """
-                        
-                        response = model.generate_content(full_prompt)
-                        st.markdown(response.text)
-                        st.session_state.chat_history.append({"role": "assistant", "content": response.text})
-                    except Exception as e:
-                        st.error(f"Error communicating with Gemini API: {e}")
+                try:
+                    model = genai.GenerativeModel('gemini-3.1-flash-lite')
+                    full_prompt = f"""
+                    You are an expert QA and Customer Service Analyst for Balance of Nature.
+                    Answer the manager's question accurately using ONLY the call transcripts provided below.
+                    If the information is not contained in the transcripts, clearly state that you do not have enough data.
+                    Be concise, objective, and highlight exact quotes or call examples when relevant.
+                    
+                    TRANSCRIPT DATABASE:
+                    {transcripts_data}
+                    
+                    MANAGER'S QUESTION:
+                    {user_prompt}
+                    """
+                    
+                    # Word-by-word streaming for real-time speed
+                    response = model.generate_content(full_prompt, stream=True)
+                    
+                    def stream_generator():
+                        for chunk in response:
+                            yield chunk.text
+
+                    full_response = st.write_stream(stream_generator)
+                    st.session_state.chat_history.append({"role": "assistant", "content": full_response})
+                except Exception as e:
+                    st.error(f"Error communicating with Gemini API: {e}")
