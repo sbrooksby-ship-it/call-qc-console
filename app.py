@@ -66,33 +66,43 @@ def get_drive_service():
 
 @st.cache_data(ttl=300)
 def fetch_all_transcripts(folder_id):
-    """Fetches text content from all files inside the Google Drive folder."""
+    """Recursively fetches text content from all files inside the Google Drive folder AND subfolders."""
     service = get_drive_service()
     if not service:
         return ""
     
-    try:
-        query = f"'{folder_id}' in parents and trashed = false"
-        results = service.files().list(q=query, fields="files(id, name, mimeType)").execute()
-        files = results.get('files', [])
-        
-        if not files:
-            return "No transcript files found in the Google Drive folder."
-        
+    def get_files_recursively(current_folder_id, path_prefix=""):
         combined_text = ""
-        for file in files:
-            file_id = file['id']
-            file_name = file['name']
+        try:
+            query = f"'{current_folder_id}' in parents and trashed = false"
+            results = service.files().list(q=query, fields="files(id, name, mimeType)").execute()
+            items = results.get('files', [])
             
-            # Read text or plain files
-            request = service.files().get_media(fileId=file_id)
-            content = request.execute().decode('utf-8', errors='ignore')
-            
-            combined_text += f"\n\n--- TRANSCRIPT FILE: {file_name} ---\n{content}\n"
-            
-        return combined_text
-    except Exception as e:
-        return f"Error fetching transcripts from Drive: {e}"
+            for item in items:
+                # If it's a subfolder, open it and search inside
+                if item['mimeType'] == 'application/vnd.google-apps.folder':
+                    combined_text += get_files_recursively(item['id'], path_prefix=f"{path_prefix}{item['name']}/")
+                else:
+                    # It's a file, download its text content
+                    file_id = item['id']
+                    file_name = f"{path_prefix}{item['name']}"
+                    
+                    try:
+                        request = service.files().get_media(fileId=file_id)
+                        content = request.execute().decode('utf-8', errors='ignore')
+                        combined_text += f"\n\n--- TRANSCRIPT FILE: {file_name} ---\n{content}\n"
+                    except Exception:
+                        pass # Skip non-text files or permissions issues gracefully
+                        
+            return combined_text
+        except Exception as e:
+            return f"Error fetching from folder {current_folder_id}: {e}"
+
+    all_text = get_files_recursively(folder_id)
+    if not all_text.strip():
+        return "No transcript files found in the Google Drive folder or its subfolders."
+        
+    return all_text
 
 # Initialize Gemini AI
 if "GEMINI_API_KEY" in st.secrets:
@@ -639,8 +649,8 @@ with tab_ai:
             with st.chat_message("assistant"):
                 with st.spinner("Analyzing call transcripts with Gemini..."):
                     try:
-                        # Construct system context with Gemini 1.5 Pro
-                        model = genai.GenerativeModel('gemini-1.5-pro')
+                        # Construct system context with Gemini 2.5 flash
+                        model = genai.GenerativeModel('gemini-2.5-flash')
                         full_prompt = f"""
                         You are an expert QA and Customer Service Analyst for Balance of Nature.
                         Answer the manager's question accurately using ONLY the call transcripts provided below.
