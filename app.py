@@ -649,8 +649,8 @@ with tab_ai:
             with st.chat_message("assistant"):
                 with st.spinner("Analyzing call transcripts with Gemini..."):
                     try:
-                        # Construct system context with Gemini 2.5 flash
-                        model = genai.GenerativeModel('gemini-2.5-flash')
+                        # Construct system context with Gemini 3.1 Flash Lite
+                        model = genai.GenerativeModel('gemini-3.1-flash-lite')
                         full_prompt = f"""
                         You are an expert QA and Customer Service Analyst for Balance of Nature.
                         Answer the manager's question accurately using ONLY the call transcripts provided below.
