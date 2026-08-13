@@ -2,3 +2,6 @@ streamlit
 pandas
 numpy
 matplotlib
+google-api-python-client
+google-auth
+google-generativeai
