@@ -657,7 +657,7 @@ with tab_ai:
             with st.chat_message(message["role"]):
                 st.markdown(message["content"])
                 
-        # Handle User Input with Animated 13 Eating 14 Loading Screen
+        # Handle User Input with Animated Pac-Man Style 13 vs 14
         if user_prompt := st.chat_input("Ask a question about these call transcripts:"):
             st.session_state.chat_history.append({"role": "user", "content": user_prompt})
             with st.chat_message("user"):
@@ -666,62 +666,77 @@ with tab_ai:
             with st.chat_message("assistant"):
                 loader_placeholder = st.empty()
                 loader_placeholder.markdown("""
-                <div style="background-color: #0f172a; padding: 20px; border-radius: 12px; border: 2px dashed #ef4444; margin-bottom: 15px; text-align: center;">
+                <div style="background-color: #0f172a; padding: 15px; border-radius: 12px; border: 2px dashed #ef4444; margin-bottom: 15px; position: relative; overflow: hidden; height: 130px;">
                     <style>
-                        @keyframes munch {
+                        @keyframes chomp13 {
                             0%, 100% { transform: scale(1) rotate(0deg); }
-                            50% { transform: scale(1.22) rotate(-10deg); }
+                            50% { transform: scale(1.1) rotate(-15deg); }
                         }
-                        @keyframes getEaten {
-                            0% { transform: translateX(80px) scale(1) rotate(0deg); opacity: 1; }
-                            60% { transform: translateX(12px) scale(0.6) rotate(20deg); opacity: 0.9; }
-                            100% { transform: translateX(-15px) scale(0) rotate(90deg); opacity: 0; }
+                        @keyframes move13 { 
+                            0% { left: -10%; } 
+                            100% { left: 110%; } 
                         }
-                        @keyframes crumbs {
-                            0% { opacity: 0; transform: scale(0.2) translate(0, 0); }
-                            50% { opacity: 1; }
-                            100% { opacity: 0; transform: scale(1.3) translate(-25px, 20px); }
+                        @keyframes move14 { 
+                            0% { left: 40%; opacity: 1; transform: scale(1); } 
+                            58% { left: 61%; opacity: 1; transform: scale(1); } 
+                            62% { left: 63%; opacity: 0; transform: scale(0.2) rotate(45deg); } 
+                            100% { left: 63%; opacity: 0; transform: scale(0); } 
                         }
-                        .monster-13 {
-                            display: inline-block;
-                            font-size: 54px;
+                        @keyframes hideC1 { 0%, 19% { opacity: 1; transform: scale(1); } 20%, 100% { opacity: 0; transform: scale(0); } }
+                        @keyframes hideC2 { 0%, 39% { opacity: 1; transform: scale(1); } 40%, 100% { opacity: 0; transform: scale(0); } }
+                        
+                        .pac-13 {
+                            position: absolute;
+                            top: 25px;
+                            font-size: 45px;
                             font-weight: 900;
                             color: #ef4444;
-                            font-family: 'Impact', 'Arial Black', sans-serif;
-                            animation: munch 0.4s infinite ease-in-out;
-                            position: relative;
+                            font-family: 'Impact', sans-serif;
+                            animation: move13 3s infinite linear;
+                            z-index: 10;
+                        }
+                        .pac-13-inner {
+                            display: inline-block;
+                            animation: chomp13 0.3s infinite alternate;
                             text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
                         }
-                        .food-14 {
-                            display: inline-block;
-                            font-size: 40px;
+                        .ghost-14 {
+                            position: absolute;
+                            top: 30px;
+                            font-size: 35px;
                             font-weight: 900;
                             color: #3b82f6;
-                            font-family: 'Impact', 'Arial Black', sans-serif;
-                            animation: getEaten 0.8s infinite linear;
-                            position: relative;
-                            margin-left: -10px;
+                            font-family: 'Impact', sans-serif;
+                            animation: move14 3s infinite linear;
                             text-shadow: 1px 1px 3px rgba(0,0,0,0.5);
                         }
-                        .crumb {
-                            display: inline-block;
-                            font-size: 18px;
-                            animation: crumbs 0.8s infinite linear;
+                        .cookie {
+                            position: absolute;
+                            top: 40px;
+                            font-size: 24px;
                         }
-                        .loading-text {
+                        .c1 { left: 14%; animation: hideC1 3s infinite linear; }
+                        .c2 { left: 38%; animation: hideC2 3s infinite linear; }
+                        
+                        .loading-text-new {
+                            position: absolute;
+                            bottom: 10px;
+                            width: 100%;
+                            left: 0;
                             color: #cbd5e1;
                             font-size: 15px;
                             font-weight: 600;
-                            margin-top: 8px;
-                            font-family: system-ui, -apple-system, sans-serif;
+                            font-family: system-ui, sans-serif;
+                            text-align: center;
                         }
                     </style>
-                    <div style="display: flex; align-items: center; justify-content: center; gap: 8px; height: 65px; overflow: hidden;">
-                        <span class="monster-13">13 🍪</span>
-                        <span class="food-14">14</span>
-                        <span class="crumb">✨</span>
-                    </div>
-                    <div class="loading-text">13 is munching on 14 while Gemini analyzes your transcripts...</div>
+                    
+                    <div class="pac-13"><div class="pac-13-inner">13</div></div>
+                    <div class="cookie c1">🍪</div>
+                    <div class="cookie c2">🍪</div>
+                    <div class="ghost-14">14 🏃‍♂️</div>
+                    
+                    <div class="loading-text-new">13 is munching on 14 while Gemini analyzes your transcripts...</div>
                 </div>
                 """, unsafe_allow_html=True)
                 
@@ -768,7 +783,7 @@ with tab_tagging:
                 try:
                     model = genai.GenerativeModel('gemini-3.1-flash-lite')
                     
-                    # Force Gemini to output structured JSON data
+                    # Force Gemini to output structured JSON data with updated Success Story prompt
                     prompt = f"""
                     You are a strict QA API analyzing call transcripts. Read all the transcripts provided.
                     You MUST return a valid JSON array of objects. 
@@ -777,7 +792,7 @@ with tab_tagging:
                     "File Name": (The name of the transcript file)
                     "Primary Topic": (Choose ONE: Cancellation, Product Question, Billing, Angry Customer, Upsell, General Inquiry, or Other)
                     "Sentiment": (Choose ONE: Positive, Neutral, or Negative)
-                    "Success Story": (Set to "Yes" if the customer shared a positive health win/testimonial, otherwise "No")
+                    "Success Story Asked": (Set to "Yes" if the agent explicitly asked the customer to share a success story or positive health experience with the product, otherwise "No")
                     "Cancellation Reason": (The specific reason they canceled. Set to "N/A" if they did not cancel)
                     "Compliance Violation": (Set to "Yes" if the agent made unapproved health/medical claims treating or curing diseases, otherwise "No")
                     "Summary": (A 1-sentence summary of the call)
@@ -796,15 +811,23 @@ with tab_tagging:
                     
                     st.success("✅ Analysis Complete!")
                     
-                    # Ensure topic counts are ready for plotting
-                    topic_counts = df_tags['Primary Topic'].value_counts().reset_index()
+                    # Ensure all standard topics exist so the Radar Chart always forms a polygon
+                    all_topics = ["Cancellation", "Product Question", "Billing", "Angry Customer", "Upsell", "General Inquiry", "Other"]
+                    topic_counts = df_tags['Primary Topic'].value_counts()
+                    
+                    # Force missing topics to have a count of 0
+                    for topic in all_topics:
+                        if topic not in topic_counts:
+                            topic_counts[topic] = 0
+                            
+                    topic_counts = topic_counts.reset_index()
                     topic_counts.columns = ['Topic', 'Count']
                     
                     # Setup Top Metric Cards
                     m1, m2, m3 = st.columns(3)
                     with m1:
-                        success_count = len(df_tags[df_tags['Success Story'].astype(str).str.upper() == 'YES'])
-                        st.metric("🌟 Success Stories Found", success_count)
+                        success_count = len(df_tags[df_tags['Success Story Asked'].astype(str).str.upper() == 'YES'])
+                        st.metric("🌟 Success Stories Asked", success_count)
                     with m2:
                         comp_viol = len(df_tags[df_tags['Compliance Violation'].astype(str).str.upper() == 'YES'])
                         st.metric("🚨 Compliance Violations", comp_viol)
@@ -819,7 +842,7 @@ with tab_tagging:
                     
                     with col_chart1:
                         st.markdown("**Radar Breakdown: Call Topics**")
-                        # Build the sleek Plotly Radar Chart
+                        # Build the sleek Plotly Radar Chart with all 7 points filled
                         fig = px.line_polar(
                             topic_counts, 
                             r='Count', 
