@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
+import json
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 import google.generativeai as genai
@@ -248,9 +249,29 @@ def generate_meter_bank(data_df, agent_filter):
     return pivot_df.style.background_gradient(cmap='RdYlGn', vmin=1, vmax=5).format("{:.1f}")
 
 # -------------------------------------------------------------------------
+# GLOBAL SIDEBAR & AI FOLDER SELECTION
+# -------------------------------------------------------------------------
+st.sidebar.header("3. AI Transcript Vault")
+subfolders = get_drive_subfolders(FOLDER_ID)
+folder_options = ["📁 All Transcripts (All Weeks)"] + [f"📅 {name}" for name in sorted(subfolders.keys())]
+selected_ai_folder = st.sidebar.selectbox("Select Week to Analyze:", folder_options)
+
+if st.sidebar.button("🔄 Sync Drive Cache"):
+    st.cache_data.clear()
+    st.sidebar.success("Drive cache refreshed!")
+
+if selected_ai_folder == "📁 All Transcripts (All Weeks)":
+    active_target_id = FOLDER_ID
+else:
+    folder_name_clean = selected_ai_folder.replace("📅 ", "")
+    active_target_id = subfolders.get(folder_name_clean, FOLDER_ID)
+    
+transcripts_data = fetch_all_transcripts(active_target_id)
+
+# -------------------------------------------------------------------------
 # TABS SETUP
 # -------------------------------------------------------------------------
-tab_dashboard, tab_ai = st.tabs(["📊 Performance Dashboard", "💬 AI Call Assistant"])
+tab_dashboard, tab_ai, tab_tagging = st.tabs(["📊 Performance Dashboard", "💬 AI Assistant", "🏷️ Tagging & Sentiment"])
 
 # =========================================================================
 # TAB 1: QC DASHBOARD
@@ -619,36 +640,12 @@ with tab_dashboard:
 # =========================================================================
 with tab_ai:
     st.header("💬 Gemini Call Transcript Intelligence")
-    st.markdown("Ask questions across call transcripts stored in your secure Google Drive folder.")
-    
-    # Fetch available subfolders (weeks) from Drive
-    subfolders = get_drive_subfolders(FOLDER_ID)
-    
-    col_folder, col_refresh = st.columns([3, 1])
-    
-    with col_folder:
-        folder_options = ["📁 All Transcripts (All Weeks)"] + [f"📅 {name}" for name in sorted(subfolders.keys())]
-        selected_option = st.selectbox("Select Week / Folder to Analyze:", folder_options)
-        
-    with col_refresh:
-        st.markdown("<br>", unsafe_allow_html=True)
-        if st.button("🔄 Sync Drive"):
-            st.cache_data.clear()
-            st.success("Drive cache refreshed!")
-
-    if selected_option == "📁 All Transcripts (All Weeks)":
-        active_target_id = FOLDER_ID
-    else:
-        folder_name_clean = selected_option.replace("📅 ", "")
-        active_target_id = subfolders.get(folder_name_clean, FOLDER_ID)
-        
-    transcripts_data = fetch_all_transcripts(active_target_id)
+    st.markdown(f"Ask questions across the transcripts in your **{selected_ai_folder}** vault.")
     
     if "No transcript files found" in transcripts_data or "Error" in transcripts_data:
         st.warning(transcripts_data)
-        st.info("💡 **Weekly Organization Tip:** Create folders inside your Google Drive named `08-10_to_08-14` (for Monday–Friday) and drop your transcript `.txt` files inside!")
     else:
-        st.success(f"🔒 Loaded transcripts for **{selected_option}** into AI memory.")
+        st.success("🔒 Transcripts loaded securely into AI memory.")
         
         # Chat Interface
         if "chat_history" not in st.session_state:
@@ -666,7 +663,6 @@ with tab_ai:
                 st.markdown(user_prompt)
                 
             with st.chat_message("assistant"):
-                # Render the animated "13 eating 14" loading container
                 loader_placeholder = st.empty()
                 loader_placeholder.markdown("""
                 <div style="background-color: #0f172a; padding: 20px; border-radius: 12px; border: 2px dashed #ef4444; margin-bottom: 15px; text-align: center;">
@@ -743,11 +739,9 @@ with tab_ai:
                     {user_prompt}
                     """
                     
-                    # Word-by-word streaming
                     response = model.generate_content(full_prompt, stream=True)
                     
                     def stream_generator():
-                        # Clear the loading animation as soon as words start coming through
                         loader_placeholder.empty()
                         for chunk in response:
                             yield chunk.text
@@ -757,3 +751,62 @@ with tab_ai:
                 except Exception as e:
                     loader_placeholder.empty()
                     st.error(f"Error communicating with Gemini API: {e}")
+
+# =========================================================================
+# TAB 3: AI TAGGING & SENTIMENT (NEW!)
+# =========================================================================
+with tab_tagging:
+    st.header("🏷️ AI Call Tagging & Sentiment Analysis")
+    st.markdown(f"Gemini will read the transcripts from **{selected_ai_folder}**, categorize them, and build a database automatically.")
+    
+    if "No transcript files found" in transcripts_data or "Error" in transcripts_data:
+        st.warning("Please select a valid folder with transcripts in the sidebar.")
+    else:
+        if st.button("🚀 Run Batch AI Analysis"):
+            with st.spinner("Gemini is reading and tagging all calls..."):
+                try:
+                    model = genai.GenerativeModel('gemini-3.1-flash-lite')
+                    
+                    # Force Gemini to output pure JSON data
+                    prompt = f"""
+                    You are a QA AI analyzing call transcripts. Read the following transcripts.
+                    You MUST return a valid JSON array of objects. 
+                    
+                    Each object must have exactly these keys:
+                    "File Name": (The name of the transcript file)
+                    "Primary Topic": (Choose ONE: Cancellation, Product Question, Billing, Angry Customer, Upsell, General Inquiry, or Other)
+                    "Sentiment": (Choose ONE: Positive, Neutral, or Negative)
+                    "Summary": (A 1-sentence summary of the call)
+                    
+                    Transcripts:
+                    {transcripts_data}
+                    """
+                    
+                    response = model.generate_content(
+                        prompt, 
+                        generation_config={"response_mime_type": "application/json"}
+                    )
+                    
+                    # Convert the JSON text from Gemini into a Python Dictionary, then a Pandas Table
+                    json_data = json.loads(response.text)
+                    df_tags = pd.DataFrame(json_data)
+                    
+                    st.success("✅ Analysis Complete!")
+                    
+                    # Draw Charts
+                    col_chart1, col_chart2 = st.columns(2)
+                    
+                    with col_chart1:
+                        st.markdown("**Call Topics Breakdown**")
+                        st.bar_chart(df_tags['Primary Topic'].value_counts())
+                        
+                    with col_chart2:
+                        st.markdown("**Overall Sentiment**")
+                        st.bar_chart(df_tags['Sentiment'].value_counts())
+                        
+                    st.divider()
+                    st.markdown("**📝 Call Summaries Log**")
+                    st.dataframe(df_tags, use_container_width=True)
+                    
+                except Exception as e:
+                    st.error(f"Failed to process analysis. The AI may have struggled to format the JSON. Error: {e}")
