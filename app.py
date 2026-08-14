@@ -18,12 +18,38 @@ st.set_page_config(
 
 st.markdown("""
 <style>
-    div[data-testid="metric-container"] {
-        background-color: #f8f9fa;
-        border: 1px solid #e9ecef;
-        padding: 5% 10% 5% 10%;
-        border-radius: 5px;
+    /* BALANCE OF NATURE GLOBAL THEME */
+    
+    /* Sidebar Background */
+    [data-testid="stSidebar"] {
+        background-color: #f0fdf4 !important;
+        border-right: 1px solid #bbf7d0;
     }
+    
+    /* Global Buttons */
+    .stButton>button {
+        background-color: #059669 !important;
+        color: white !important;
+        border: none !important;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+        transition: all 0.2s;
+        font-weight: 600 !important;
+    }
+    .stButton>button:hover {
+        background-color: #047857 !important;
+        transform: translateY(-2px);
+    }
+    
+    /* Metric Cards */
+    div[data-testid="metric-container"] {
+        background-color: #ffffff;
+        border: 1px solid #e2e8f0;
+        padding: 5% 10% 5% 10%;
+        border-radius: 8px;
+        border-top: 4px solid #059669;
+        box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1);
+    }
+    
     /* Style horizontal navigation radio buttons to look like tabs */
     div[data-testid="stRadio"] > div {
         flex-direction: row;
@@ -31,16 +57,21 @@ st.markdown("""
         gap: 10px;
     }
     div[data-testid="stRadio"] label {
-        background-color: #f1f5f9;
+        background-color: #ffffff;
         padding: 8px 16px;
         border-radius: 8px;
         border: 1px solid #cbd5e1;
         cursor: pointer;
         font-weight: 600;
+        color: #334155;
     }
     div[data-testid="stRadio"] label:hover {
-        background-color: #e2e8f0;
+        background-color: #f0fdf4;
+        border-color: #059669;
+        color: #059669;
     }
+    
+    /* Print Styles */
     @media print {
         section[data-testid="stSidebar"] { display: none !important; }
         header[data-testid="stHeader"] { display: none !important; }
@@ -62,7 +93,17 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-st.title("CALL QC CONSOLE")
+# Custom Balance of Nature Header
+st.markdown("""
+<div style="text-align: center; margin-bottom: 25px; margin-top: -20px;">
+    <h1 style="font-size: 3.5rem; margin-bottom: 0; font-family: 'Arial Black', Impact, sans-serif; letter-spacing: 2px;">
+        <span style="color: #059669;">BALANCE</span> 
+        <span style="color: #dc2626;">OF</span> 
+        <span style="color: #059669;">NATURE</span>
+    </h1>
+    <h3 style="color: #475569; margin-top: -10px; font-weight: 400; letter-spacing: 4px; font-size: 1.2rem;">CALL QC CONSOLE</h3>
+</div>
+""", unsafe_allow_html=True)
 
 # -------------------------------------------------------------------------
 # GOOGLE DRIVE & GEMINI HELPER FUNCTIONS
@@ -721,7 +762,7 @@ else:
                             <span style="color: #3b82f6; font-size: 30px; font-weight: 900; font-family: 'Impact', sans-serif;">14 😱</span>
                         </div>
                         <div style="color: #cbd5e1; font-size: 16px; font-weight: 600; font-family: system-ui, sans-serif;">
-                            13 is munching on 14 while Gemini thinks...
+                            13 is chomping on cookies & chasing down 14 while Gemini thinks...
                         </div>
                     </div>
                     """, unsafe_allow_html=True)
@@ -870,9 +911,9 @@ else:
                             r='Count', 
                             theta='Topic', 
                             line_close=True,
-                            color_discrete_sequence=['#3b82f6']
+                            color_discrete_sequence=['#059669']
                         )
-                        fig.update_traces(fill='toself', fillcolor='rgba(59, 130, 246, 0.4)')
+                        fig.update_traces(fill='toself', fillcolor='rgba(5, 150, 105, 0.4)')
                         fig.update_layout(
                             polar=dict(
                                 radialaxis=dict(visible=True, tickfont=dict(color="gray")),
@@ -943,18 +984,18 @@ else:
                                 border-radius: 12px 12px 8px 8px;
                                 position: relative;
                                 overflow: hidden;
-                                background: #f8f9fa;
+                                background: #ffffff;
                                 border: 3px solid;
-                                box-shadow: inset -5px 0px 10px rgba(0,0,0,0.1);
+                                box-shadow: inset -5px 0px 10px rgba(0,0,0,0.05);
                             }}
                             .body-large {{
                                 width: 120px; height: 170px;
                                 border-radius: 12px 12px 8px 8px;
                                 position: relative;
                                 overflow: hidden;
-                                background: #f8f9fa;
+                                background: #ffffff;
                                 border: 3px solid;
-                                box-shadow: inset -8px 0px 15px rgba(0,0,0,0.1);
+                                box-shadow: inset -8px 0px 15px rgba(0,0,0,0.05);
                             }}
                             
                             /* COLORS */
