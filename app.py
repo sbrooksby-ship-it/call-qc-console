@@ -24,7 +24,7 @@ st.markdown("""
         padding: 5% 10% 5% 10%;
         border-radius: 5px;
     }
-    /* Style for horizontal navigation radio buttons to look like tabs */
+    /* Style horizontal navigation radio buttons to look like tabs */
     div[data-testid="stRadio"] > div {
         flex-direction: row;
         justify-content: flex-start;
@@ -267,7 +267,7 @@ def generate_meter_bank(data_df, agent_filter):
     return pivot_df.style.background_gradient(cmap='RdYlGn', vmin=1, vmax=5).format("{:.1f}")
 
 # -------------------------------------------------------------------------
-# TOP NAVIGATION (REPLACES ST.TABS FOR DYNAMIC SIDEBAR CONTROL)
+# TOP NAVIGATION (DYNAMIC SIDEBAR SWITCHING)
 # -------------------------------------------------------------------------
 selected_tab = st.radio(
     "Navigation",
@@ -688,77 +688,71 @@ else:
                 with st.chat_message("assistant"):
                     loader_placeholder = st.empty()
                     loader_placeholder.markdown("""
-                    <div style="background-color: #0f172a; padding: 15px; border-radius: 12px; border: 2px dashed #ef4444; margin-bottom: 15px; position: relative; overflow: hidden; height: 130px;">
+                    <div style="background-color: #0f172a; padding: 20px; border-radius: 12px; border: 2px dashed #ef4444; margin-bottom: 15px; text-align: center; color: white;">
                         <style>
-                            @keyframes chomp13 {
+                            @keyframes chomp {
                                 0%, 100% { transform: scale(1) rotate(0deg); }
-                                50% { transform: scale(1.1) rotate(-15deg); }
+                                50% { transform: scale(1.15) rotate(-15deg); }
                             }
-                            @keyframes move13 { 
-                                0% { left: -10%; } 
-                                100% { left: 110%; } 
+                            @keyframes chase13 {
+                                0% { transform: translateX(-120px); }
+                                100% { transform: translateX(120px); }
                             }
-                            @keyframes move14 { 
-                                0% { left: 40%; opacity: 1; transform: scale(1); } 
-                                58% { left: 61%; opacity: 1; transform: scale(1); } 
-                                62% { left: 63%; opacity: 0; transform: scale(0.2) rotate(45deg); } 
-                                100% { left: 63%; opacity: 0; transform: scale(0); } 
+                            @keyframes flee14 {
+                                0% { transform: translateX(-30px); opacity: 1; }
+                                65% { transform: translateX(50px); opacity: 1; }
+                                75% { transform: translateX(60px) scale(0.2); opacity: 0; }
+                                100% { transform: translateX(60px) scale(0); opacity: 0; }
                             }
-                            @keyframes hideC1 { 0%, 19% { opacity: 1; transform: scale(1); } 20%, 100% { opacity: 0; transform: scale(0); } }
-                            @keyframes hideC2 { 0%, 39% { opacity: 1; transform: scale(1); } 40%, 100% { opacity: 0; transform: scale(0); } }
-                            
-                            .pac-13 {
-                                position: absolute;
-                                top: 25px;
-                                font-size: 45px;
+                            @keyframes eatCookie {
+                                0%, 30% { opacity: 1; }
+                                35%, 100% { opacity: 0; }
+                            }
+                            .stage {
+                                display: flex;
+                                align-items: center;
+                                justify-content: center;
+                                height: 60px;
+                                position: relative;
+                                overflow: hidden;
+                            }
+                            .character-13 {
+                                font-size: 42px;
                                 font-weight: 900;
                                 color: #ef4444;
                                 font-family: 'Impact', sans-serif;
-                                animation: move13 3s infinite linear;
-                                z-index: 10;
-                            }
-                            .pac-13-inner {
-                                display: inline-block;
-                                animation: chomp13 0.3s infinite alternate;
-                                text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
-                            }
-                            .ghost-14 {
+                                animation: chase13 3s infinite linear;
                                 position: absolute;
-                                top: 30px;
-                                font-size: 35px;
+                                z-index: 2;
+                            }
+                            .character-13 span {
+                                display: inline-block;
+                                animation: chomp 0.3s infinite alternate;
+                            }
+                            .victim-14 {
+                                font-size: 32px;
                                 font-weight: 900;
                                 color: #3b82f6;
                                 font-family: 'Impact', sans-serif;
-                                animation: move14 3s infinite linear;
-                                text-shadow: 1px 1px 3px rgba(0,0,0,0.5);
-                            }
-                            .cookie {
+                                animation: flee14 3s infinite linear;
                                 position: absolute;
-                                top: 40px;
-                                font-size: 24px;
+                                z-index: 1;
                             }
-                            .c1 { left: 14%; animation: hideC1 3s infinite linear; }
-                            .c2 { left: 38%; animation: hideC2 3s infinite linear; }
-                            
-                            .loading-text-new {
+                            .cookie-dot {
+                                font-size: 20px;
                                 position: absolute;
-                                bottom: 10px;
-                                width: 100%;
-                                left: 0;
-                                color: #cbd5e1;
-                                font-size: 15px;
-                                font-weight: 600;
-                                font-family: system-ui, sans-serif;
-                                text-align: center;
+                                animation: eatCookie 3s infinite linear;
                             }
                         </style>
-                        
-                        <div class="pac-13"><div class="pac-13-inner">13</div></div>
-                        <div class="cookie c1">🍪</div>
-                        <div class="cookie c2">🍪</div>
-                        <div class="ghost-14">14 🏃‍♂️</div>
-                        
-                        <div class="loading-text-new">13 is munching on 14 while Gemini analyzes your transcripts...</div>
+                        <div class="stage">
+                            <div class="character-13"><span>13 👄</span></div>
+                            <div class="cookie-dot" style="left: 35%;">🍪</div>
+                            <div class="cookie-dot" style="left: 50%;">🍪</div>
+                            <div class="victim-14">14 😱</div>
+                        </div>
+                        <div style="color: #cbd5e1; font-size: 14px; font-weight: 600; margin-top: 10px; font-family: system-ui, sans-serif;">
+                            13 is chomping on cookies & chasing down 14 while Gemini analyzes your transcripts...
+                        </div>
                     </div>
                     """, unsafe_allow_html=True)
                     
