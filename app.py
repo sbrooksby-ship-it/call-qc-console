@@ -688,99 +688,41 @@ else:
                 with st.chat_message("assistant"):
                     loader_placeholder = st.empty()
                     loader_placeholder.markdown("""
-                    <div style="background-color: #0f172a; padding: 15px; border-radius: 12px; border: 2px dashed #ef4444; margin-bottom: 15px; position: relative; overflow: hidden; height: 130px;">
+                    <div style="background-color: #0f172a; padding: 20px; border-radius: 12px; border: 2px dashed #ef4444; text-align: center; margin-bottom: 15px;">
                         <style>
-                            @keyframes chase13 {
-                                0% { transform: translateX(-120px); }
-                                100% { transform: translateX(120px); }
+                            @keyframes wobble {
+                                0% { transform: translateX(-20px); }
+                                100% { transform: translateX(20px); }
                             }
-                            @keyframes flee14 {
-                                0% { transform: translateX(-30px); opacity: 1; }
-                                65% { transform: translateX(50px); opacity: 1; }
-                                75% { transform: translateX(60px) scale(0.2); opacity: 0; }
-                                100% { transform: translateX(60px) scale(0); opacity: 0; }
+                            @keyframes chomp-basic {
+                                0%, 100% { border-right-color: transparent; }
+                                50% { border-right-color: #ef4444; }
                             }
-                            @keyframes eatCookie {
-                                0%, 30% { opacity: 1; }
-                                35%, 100% { opacity: 0; }
-                            }
-                            @keyframes chomp-upper {
-                                0% { transform: rotate(0deg); }
-                                100% { transform: rotate(-40deg); }
-                            }
-                            @keyframes chomp-lower {
-                                0% { transform: rotate(0deg); }
-                                100% { transform: rotate(40deg); }
-                            }
-                            
-                            .stage {
+                            .loader-row {
                                 display: flex;
-                                align-items: center;
                                 justify-content: center;
-                                height: 60px;
-                                position: relative;
-                                overflow: hidden;
-                            }
-                            .character-13 {
-                                display: flex;
                                 align-items: center;
-                                font-size: 42px;
-                                font-weight: 900;
-                                color: #ef4444;
-                                font-family: 'Impact', sans-serif;
-                                animation: chase13 3s infinite linear;
-                                position: absolute;
-                                z-index: 2;
+                                gap: 15px;
+                                animation: wobble 1.5s infinite alternate ease-in-out;
+                                margin-bottom: 15px;
                             }
-                            .pacman {
-                                position: relative;
-                                width: 30px; height: 30px;
-                                margin-left: 8px;
-                            }
-                            .pacman::before, .pacman::after {
-                                content: '';
-                                position: absolute;
+                            .pac-body {
                                 width: 0; height: 0;
-                                border: 15px solid #ef4444;
+                                border: 20px solid #ef4444;
+                                border-right: 20px solid transparent;
                                 border-radius: 50%;
-                                border-right-color: transparent;
-                            }
-                            .pacman::before { animation: chomp-upper 0.3s infinite alternate linear; }
-                            .pacman::after { animation: chomp-lower 0.3s infinite alternate linear; }
-                            
-                            .victim-14 {
-                                font-size: 32px;
-                                font-weight: 900;
-                                color: #3b82f6;
-                                font-family: 'Impact', sans-serif;
-                                animation: flee14 3s infinite linear;
-                                position: absolute;
-                                z-index: 1;
-                            }
-                            .cookie-dot {
-                                font-size: 20px;
-                                position: absolute;
-                                animation: eatCookie 3s infinite linear;
-                            }
-                            .loading-text-new {
-                                position: absolute;
-                                bottom: 10px;
-                                width: 100%;
-                                left: 0;
-                                color: #cbd5e1;
-                                font-size: 15px;
-                                font-weight: 600;
-                                font-family: system-ui, sans-serif;
-                                text-align: center;
+                                animation: chomp-basic 0.3s infinite;
                             }
                         </style>
-                        <div class="stage">
-                            <div class="character-13">13 <div class="pacman"></div></div>
-                            <div class="cookie-dot" style="left: 35%;">🍪</div>
-                            <div class="cookie-dot" style="left: 50%;">🍪</div>
-                            <div class="victim-14">14 😱</div>
+                        <div class="loader-row">
+                            <span style="color: #ef4444; font-size: 35px; font-weight: 900; font-family: 'Impact', sans-serif;">13</span>
+                            <div class="pac-body"></div>
+                            <span style="font-size: 25px;">🍪 🍪</span>
+                            <span style="color: #3b82f6; font-size: 30px; font-weight: 900; font-family: 'Impact', sans-serif;">14 😱</span>
                         </div>
-                        <div class="loading-text-new">13 is chomping on cookies & chasing down 14 while Gemini analyzes your transcripts...</div>
+                        <div style="color: #cbd5e1; font-size: 16px; font-weight: 600; font-family: system-ui, sans-serif;">
+                            13 is chomping on cookies & chasing down 14 while Gemini thinks...
+                        </div>
                     </div>
                     """, unsafe_allow_html=True)
                     
@@ -825,99 +767,41 @@ else:
             if st.button("🚀 Run Batch AI Analysis"):
                 loader_placeholder = st.empty()
                 loader_placeholder.markdown("""
-                <div style="background-color: #0f172a; padding: 15px; border-radius: 12px; border: 2px dashed #ef4444; margin-bottom: 15px; position: relative; overflow: hidden; height: 130px;">
+                <div style="background-color: #0f172a; padding: 20px; border-radius: 12px; border: 2px dashed #ef4444; text-align: center; margin-bottom: 15px;">
                     <style>
-                        @keyframes chase13 {
-                            0% { transform: translateX(-120px); }
-                            100% { transform: translateX(120px); }
+                        @keyframes wobble {
+                            0% { transform: translateX(-20px); }
+                            100% { transform: translateX(20px); }
                         }
-                        @keyframes flee14 {
-                            0% { transform: translateX(-30px); opacity: 1; }
-                            65% { transform: translateX(50px); opacity: 1; }
-                            75% { transform: translateX(60px) scale(0.2); opacity: 0; }
-                            100% { transform: translateX(60px) scale(0); opacity: 0; }
+                        @keyframes chomp-basic {
+                            0%, 100% { border-right-color: transparent; }
+                            50% { border-right-color: #ef4444; }
                         }
-                        @keyframes eatCookie {
-                            0%, 30% { opacity: 1; }
-                            35%, 100% { opacity: 0; }
-                        }
-                        @keyframes chomp-upper {
-                            0% { transform: rotate(0deg); }
-                            100% { transform: rotate(-40deg); }
-                        }
-                        @keyframes chomp-lower {
-                            0% { transform: rotate(0deg); }
-                            100% { transform: rotate(40deg); }
-                        }
-                        
-                        .stage {
+                        .loader-row {
                             display: flex;
-                            align-items: center;
                             justify-content: center;
-                            height: 60px;
-                            position: relative;
-                            overflow: hidden;
-                        }
-                        .character-13 {
-                            display: flex;
                             align-items: center;
-                            font-size: 42px;
-                            font-weight: 900;
-                            color: #ef4444;
-                            font-family: 'Impact', sans-serif;
-                            animation: chase13 3s infinite linear;
-                            position: absolute;
-                            z-index: 2;
+                            gap: 15px;
+                            animation: wobble 1.5s infinite alternate ease-in-out;
+                            margin-bottom: 15px;
                         }
-                        .pacman {
-                            position: relative;
-                            width: 30px; height: 30px;
-                            margin-left: 8px;
-                        }
-                        .pacman::before, .pacman::after {
-                            content: '';
-                            position: absolute;
+                        .pac-body {
                             width: 0; height: 0;
-                            border: 15px solid #ef4444;
+                            border: 20px solid #ef4444;
+                            border-right: 20px solid transparent;
                             border-radius: 50%;
-                            border-right-color: transparent;
-                        }
-                        .pacman::before { animation: chomp-upper 0.3s infinite alternate linear; }
-                        .pacman::after { animation: chomp-lower 0.3s infinite alternate linear; }
-                        
-                        .victim-14 {
-                            font-size: 32px;
-                            font-weight: 900;
-                            color: #3b82f6;
-                            font-family: 'Impact', sans-serif;
-                            animation: flee14 3s infinite linear;
-                            position: absolute;
-                            z-index: 1;
-                        }
-                        .cookie-dot {
-                            font-size: 20px;
-                            position: absolute;
-                            animation: eatCookie 3s infinite linear;
-                        }
-                        .loading-text-new {
-                            position: absolute;
-                            bottom: 10px;
-                            width: 100%;
-                            left: 0;
-                            color: #cbd5e1;
-                            font-size: 15px;
-                            font-weight: 600;
-                            font-family: system-ui, sans-serif;
-                            text-align: center;
+                            animation: chomp-basic 0.3s infinite;
                         }
                     </style>
-                    <div class="stage">
-                        <div class="character-13">13 <div class="pacman"></div></div>
-                        <div class="cookie-dot" style="left: 35%;">🍪</div>
-                        <div class="cookie-dot" style="left: 50%;">🍪</div>
-                        <div class="victim-14">14 😱</div>
+                    <div class="loader-row">
+                        <span style="color: #ef4444; font-size: 35px; font-weight: 900; font-family: 'Impact', sans-serif;">13</span>
+                        <div class="pac-body"></div>
+                        <span style="font-size: 25px;">🍪 🍪</span>
+                        <span style="color: #3b82f6; font-size: 30px; font-weight: 900; font-family: 'Impact', sans-serif;">14 😱</span>
                     </div>
-                    <div class="loading-text-new">13 is chomping on cookies & chasing down 14 while Gemini analyzes your transcripts...</div>
+                    <div style="color: #cbd5e1; font-size: 16px; font-weight: 600; font-family: system-ui, sans-serif;">
+                        13 is chomping on cookies & chasing down 14 while Gemini thinks...
+                    </div>
                 </div>
                 """, unsafe_allow_html=True)
                 
@@ -1125,7 +1009,6 @@ else:
                         </div>
                         """, unsafe_allow_html=True)
 
-                    
                     st.divider()
                     
                     # --- COMPETITORS & FULL DATABASE ---
