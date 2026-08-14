@@ -690,56 +690,78 @@ else:
                     loader_placeholder.markdown("""
                     <div style="background-color: #0f172a; padding: 15px; border-radius: 12px; border: 2px dashed #ef4444; margin-bottom: 15px; position: relative; overflow: hidden; height: 130px;">
                         <style>
-                            @keyframes chomp13 {
-                                0%, 100% { transform: scale(1) rotate(0deg); }
-                                50% { transform: scale(1.1) rotate(-15deg); }
+                            @keyframes chase13 {
+                                0% { transform: translateX(-120px); }
+                                100% { transform: translateX(120px); }
                             }
-                            @keyframes move13 { 
-                                0% { left: -10%; } 
-                                100% { left: 110%; } 
+                            @keyframes flee14 {
+                                0% { transform: translateX(-30px); opacity: 1; }
+                                65% { transform: translateX(50px); opacity: 1; }
+                                75% { transform: translateX(60px) scale(0.2); opacity: 0; }
+                                100% { transform: translateX(60px) scale(0); opacity: 0; }
                             }
-                            @keyframes move14 { 
-                                0% { left: 40%; opacity: 1; transform: scale(1); } 
-                                58% { left: 61%; opacity: 1; transform: scale(1); } 
-                                62% { left: 63%; opacity: 0; transform: scale(0.2) rotate(45deg); } 
-                                100% { left: 63%; opacity: 0; transform: scale(0); } 
+                            @keyframes eatCookie {
+                                0%, 30% { opacity: 1; }
+                                35%, 100% { opacity: 0; }
                             }
-                            @keyframes hideC1 { 0%, 19% { opacity: 1; transform: scale(1); } 20%, 100% { opacity: 0; transform: scale(0); } }
-                            @keyframes hideC2 { 0%, 39% { opacity: 1; transform: scale(1); } 40%, 100% { opacity: 0; transform: scale(0); } }
+                            @keyframes chomp-upper {
+                                0% { transform: rotate(0deg); }
+                                100% { transform: rotate(-40deg); }
+                            }
+                            @keyframes chomp-lower {
+                                0% { transform: rotate(0deg); }
+                                100% { transform: rotate(40deg); }
+                            }
                             
-                            .pac-13 {
-                                position: absolute;
-                                top: 25px;
-                                font-size: 45px;
+                            .stage {
+                                display: flex;
+                                align-items: center;
+                                justify-content: center;
+                                height: 60px;
+                                position: relative;
+                                overflow: hidden;
+                            }
+                            .character-13 {
+                                display: flex;
+                                align-items: center;
+                                font-size: 42px;
                                 font-weight: 900;
                                 color: #ef4444;
                                 font-family: 'Impact', sans-serif;
-                                animation: move13 3s infinite linear;
-                                z-index: 10;
-                            }
-                            .pac-13-inner {
-                                display: inline-block;
-                                animation: chomp13 0.3s infinite alternate;
-                                text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
-                            }
-                            .ghost-14 {
+                                animation: chase13 3s infinite linear;
                                 position: absolute;
-                                top: 30px;
-                                font-size: 35px;
+                                z-index: 2;
+                            }
+                            .pacman {
+                                position: relative;
+                                width: 30px; height: 30px;
+                                margin-left: 8px;
+                            }
+                            .pacman::before, .pacman::after {
+                                content: '';
+                                position: absolute;
+                                width: 0; height: 0;
+                                border: 15px solid #ef4444;
+                                border-radius: 50%;
+                                border-right-color: transparent;
+                            }
+                            .pacman::before { animation: chomp-upper 0.3s infinite alternate linear; }
+                            .pacman::after { animation: chomp-lower 0.3s infinite alternate linear; }
+                            
+                            .victim-14 {
+                                font-size: 32px;
                                 font-weight: 900;
                                 color: #3b82f6;
                                 font-family: 'Impact', sans-serif;
-                                animation: move14 3s infinite linear;
-                                text-shadow: 1px 1px 3px rgba(0,0,0,0.5);
-                            }
-                            .cookie {
+                                animation: flee14 3s infinite linear;
                                 position: absolute;
-                                top: 40px;
-                                font-size: 24px;
+                                z-index: 1;
                             }
-                            .c1 { left: 14%; animation: hideC1 3s infinite linear; }
-                            .c2 { left: 38%; animation: hideC2 3s infinite linear; }
-                            
+                            .cookie-dot {
+                                font-size: 20px;
+                                position: absolute;
+                                animation: eatCookie 3s infinite linear;
+                            }
                             .loading-text-new {
                                 position: absolute;
                                 bottom: 10px;
@@ -752,13 +774,13 @@ else:
                                 text-align: center;
                             }
                         </style>
-                        
-                        <div class="pac-13"><div class="pac-13-inner">13</div></div>
-                        <div class="cookie c1">🍪</div>
-                        <div class="cookie c2">🍪</div>
-                        <div class="ghost-14">14 🏃‍♂️</div>
-                        
-                        <div class="loading-text-new">13 is munching on 14 while Gemini analyzes your transcripts...</div>
+                        <div class="stage">
+                            <div class="character-13">13 <div class="pacman"></div></div>
+                            <div class="cookie-dot" style="left: 35%;">🍪</div>
+                            <div class="cookie-dot" style="left: 50%;">🍪</div>
+                            <div class="victim-14">14 😱</div>
+                        </div>
+                        <div class="loading-text-new">13 is chomping on cookies & chasing down 14 while Gemini analyzes your transcripts...</div>
                     </div>
                     """, unsafe_allow_html=True)
                     
@@ -801,228 +823,326 @@ else:
             st.warning("Please select a valid folder with transcripts in the sidebar.")
         else:
             if st.button("🚀 Run Batch AI Analysis"):
-                with st.spinner("Gemini is analyzing calls... (this may take up to 30 seconds depending on volume)"):
-                    try:
-                        model = genai.GenerativeModel('gemini-3.1-flash-lite')
+                loader_placeholder = st.empty()
+                loader_placeholder.markdown("""
+                <div style="background-color: #0f172a; padding: 15px; border-radius: 12px; border: 2px dashed #ef4444; margin-bottom: 15px; position: relative; overflow: hidden; height: 130px;">
+                    <style>
+                        @keyframes chase13 {
+                            0% { transform: translateX(-120px); }
+                            100% { transform: translateX(120px); }
+                        }
+                        @keyframes flee14 {
+                            0% { transform: translateX(-30px); opacity: 1; }
+                            65% { transform: translateX(50px); opacity: 1; }
+                            75% { transform: translateX(60px) scale(0.2); opacity: 0; }
+                            100% { transform: translateX(60px) scale(0); opacity: 0; }
+                        }
+                        @keyframes eatCookie {
+                            0%, 30% { opacity: 1; }
+                            35%, 100% { opacity: 0; }
+                        }
+                        @keyframes chomp-upper {
+                            0% { transform: rotate(0deg); }
+                            100% { transform: rotate(-40deg); }
+                        }
+                        @keyframes chomp-lower {
+                            0% { transform: rotate(0deg); }
+                            100% { transform: rotate(40deg); }
+                        }
                         
-                        prompt = f"""
-                        You are a strict QA API analyzing call transcripts. Read all the transcripts provided.
-                        You MUST return a valid JSON array of objects. 
+                        .stage {
+                            display: flex;
+                            align-items: center;
+                            justify-content: center;
+                            height: 60px;
+                            position: relative;
+                            overflow: hidden;
+                        }
+                        .character-13 {
+                            display: flex;
+                            align-items: center;
+                            font-size: 42px;
+                            font-weight: 900;
+                            color: #ef4444;
+                            font-family: 'Impact', sans-serif;
+                            animation: chase13 3s infinite linear;
+                            position: absolute;
+                            z-index: 2;
+                        }
+                        .pacman {
+                            position: relative;
+                            width: 30px; height: 30px;
+                            margin-left: 8px;
+                        }
+                        .pacman::before, .pacman::after {
+                            content: '';
+                            position: absolute;
+                            width: 0; height: 0;
+                            border: 15px solid #ef4444;
+                            border-radius: 50%;
+                            border-right-color: transparent;
+                        }
+                        .pacman::before { animation: chomp-upper 0.3s infinite alternate linear; }
+                        .pacman::after { animation: chomp-lower 0.3s infinite alternate linear; }
                         
-                        Each object must represent a single transcript and have EXACTLY these keys:
-                        "File Name": (The name of the transcript file)
-                        "Primary Topic": (Choose ONE: Cancellation, Product Question, Billing, Angry Customer, Upsell, General Inquiry, or Other)
-                        "Sentiment": (Choose ONE: Positive, Neutral, or Negative)
-                        "Success Story Asked": (Set to "Yes" if the agent explicitly asked the customer to share a success story or positive health experience with the product, otherwise "No")
-                        "Cancellation Reason": (The specific reason they canceled. Set to "N/A" if they did not cancel)
-                        "Compliance Violation": (Set to "Yes" if the agent made unapproved health/medical claims treating or curing diseases, otherwise "No")
-                        "Products Mentioned": (A comma-separated list of Balance of Nature products mentioned. Example: "Fruits, Veggies, Fiber & Spice". If none, write "None")
-                        "Competitors Mentioned": (A comma-separated list of competitor products/brands mentioned. If none, write "None")
-                        "Summary": (A 1-sentence summary of the call)
+                        .victim-14 {
+                            font-size: 32px;
+                            font-weight: 900;
+                            color: #3b82f6;
+                            font-family: 'Impact', sans-serif;
+                            animation: flee14 3s infinite linear;
+                            position: absolute;
+                            z-index: 1;
+                        }
+                        .cookie-dot {
+                            font-size: 20px;
+                            position: absolute;
+                            animation: eatCookie 3s infinite linear;
+                        }
+                        .loading-text-new {
+                            position: absolute;
+                            bottom: 10px;
+                            width: 100%;
+                            left: 0;
+                            color: #cbd5e1;
+                            font-size: 15px;
+                            font-weight: 600;
+                            font-family: system-ui, sans-serif;
+                            text-align: center;
+                        }
+                    </style>
+                    <div class="stage">
+                        <div class="character-13">13 <div class="pacman"></div></div>
+                        <div class="cookie-dot" style="left: 35%;">🍪</div>
+                        <div class="cookie-dot" style="left: 50%;">🍪</div>
+                        <div class="victim-14">14 😱</div>
+                    </div>
+                    <div class="loading-text-new">13 is chomping on cookies & chasing down 14 while Gemini analyzes your transcripts...</div>
+                </div>
+                """, unsafe_allow_html=True)
+                
+                try:
+                    model = genai.GenerativeModel('gemini-3.1-flash-lite')
+                    
+                    prompt = f"""
+                    You are a strict QA API analyzing call transcripts. Read all the transcripts provided.
+                    You MUST return a valid JSON array of objects. 
+                    
+                    Each object must represent a single transcript and have EXACTLY these keys:
+                    "File Name": (The name of the transcript file)
+                    "Primary Topic": (Choose ONE: Cancellation, Product Question, Billing, Angry Customer, Upsell, General Inquiry, or Other)
+                    "Sentiment": (Choose ONE: Positive, Neutral, or Negative)
+                    "Success Story Asked": (Set to "Yes" if the agent explicitly asked the customer to share a success story or positive health experience with the product, otherwise "No")
+                    "Cancellation Reason": (The specific reason they canceled. Set to "N/A" if they did not cancel)
+                    "Compliance Violation": (Set to "Yes" if the agent made unapproved health/medical claims treating or curing diseases, otherwise "No")
+                    "Products Mentioned": (A comma-separated list of Balance of Nature products mentioned. Example: "Fruits, Veggies, Fiber & Spice". If none, write "None")
+                    "Competitors Mentioned": (A comma-separated list of competitor products/brands mentioned. If none, write "None")
+                    "Summary": (A 1-sentence summary of the call)
+                    
+                    Transcripts:
+                    {transcripts_data}
+                    """
+                    
+                    response = model.generate_content(
+                        prompt, 
+                        generation_config={"response_mime_type": "application/json"}
+                    )
+                    
+                    json_data = json.loads(response.text)
+                    df_tags = pd.DataFrame(json_data)
+                    
+                    loader_placeholder.empty()
+                    st.success("✅ Analysis Complete!")
+                    
+                    # --- TOP METRIC CARDS ---
+                    m1, m2, m3 = st.columns(3)
+                    with m1:
+                        success_count = len(df_tags[df_tags['Success Story Asked'].astype(str).str.upper() == 'YES'])
+                        st.metric("🌟 Success Stories Asked", success_count)
+                    with m2:
+                        comp_viol = len(df_tags[df_tags['Compliance Violation'].astype(str).str.upper() == 'YES'])
+                        st.metric("🚨 Compliance Violations", comp_viol)
+                    with m3:
+                        cancellations = len(df_tags[df_tags['Primary Topic'] == 'Cancellation'])
+                        st.metric("❌ Total Cancellations", cancellations)
                         
-                        Transcripts:
-                        {transcripts_data}
-                        """
+                    st.divider()
+
+                    # --- RADAR & BOTTLE CHARTS ROW ---
+                    col_chart1, col_chart2 = st.columns([1.5, 1.5])
+                    
+                    with col_chart1:
+                        st.markdown("**Radar Breakdown: Call Topics**")
+                        all_topics = ["Cancellation", "Product Question", "Billing", "Angry Customer", "Upsell", "General Inquiry", "Other"]
+                        topic_counts = df_tags['Primary Topic'].value_counts()
+                        for topic in all_topics:
+                            if topic not in topic_counts:
+                                topic_counts[topic] = 0
+                        topic_counts = topic_counts.reset_index()
+                        topic_counts.columns = ['Topic', 'Count']
                         
-                        response = model.generate_content(
-                            prompt, 
-                            generation_config={"response_mime_type": "application/json"}
+                        fig = px.line_polar(
+                            topic_counts, 
+                            r='Count', 
+                            theta='Topic', 
+                            line_close=True,
+                            color_discrete_sequence=['#3b82f6']
                         )
+                        fig.update_traces(fill='toself', fillcolor='rgba(59, 130, 246, 0.4)')
+                        fig.update_layout(
+                            polar=dict(
+                                radialaxis=dict(visible=True, tickfont=dict(color="gray")),
+                                angularaxis=dict(tickfont=dict(size=14))
+                            ),
+                            paper_bgcolor='rgba(0,0,0,0)',
+                            plot_bgcolor='rgba(0,0,0,0)',
+                            margin=dict(l=40, r=40, t=20, b=20)
+                        )
+                        st.plotly_chart(fig, use_container_width=True)
                         
-                        json_data = json.loads(response.text)
-                        df_tags = pd.DataFrame(json_data)
+                    with col_chart2:
+                        st.markdown("**Product Mentions (Share of Call Volume)**")
                         
-                        st.success("✅ Analysis Complete!")
+                        # Safely handle product mention strings
+                        total_calls = len(df_tags) if len(df_tags) > 0 else 1
+                        prod_str = " ".join(df_tags['Products Mentioned'].fillna("").astype(str).str.lower())
                         
-                        # --- TOP METRIC CARDS ---
-                        m1, m2, m3 = st.columns(3)
-                        with m1:
-                            success_count = len(df_tags[df_tags['Success Story Asked'].astype(str).str.upper() == 'YES'])
-                            st.metric("🌟 Success Stories Asked", success_count)
-                        with m2:
-                            comp_viol = len(df_tags[df_tags['Compliance Violation'].astype(str).str.upper() == 'YES'])
-                            st.metric("🚨 Compliance Violations", comp_viol)
-                        with m3:
-                            cancellations = len(df_tags[df_tags['Primary Topic'] == 'Cancellation'])
-                            st.metric("❌ Total Cancellations", cancellations)
-                            
-                        st.divider()
-
-                        # --- RADAR & BOTTLE CHARTS ROW ---
-                        col_chart1, col_chart2 = st.columns([1.5, 1.5])
+                        f_count = len(df_tags[df_tags['Products Mentioned'].str.lower().str.contains('fruits', na=False)])
+                        v_count = len(df_tags[df_tags['Products Mentioned'].str.lower().str.contains('veggies', na=False)])
+                        fs_count = len(df_tags[df_tags['Products Mentioned'].str.lower().str.contains('fiber|spice', na=False)])
                         
-                        with col_chart1:
-                            st.markdown("**Radar Breakdown: Call Topics**")
-                            all_topics = ["Cancellation", "Product Question", "Billing", "Angry Customer", "Upsell", "General Inquiry", "Other"]
-                            topic_counts = df_tags['Primary Topic'].value_counts()
-                            for topic in all_topics:
-                                if topic not in topic_counts:
-                                    topic_counts[topic] = 0
-                            topic_counts = topic_counts.reset_index()
-                            topic_counts.columns = ['Topic', 'Count']
+                        f_pct = min(int((f_count / total_calls) * 100), 100)
+                        v_pct = min(int((v_count / total_calls) * 100), 100)
+                        fs_pct = min(int((fs_count / total_calls) * 100), 100)
+                        
+                        st.markdown(f"""
+                        <style>
+                            .supplement-shelf {{
+                                display: flex;
+                                justify-content: space-evenly;
+                                align-items: flex-end;
+                                height: 240px;
+                                margin-top: 20px;
+                                padding-bottom: 10px;
+                                border-bottom: 4px solid #e2e8f0;
+                            }}
+                            .btl-container {{
+                                display: flex;
+                                flex-direction: column;
+                                align-items: center;
+                                cursor: pointer;
+                                transition: transform 0.2s;
+                            }}
+                            .btl-container:hover {{
+                                transform: translateY(-5px);
+                            }}
                             
-                            fig = px.line_polar(
-                                topic_counts, 
-                                r='Count', 
-                                theta='Topic', 
-                                line_close=True,
-                                color_discrete_sequence=['#3b82f6']
-                            )
-                            fig.update_traces(fill='toself', fillcolor='rgba(59, 130, 246, 0.4)')
-                            fig.update_layout(
-                                polar=dict(
-                                    radialaxis=dict(visible=True, tickfont=dict(color="gray")),
-                                    angularaxis=dict(tickfont=dict(size=14))
-                                ),
-                                paper_bgcolor='rgba(0,0,0,0)',
-                                plot_bgcolor='rgba(0,0,0,0)',
-                                margin=dict(l=40, r=40, t=20, b=20)
-                            )
-                            st.plotly_chart(fig, use_container_width=True)
+                            /* CAPS */
+                            .cap-small {{
+                                width: 50px; height: 16px;
+                                border-radius: 4px 4px 0 0;
+                                margin-bottom: -2px;
+                                z-index: 2;
+                                background-image: repeating-linear-gradient(90deg, transparent, transparent 2px, rgba(0,0,0,0.1) 2px, rgba(0,0,0,0.1) 4px);
+                            }}
+                            .cap-large {{
+                                width: 110px; height: 20px;
+                                border-radius: 4px 4px 0 0;
+                                margin-bottom: -2px;
+                                z-index: 2;
+                                background-image: repeating-linear-gradient(90deg, transparent, transparent 2px, rgba(0,0,0,0.1) 2px, rgba(0,0,0,0.1) 4px);
+                            }}
                             
-                        with col_chart2:
-                            st.markdown("**Product Mentions (Share of Call Volume)**")
+                            /* BODIES */
+                            .body-small {{
+                                width: 66px; height: 110px;
+                                border-radius: 12px 12px 8px 8px;
+                                position: relative;
+                                overflow: hidden;
+                                background: #f8f9fa;
+                                border: 3px solid;
+                                box-shadow: inset -5px 0px 10px rgba(0,0,0,0.1);
+                            }}
+                            .body-large {{
+                                width: 120px; height: 170px;
+                                border-radius: 12px 12px 8px 8px;
+                                position: relative;
+                                overflow: hidden;
+                                background: #f8f9fa;
+                                border: 3px solid;
+                                box-shadow: inset -8px 0px 15px rgba(0,0,0,0.1);
+                            }}
                             
-                            # Safely handle product mention strings
-                            total_calls = len(df_tags) if len(df_tags) > 0 else 1
-                            prod_str = " ".join(df_tags['Products Mentioned'].fillna("").astype(str).str.lower())
+                            /* COLORS */
+                            .f-color {{ border-color: #dc2626; background-color: #ef4444; }}
+                            .v-color {{ border-color: #059669; background-color: #10b981; }}
+                            .fs-color {{ border-color: #1d4ed8; background-color: #2563eb; }}
                             
-                            f_count = len(df_tags[df_tags['Products Mentioned'].str.lower().str.contains('fruits', na=False)])
-                            v_count = len(df_tags[df_tags['Products Mentioned'].str.lower().str.contains('veggies', na=False)])
-                            fs_count = len(df_tags[df_tags['Products Mentioned'].str.lower().str.contains('fiber|spice', na=False)])
+                            .fill-f {{ background: #dc2626; position: absolute; bottom: 0; width: 100%; transition: height 1.2s ease-out; opacity: 0.9; }}
+                            .fill-v {{ background: #059669; position: absolute; bottom: 0; width: 100%; transition: height 1.2s ease-out; opacity: 0.9; }}
+                            .fill-fs {{ background: #1d4ed8; position: absolute; bottom: 0; width: 100%; transition: height 1.2s ease-out; opacity: 0.9; }}
                             
-                            f_pct = min(int((f_count / total_calls) * 100), 100)
-                            v_pct = min(int((v_count / total_calls) * 100), 100)
-                            fs_pct = min(int((fs_count / total_calls) * 100), 100)
-                            
-                            # CSS updated to level bottoms on a "shelf" and match relative real-world sizing
-                            st.markdown(f"""
-                            <style>
-                                .supplement-shelf {{
-                                    display: flex;
-                                    justify-content: space-evenly;
-                                    align-items: flex-end;
-                                    height: 240px;
-                                    margin-top: 20px;
-                                    padding-bottom: 10px;
-                                    border-bottom: 4px solid #e2e8f0;
-                                }}
-                                .btl-container {{
-                                    display: flex;
-                                    flex-direction: column;
-                                    align-items: center;
-                                    cursor: pointer;
-                                    transition: transform 0.2s;
-                                }}
-                                .btl-container:hover {{
-                                    transform: translateY(-5px);
-                                }}
-                                
-                                /* CAPS */
-                                .cap-small {{
-                                    width: 50px; height: 16px;
-                                    border-radius: 4px 4px 0 0;
-                                    margin-bottom: -2px;
-                                    z-index: 2;
-                                    background-image: repeating-linear-gradient(90deg, transparent, transparent 2px, rgba(0,0,0,0.1) 2px, rgba(0,0,0,0.1) 4px);
-                                }}
-                                .cap-large {{
-                                    width: 110px; height: 20px;
-                                    border-radius: 4px 4px 0 0;
-                                    margin-bottom: -2px;
-                                    z-index: 2;
-                                    background-image: repeating-linear-gradient(90deg, transparent, transparent 2px, rgba(0,0,0,0.1) 2px, rgba(0,0,0,0.1) 4px);
-                                }}
-                                
-                                /* BODIES */
-                                .body-small {{
-                                    width: 66px; height: 110px;
-                                    border-radius: 12px 12px 8px 8px;
-                                    position: relative;
-                                    overflow: hidden;
-                                    background: #f8f9fa;
-                                    border: 3px solid;
-                                    box-shadow: inset -5px 0px 10px rgba(0,0,0,0.1);
-                                }}
-                                .body-large {{
-                                    width: 120px; height: 170px;
-                                    border-radius: 12px 12px 8px 8px;
-                                    position: relative;
-                                    overflow: hidden;
-                                    background: #f8f9fa;
-                                    border: 3px solid;
-                                    box-shadow: inset -8px 0px 15px rgba(0,0,0,0.1);
-                                }}
-                                
-                                /* COLORS */
-                                .f-color {{ border-color: #dc2626; background-color: #ef4444; }}
-                                .v-color {{ border-color: #059669; background-color: #10b981; }}
-                                .fs-color {{ border-color: #1d4ed8; background-color: #2563eb; }}
-                                
-                                .fill-f {{ background: #dc2626; position: absolute; bottom: 0; width: 100%; transition: height 1.2s ease-out; opacity: 0.9; }}
-                                .fill-v {{ background: #059669; position: absolute; bottom: 0; width: 100%; transition: height 1.2s ease-out; opacity: 0.9; }}
-                                .fill-fs {{ background: #1d4ed8; position: absolute; bottom: 0; width: 100%; transition: height 1.2s ease-out; opacity: 0.9; }}
-                                
-                                /* TEXT */
-                                .pct-val {{
-                                    position: absolute;
-                                    width: 100%; top: 40%;
-                                    text-align: center;
-                                    font-size: 18px; font-weight: 900;
-                                    color: #1e293b; z-index: 10;
-                                    text-shadow: 0px 0px 6px rgba(255,255,255,0.9), 0px 0px 6px rgba(255,255,255,0.9);
-                                }}
-                                .btl-label {{
-                                    font-weight: 800; font-size: 14px;
-                                    color: #475569; margin-top: 8px;
-                                }}
-                            </style>
-                            
-                            <div class="supplement-shelf">
-                                <div class="btl-container" title="Mentioned in {f_count} out of {total_calls} calls">
-                                    <div class="cap-small f-color"></div>
-                                    <div class="body-small" style="border-color: #dc2626;">
-                                        <div class="pct-val">{f_pct}%</div>
-                                        <div class="fill-f" style="height: {f_pct}%;"></div>
-                                    </div>
-                                    <div class="btl-label">Fruits</div>
+                            /* TEXT */
+                            .pct-val {{
+                                position: absolute;
+                                width: 100%; top: 40%;
+                                text-align: center;
+                                font-size: 18px; font-weight: 900;
+                                color: #1e293b; z-index: 10;
+                                text-shadow: 0px 0px 6px rgba(255,255,255,0.9), 0px 0px 6px rgba(255,255,255,0.9);
+                            }}
+                            .btl-label {{
+                                font-weight: 800; font-size: 14px;
+                                color: #475569; margin-top: 8px;
+                            }}
+                        </style>
+                        
+                        <div class="supplement-shelf">
+                            <div class="btl-container" title="Mentioned in {f_count} out of {total_calls} calls">
+                                <div class="cap-small f-color"></div>
+                                <div class="body-small" style="border-color: #dc2626;">
+                                    <div class="pct-val">{f_pct}%</div>
+                                    <div class="fill-f" style="height: {f_pct}%;"></div>
                                 </div>
-                                <div class="btl-container" title="Mentioned in {v_count} out of {total_calls} calls">
-                                    <div class="cap-small v-color"></div>
-                                    <div class="body-small" style="border-color: #059669;">
-                                        <div class="pct-val">{v_pct}%</div>
-                                        <div class="fill-v" style="height: {v_pct}%;"></div>
-                                    </div>
-                                    <div class="btl-label">Veggies</div>
-                                </div>
-                                <div class="btl-container" title="Mentioned in {fs_count} out of {total_calls} calls">
-                                    <div class="cap-large fs-color"></div>
-                                    <div class="body-large" style="border-color: #1d4ed8;">
-                                        <div class="pct-val">{fs_pct}%</div>
-                                        <div class="fill-fs" style="height: {fs_pct}%;"></div>
-                                    </div>
-                                    <div class="btl-label">Fiber & Spice</div>
-                                </div>
+                                <div class="btl-label">Fruits</div>
                             </div>
-                            """, unsafe_allow_html=True)
+                            <div class="btl-container" title="Mentioned in {v_count} out of {total_calls} calls">
+                                <div class="cap-small v-color"></div>
+                                <div class="body-small" style="border-color: #059669;">
+                                    <div class="pct-val">{v_pct}%</div>
+                                    <div class="fill-v" style="height: {v_pct}%;"></div>
+                                </div>
+                                <div class="btl-label">Veggies</div>
+                            </div>
+                            <div class="btl-container" title="Mentioned in {fs_count} out of {total_calls} calls">
+                                <div class="cap-large fs-color"></div>
+                                <div class="body-large" style="border-color: #1d4ed8;">
+                                    <div class="pct-val">{fs_pct}%</div>
+                                    <div class="fill-fs" style="height: {fs_pct}%;"></div>
+                                </div>
+                                <div class="btl-label">Fiber & Spice</div>
+                            </div>
+                        </div>
+                        """, unsafe_allow_html=True)
 
+                    
+                    st.divider()
+                    
+                    # --- COMPETITORS & FULL DATABASE ---
+                    st.markdown("### ⚠️ Competitor Threat Board")
+                    comps_list = df_tags['Competitors Mentioned'].dropna().astype(str).tolist()
+                    found_comps = [c.strip() for items in comps_list for c in items.split(',') if c.strip().lower() != 'none']
+                    
+                    if found_comps:
+                        comp_counts = pd.Series(found_comps).value_counts().reset_index()
+                        comp_counts.columns = ['Competitor', 'Mentions']
+                        st.dataframe(comp_counts, use_container_width=False)
+                    else:
+                        st.info("No competitors were mentioned in this batch of calls! 🎉")
                         
-                        st.divider()
-                        
-                        # --- COMPETITORS & FULL DATABASE ---
-                        st.markdown("### ⚠️ Competitor Threat Board")
-                        comps_list = df_tags['Competitors Mentioned'].dropna().astype(str).tolist()
-                        found_comps = [c.strip() for items in comps_list for c in items.split(',') if c.strip().lower() != 'none']
-                        
-                        if found_comps:
-                            comp_counts = pd.Series(found_comps).value_counts().reset_index()
-                            comp_counts.columns = ['Competitor', 'Mentions']
-                            st.dataframe(comp_counts, use_container_width=False)
-                        else:
-                            st.info("No competitors were mentioned in this batch of calls! 🎉")
-                            
-                        st.markdown("### 📝 Detailed Call Breakdown Database")
-                        st.dataframe(df_tags, use_container_width=True)
-                        
-                    except Exception as e:
-                        st.error(f"Failed to process analysis. The AI may have struggled to format the JSON. Error: {e}")
+                    st.markdown("### 📝 Detailed Call Breakdown Database")
+                    st.dataframe(df_tags, use_container_width=True)
+                    
+                except Exception as e:
+                    loader_placeholder.empty()
+                    st.error(f"Failed to process analysis. The AI may have struggled to format the JSON. Error: {e}")
