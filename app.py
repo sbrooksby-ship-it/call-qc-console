@@ -22,21 +22,22 @@ st.markdown("""
     
     /* Sidebar Background */
     [data-testid="stSidebar"] {
-        background-color: #f0fdf4 !important;
-        border-right: 1px solid #bbf7d0;
+        background-color: #f6fbf0 !important;
+        border-right: 1px solid #dcf0c3;
     }
     
     /* Global Buttons */
     .stButton>button {
-        background-color: #059669 !important;
+        background-color: #8CC63F !important;
         color: white !important;
         border: none !important;
         box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
         transition: all 0.2s;
         font-weight: 600 !important;
+        text-shadow: 0px 1px 2px rgba(0,0,0,0.2);
     }
     .stButton>button:hover {
-        background-color: #047857 !important;
+        background-color: #7ab82e !important;
         transform: translateY(-2px);
     }
     
@@ -46,7 +47,7 @@ st.markdown("""
         border: 1px solid #e2e8f0;
         padding: 5% 10% 5% 10%;
         border-radius: 8px;
-        border-top: 4px solid #059669;
+        border-top: 4px solid #8CC63F;
         box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1);
     }
     
@@ -66,9 +67,9 @@ st.markdown("""
         color: #334155;
     }
     div[data-testid="stRadio"] label:hover {
-        background-color: #f0fdf4;
-        border-color: #059669;
-        color: #059669;
+        background-color: #f6fbf0;
+        border-color: #8CC63F;
+        color: #7ab82e;
     }
     
     /* Print Styles */
@@ -97,9 +98,7 @@ st.markdown("""
 st.markdown("""
 <div style="text-align: center; margin-bottom: 25px; margin-top: -20px;">
     <h1 style="font-size: 3.5rem; margin-bottom: 0; font-family: 'Arial Black', Impact, sans-serif; letter-spacing: 2px;">
-        <span style="color: #059669;">BALANCE</span> 
-        <span style="color: #dc2626;">OF</span> 
-        <span style="color: #059669;">NATURE</span>
+        <span style="color: #111111;">BALANCE OF N</span><span style="color: #8CC63F;">A</span><span style="color: #111111;">TURE</span>
     </h1>
     <h3 style="color: #475569; margin-top: -10px; font-weight: 400; letter-spacing: 4px; font-size: 1.2rem;">CALL QC CONSOLE</h3>
 </div>
@@ -911,9 +910,9 @@ else:
                             r='Count', 
                             theta='Topic', 
                             line_close=True,
-                            color_discrete_sequence=['#059669']
+                            color_discrete_sequence=['#8CC63F']
                         )
-                        fig.update_traces(fill='toself', fillcolor='rgba(5, 150, 105, 0.4)')
+                        fig.update_traces(fill='toself', fillcolor='rgba(140, 198, 63, 0.4)')
                         fig.update_layout(
                             polar=dict(
                                 radialaxis=dict(visible=True, tickfont=dict(color="gray")),
