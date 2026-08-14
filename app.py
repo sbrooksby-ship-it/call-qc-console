@@ -24,6 +24,23 @@ st.markdown("""
         padding: 5% 10% 5% 10%;
         border-radius: 5px;
     }
+    /* Style for horizontal navigation radio buttons to look like tabs */
+    div[data-testid="stRadio"] > div {
+        flex-direction: row;
+        justify-content: flex-start;
+        gap: 10px;
+    }
+    div[data-testid="stRadio"] label {
+        background-color: #f1f5f9;
+        padding: 8px 16px;
+        border-radius: 8px;
+        border: 1px solid #cbd5e1;
+        cursor: pointer;
+        font-weight: 600;
+    }
+    div[data-testid="stRadio"] label:hover {
+        background-color: #e2e8f0;
+    }
     @media print {
         section[data-testid="stSidebar"] { display: none !important; }
         header[data-testid="stHeader"] { display: none !important; }
@@ -250,34 +267,21 @@ def generate_meter_bank(data_df, agent_filter):
     return pivot_df.style.background_gradient(cmap='RdYlGn', vmin=1, vmax=5).format("{:.1f}")
 
 # -------------------------------------------------------------------------
-# GLOBAL SIDEBAR & AI FOLDER SELECTION
+# TOP NAVIGATION (REPLACES ST.TABS FOR DYNAMIC SIDEBAR CONTROL)
 # -------------------------------------------------------------------------
-st.sidebar.header("3. AI Transcript Vault")
-subfolders = get_drive_subfolders(FOLDER_ID)
-folder_options = ["📁 All Transcripts (All Weeks)"] + [f"📅 {name}" for name in sorted(subfolders.keys())]
-selected_ai_folder = st.sidebar.selectbox("Select Week to Analyze:", folder_options)
+selected_tab = st.radio(
+    "Navigation",
+    ["📊 Performance Dashboard", "💬 AI Assistant", "🏷️ Tagging & Insights"],
+    horizontal=True,
+    label_visibility="collapsed"
+)
 
-if st.sidebar.button("🔄 Sync Drive Cache"):
-    st.cache_data.clear()
-    st.sidebar.success("Drive cache refreshed!")
-
-if selected_ai_folder == "📁 All Transcripts (All Weeks)":
-    active_target_id = FOLDER_ID
-else:
-    folder_name_clean = selected_ai_folder.replace("📅 ", "")
-    active_target_id = subfolders.get(folder_name_clean, FOLDER_ID)
-    
-transcripts_data = fetch_all_transcripts(active_target_id)
-
-# -------------------------------------------------------------------------
-# TABS SETUP
-# -------------------------------------------------------------------------
-tab_dashboard, tab_ai, tab_tagging = st.tabs(["📊 Performance Dashboard", "💬 AI Assistant", "🏷️ Tagging & Insights"])
+st.divider()
 
 # =========================================================================
 # TAB 1: QC DASHBOARD
 # =========================================================================
-with tab_dashboard:
+if selected_tab == "📊 Performance Dashboard":
     DEFAULT_MASTER_URL = "https://docs.google.com/spreadsheets/d/1-N0IJxjzrdM_mlmIn9QYMHj_PPMfOopP7CReYW5m5IQ/edit?gid=1001#gid=1001"
     DEFAULT_COACH_URL = "https://docs.google.com/spreadsheets/d/1-N0IJxjzrdM_mlmIn9QYMHj_PPMfOopP7CReYW5m5IQ/edit?gid=1002#gid=1002"
 
@@ -637,239 +641,251 @@ with tab_dashboard:
         st.info("👈 Please paste your Google Sheet Share Link(s) in the sidebar to load the dashboard.")
 
 # =========================================================================
-# TAB 2: AI CALL ASSISTANT
+# AI SIDEBAR & DATA LOADING (FOR AI ASSISTANT & TAGGING TABS)
 # =========================================================================
-with tab_ai:
-    st.header("💬 Gemini Call Transcript Intelligence")
-    st.markdown(f"Ask questions across the transcripts in your **{selected_ai_folder}** vault.")
-    
-    if "No transcript files found" in transcripts_data or "Error" in transcripts_data:
-        st.warning(transcripts_data)
+else:
+    st.sidebar.header("AI Transcript Vault")
+    subfolders = get_drive_subfolders(FOLDER_ID)
+    folder_options = ["📁 All Transcripts (All Weeks)"] + [f"📅 {name}" for name in sorted(subfolders.keys())]
+    selected_ai_folder = st.sidebar.selectbox("Select Week to Analyze:", folder_options)
+
+    if st.sidebar.button("🔄 Sync Drive Cache"):
+        st.cache_data.clear()
+        st.sidebar.success("Drive cache refreshed!")
+
+    if selected_ai_folder == "📁 All Transcripts (All Weeks)":
+        active_target_id = FOLDER_ID
     else:
-        st.success("🔒 Transcripts loaded securely into AI memory.")
+        folder_name_clean = selected_ai_folder.replace("📅 ", "")
+        active_target_id = subfolders.get(folder_name_clean, FOLDER_ID)
         
-        # Chat Interface
-        if "chat_history" not in st.session_state:
-            st.session_state.chat_history = []
+    transcripts_data = fetch_all_transcripts(active_target_id)
+
+    # =========================================================================
+    # TAB 2: AI CALL ASSISTANT
+    # =========================================================================
+    if selected_tab == "💬 AI Assistant":
+        st.header("💬 Gemini Call Transcript Intelligence")
+        st.markdown(f"Ask questions across the transcripts in your **{selected_ai_folder}** vault.")
+        
+        if "No transcript files found" in transcripts_data or "Error" in transcripts_data:
+            st.warning(transcripts_data)
+        else:
+            st.success("🔒 Transcripts loaded securely into AI memory.")
             
-        # Display past messages
-        for message in st.session_state.chat_history:
-            with st.chat_message(message["role"]):
-                st.markdown(message["content"])
+            if "chat_history" not in st.session_state:
+                st.session_state.chat_history = []
                 
-        # Handle User Input with Animated Pac-Man Style 13 vs 14
-        if user_prompt := st.chat_input("Ask a question about these call transcripts:"):
-            st.session_state.chat_history.append({"role": "user", "content": user_prompt})
-            with st.chat_message("user"):
-                st.markdown(user_prompt)
-                
-            with st.chat_message("assistant"):
-                loader_placeholder = st.empty()
-                loader_placeholder.markdown("""
-                <div style="background-color: #0f172a; padding: 15px; border-radius: 12px; border: 2px dashed #ef4444; margin-bottom: 15px; position: relative; overflow: hidden; height: 130px;">
-                    <style>
-                        @keyframes chomp13 {
-                            0%, 100% { transform: scale(1) rotate(0deg); }
-                            50% { transform: scale(1.1) rotate(-15deg); }
-                        }
-                        @keyframes move13 { 
-                            0% { left: -10%; } 
-                            100% { left: 110%; } 
-                        }
-                        @keyframes move14 { 
-                            0% { left: 40%; opacity: 1; transform: scale(1); } 
-                            58% { left: 61%; opacity: 1; transform: scale(1); } 
-                            62% { left: 63%; opacity: 0; transform: scale(0.2) rotate(45deg); } 
-                            100% { left: 63%; opacity: 0; transform: scale(0); } 
-                        }
-                        @keyframes hideC1 { 0%, 19% { opacity: 1; transform: scale(1); } 20%, 100% { opacity: 0; transform: scale(0); } }
-                        @keyframes hideC2 { 0%, 39% { opacity: 1; transform: scale(1); } 40%, 100% { opacity: 0; transform: scale(0); } }
-                        
-                        .pac-13 {
-                            position: absolute;
-                            top: 25px;
-                            font-size: 45px;
-                            font-weight: 900;
-                            color: #ef4444;
-                            font-family: 'Impact', sans-serif;
-                            animation: move13 3s infinite linear;
-                            z-index: 10;
-                        }
-                        .pac-13-inner {
-                            display: inline-block;
-                            animation: chomp13 0.3s infinite alternate;
-                            text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
-                        }
-                        .ghost-14 {
-                            position: absolute;
-                            top: 30px;
-                            font-size: 35px;
-                            font-weight: 900;
-                            color: #3b82f6;
-                            font-family: 'Impact', sans-serif;
-                            animation: move14 3s infinite linear;
-                            text-shadow: 1px 1px 3px rgba(0,0,0,0.5);
-                        }
-                        .cookie {
-                            position: absolute;
-                            top: 40px;
-                            font-size: 24px;
-                        }
-                        .c1 { left: 14%; animation: hideC1 3s infinite linear; }
-                        .c2 { left: 38%; animation: hideC2 3s infinite linear; }
-                        
-                        .loading-text-new {
-                            position: absolute;
-                            bottom: 10px;
-                            width: 100%;
-                            left: 0;
-                            color: #cbd5e1;
-                            font-size: 15px;
-                            font-weight: 600;
-                            font-family: system-ui, sans-serif;
-                            text-align: center;
-                        }
-                    </style>
+            for message in st.session_state.chat_history:
+                with st.chat_message(message["role"]):
+                    st.markdown(message["content"])
                     
-                    <div class="pac-13"><div class="pac-13-inner">13</div></div>
-                    <div class="cookie c1">🍪</div>
-                    <div class="cookie c2">🍪</div>
-                    <div class="ghost-14">14 🏃‍♂️</div>
+            if user_prompt := st.chat_input("Ask a question about these call transcripts:"):
+                st.session_state.chat_history.append({"role": "user", "content": user_prompt})
+                with st.chat_message("user"):
+                    st.markdown(user_prompt)
                     
-                    <div class="loading-text-new">13 is munching on 14 while Gemini analyzes your transcripts...</div>
-                </div>
-                """, unsafe_allow_html=True)
-                
-                try:
-                    model = genai.GenerativeModel('gemini-3.1-flash-lite')
-                    full_prompt = f"""
-                    You are an expert QA and Customer Service Analyst for Balance of Nature.
-                    Answer the manager's question accurately using ONLY the call transcripts provided below.
-                    If the information is not contained in the transcripts, clearly state that you do not have enough data.
-                    Be concise, objective, and highlight exact quotes or call examples when relevant.
-                    
-                    TRANSCRIPT DATABASE:
-                    {transcripts_data}
-                    
-                    MANAGER'S QUESTION:
-                    {user_prompt}
-                    """
-                    
-                    response = model.generate_content(full_prompt, stream=True)
-                    
-                    def stream_generator():
-                        loader_placeholder.empty()
-                        for chunk in response:
-                            yield chunk.text
-
-                    full_response = st.write_stream(stream_generator)
-                    st.session_state.chat_history.append({"role": "assistant", "content": full_response})
-                except Exception as e:
-                    loader_placeholder.empty()
-                    st.error(f"Error communicating with Gemini API: {e}")
-
-# =========================================================================
-# TAB 3: AI TAGGING & SENTIMENT (WITH RADAR CHART)
-# =========================================================================
-with tab_tagging:
-    st.header("🏷️ AI Call Tagging & Sentiment Analysis")
-    st.markdown(f"Gemini will read the transcripts from **{selected_ai_folder}**, categorize them, and extract key metrics.")
-    
-    if "No transcript files found" in transcripts_data or "Error" in transcripts_data:
-        st.warning("Please select a valid folder with transcripts in the sidebar.")
-    else:
-        if st.button("🚀 Run Batch AI Analysis"):
-            with st.spinner("Gemini is analyzing calls... (this may take up to 30 seconds depending on volume)"):
-                try:
-                    model = genai.GenerativeModel('gemini-3.1-flash-lite')
-                    
-                    # Force Gemini to output structured JSON data with updated Success Story prompt
-                    prompt = f"""
-                    You are a strict QA API analyzing call transcripts. Read all the transcripts provided.
-                    You MUST return a valid JSON array of objects. 
-                    
-                    Each object must represent a single transcript and have EXACTLY these keys:
-                    "File Name": (The name of the transcript file)
-                    "Primary Topic": (Choose ONE: Cancellation, Product Question, Billing, Angry Customer, Upsell, General Inquiry, or Other)
-                    "Sentiment": (Choose ONE: Positive, Neutral, or Negative)
-                    "Success Story Asked": (Set to "Yes" if the agent explicitly asked the customer to share a success story or positive health experience with the product, otherwise "No")
-                    "Cancellation Reason": (The specific reason they canceled. Set to "N/A" if they did not cancel)
-                    "Compliance Violation": (Set to "Yes" if the agent made unapproved health/medical claims treating or curing diseases, otherwise "No")
-                    "Summary": (A 1-sentence summary of the call)
-                    
-                    Transcripts:
-                    {transcripts_data}
-                    """
-                    
-                    response = model.generate_content(
-                        prompt, 
-                        generation_config={"response_mime_type": "application/json"}
-                    )
-                    
-                    json_data = json.loads(response.text)
-                    df_tags = pd.DataFrame(json_data)
-                    
-                    st.success("✅ Analysis Complete!")
-                    
-                    # Ensure all standard topics exist so the Radar Chart always forms a polygon
-                    all_topics = ["Cancellation", "Product Question", "Billing", "Angry Customer", "Upsell", "General Inquiry", "Other"]
-                    topic_counts = df_tags['Primary Topic'].value_counts()
-                    
-                    # Force missing topics to have a count of 0
-                    for topic in all_topics:
-                        if topic not in topic_counts:
-                            topic_counts[topic] = 0
+                with st.chat_message("assistant"):
+                    loader_placeholder = st.empty()
+                    loader_placeholder.markdown("""
+                    <div style="background-color: #0f172a; padding: 15px; border-radius: 12px; border: 2px dashed #ef4444; margin-bottom: 15px; position: relative; overflow: hidden; height: 130px;">
+                        <style>
+                            @keyframes chomp13 {
+                                0%, 100% { transform: scale(1) rotate(0deg); }
+                                50% { transform: scale(1.1) rotate(-15deg); }
+                            }
+                            @keyframes move13 { 
+                                0% { left: -10%; } 
+                                100% { left: 110%; } 
+                            }
+                            @keyframes move14 { 
+                                0% { left: 40%; opacity: 1; transform: scale(1); } 
+                                58% { left: 61%; opacity: 1; transform: scale(1); } 
+                                62% { left: 63%; opacity: 0; transform: scale(0.2) rotate(45deg); } 
+                                100% { left: 63%; opacity: 0; transform: scale(0); } 
+                            }
+                            @keyframes hideC1 { 0%, 19% { opacity: 1; transform: scale(1); } 20%, 100% { opacity: 0; transform: scale(0); } }
+                            @keyframes hideC2 { 0%, 39% { opacity: 1; transform: scale(1); } 40%, 100% { opacity: 0; transform: scale(0); } }
                             
-                    topic_counts = topic_counts.reset_index()
-                    topic_counts.columns = ['Topic', 'Count']
-                    
-                    # Setup Top Metric Cards
-                    m1, m2, m3 = st.columns(3)
-                    with m1:
-                        success_count = len(df_tags[df_tags['Success Story Asked'].astype(str).str.upper() == 'YES'])
-                        st.metric("🌟 Success Stories Asked", success_count)
-                    with m2:
-                        comp_viol = len(df_tags[df_tags['Compliance Violation'].astype(str).str.upper() == 'YES'])
-                        st.metric("🚨 Compliance Violations", comp_viol)
-                    with m3:
-                        cancellations = len(df_tags[df_tags['Primary Topic'] == 'Cancellation'])
-                        st.metric("❌ Total Cancellations", cancellations)
+                            .pac-13 {
+                                position: absolute;
+                                top: 25px;
+                                font-size: 45px;
+                                font-weight: 900;
+                                color: #ef4444;
+                                font-family: 'Impact', sans-serif;
+                                animation: move13 3s infinite linear;
+                                z-index: 10;
+                            }
+                            .pac-13-inner {
+                                display: inline-block;
+                                animation: chomp13 0.3s infinite alternate;
+                                text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
+                            }
+                            .ghost-14 {
+                                position: absolute;
+                                top: 30px;
+                                font-size: 35px;
+                                font-weight: 900;
+                                color: #3b82f6;
+                                font-family: 'Impact', sans-serif;
+                                animation: move14 3s infinite linear;
+                                text-shadow: 1px 1px 3px rgba(0,0,0,0.5);
+                            }
+                            .cookie {
+                                position: absolute;
+                                top: 40px;
+                                font-size: 24px;
+                            }
+                            .c1 { left: 14%; animation: hideC1 3s infinite linear; }
+                            .c2 { left: 38%; animation: hideC2 3s infinite linear; }
+                            
+                            .loading-text-new {
+                                position: absolute;
+                                bottom: 10px;
+                                width: 100%;
+                                left: 0;
+                                color: #cbd5e1;
+                                font-size: 15px;
+                                font-weight: 600;
+                                font-family: system-ui, sans-serif;
+                                text-align: center;
+                            }
+                        </style>
                         
-                    st.divider()
+                        <div class="pac-13"><div class="pac-13-inner">13</div></div>
+                        <div class="cookie c1">🍪</div>
+                        <div class="cookie c2">🍪</div>
+                        <div class="ghost-14">14 🏃‍♂️</div>
+                        
+                        <div class="loading-text-new">13 is munching on 14 while Gemini analyzes your transcripts...</div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                    
+                    try:
+                        model = genai.GenerativeModel('gemini-3.1-flash-lite')
+                        full_prompt = f"""
+                        You are an expert QA and Customer Service Analyst for Balance of Nature.
+                        Answer the manager's question accurately using ONLY the call transcripts provided below.
+                        If the information is not contained in the transcripts, clearly state that you do not have enough data.
+                        Be concise, objective, and highlight exact quotes or call examples when relevant.
+                        
+                        TRANSCRIPT DATABASE:
+                        {transcripts_data}
+                        
+                        MANAGER'S QUESTION:
+                        {user_prompt}
+                        """
+                        
+                        response = model.generate_content(full_prompt, stream=True)
+                        
+                        def stream_generator():
+                            loader_placeholder.empty()
+                            for chunk in response:
+                                yield chunk.text
 
-                    # Charts Row
-                    col_chart1, col_chart2 = st.columns([1.5, 1])
-                    
-                    with col_chart1:
-                        st.markdown("**Radar Breakdown: Call Topics**")
-                        # Build the sleek Plotly Radar Chart with all 7 points filled
-                        fig = px.line_polar(
-                            topic_counts, 
-                            r='Count', 
-                            theta='Topic', 
-                            line_close=True,
-                            color_discrete_sequence=['#3b82f6'] # Blue line to match the theme
-                        )
-                        fig.update_traces(fill='toself', fillcolor='rgba(59, 130, 246, 0.4)')
-                        fig.update_layout(
-                            polar=dict(
-                                radialaxis=dict(visible=True, tickfont=dict(color="gray")),
-                                angularaxis=dict(tickfont=dict(size=14))
-                            ),
-                            paper_bgcolor='rgba(0,0,0,0)',
-                            plot_bgcolor='rgba(0,0,0,0)',
-                            margin=dict(l=40, r=40, t=20, b=20)
-                        )
-                        st.plotly_chart(fig, use_container_width=True)
+                        full_response = st.write_stream(stream_generator)
+                        st.session_state.chat_history.append({"role": "assistant", "content": full_response})
+                    except Exception as e:
+                        loader_placeholder.empty()
+                        st.error(f"Error communicating with Gemini API: {e}")
+
+    # =========================================================================
+    # TAB 3: AI TAGGING & SENTIMENT (WITH RADAR CHART)
+    # =========================================================================
+    elif selected_tab == "🏷️ Tagging & Insights":
+        st.header("🏷️ AI Call Tagging & Sentiment Analysis")
+        st.markdown(f"Gemini will read the transcripts from **{selected_ai_folder}**, categorize them, and extract key metrics.")
+        
+        if "No transcript files found" in transcripts_data or "Error" in transcripts_data:
+            st.warning("Please select a valid folder with transcripts in the sidebar.")
+        else:
+            if st.button("🚀 Run Batch AI Analysis"):
+                with st.spinner("Gemini is analyzing calls... (this may take up to 30 seconds depending on volume)"):
+                    try:
+                        model = genai.GenerativeModel('gemini-3.1-flash-lite')
                         
-                    with col_chart2:
-                        st.markdown("**Overall Call Sentiment**")
-                        sentiment_counts = df_tags['Sentiment'].value_counts()
-                        st.bar_chart(sentiment_counts, color="#10b981") # Green bars
+                        prompt = f"""
+                        You are a strict QA API analyzing call transcripts. Read all the transcripts provided.
+                        You MUST return a valid JSON array of objects. 
                         
-                    st.divider()
-                    st.markdown("**📝 Detailed Call Breakdown Database**")
-                    st.dataframe(df_tags, use_container_width=True)
-                    
-                except Exception as e:
-                    st.error(f"Failed to process analysis. The AI may have struggled to format the JSON. Error: {e}")
+                        Each object must represent a single transcript and have EXACTLY these keys:
+                        "File Name": (The name of the transcript file)
+                        "Primary Topic": (Choose ONE: Cancellation, Product Question, Billing, Angry Customer, Upsell, General Inquiry, or Other)
+                        "Sentiment": (Choose ONE: Positive, Neutral, or Negative)
+                        "Success Story Asked": (Set to "Yes" if the agent explicitly asked the customer to share a success story or positive health experience with the product, otherwise "No")
+                        "Cancellation Reason": (The specific reason they canceled. Set to "N/A" if they did not cancel)
+                        "Compliance Violation": (Set to "Yes" if the agent made unapproved health/medical claims treating or curing diseases, otherwise "No")
+                        "Summary": (A 1-sentence summary of the call)
+                        
+                        Transcripts:
+                        {transcripts_data}
+                        """
+                        
+                        response = model.generate_content(
+                            prompt, 
+                            generation_config={"response_mime_type": "application/json"}
+                        )
+                        
+                        json_data = json.loads(response.text)
+                        df_tags = pd.DataFrame(json_data)
+                        
+                        st.success("✅ Analysis Complete!")
+                        
+                        all_topics = ["Cancellation", "Product Question", "Billing", "Angry Customer", "Upsell", "General Inquiry", "Other"]
+                        topic_counts = df_tags['Primary Topic'].value_counts()
+                        
+                        for topic in all_topics:
+                            if topic not in topic_counts:
+                                topic_counts[topic] = 0
+                                
+                        topic_counts = topic_counts.reset_index()
+                        topic_counts.columns = ['Topic', 'Count']
+                        
+                        m1, m2, m3 = st.columns(3)
+                        with m1:
+                            success_count = len(df_tags[df_tags['Success Story Asked'].astype(str).str.upper() == 'YES'])
+                            st.metric("🌟 Success Stories Asked", success_count)
+                        with m2:
+                            comp_viol = len(df_tags[df_tags['Compliance Violation'].astype(str).str.upper() == 'YES'])
+                            st.metric("🚨 Compliance Violations", comp_viol)
+                        with m3:
+                            cancellations = len(df_tags[df_tags['Primary Topic'] == 'Cancellation'])
+                            st.metric("❌ Total Cancellations", cancellations)
+                            
+                        st.divider()
+
+                        col_chart1, col_chart2 = st.columns([1.5, 1])
+                        
+                        with col_chart1:
+                            st.markdown("**Radar Breakdown: Call Topics**")
+                            fig = px.line_polar(
+                                topic_counts, 
+                                r='Count', 
+                                theta='Topic', 
+                                line_close=True,
+                                color_discrete_sequence=['#3b82f6']
+                            )
+                            fig.update_traces(fill='toself', fillcolor='rgba(59, 130, 246, 0.4)')
+                            fig.update_layout(
+                                polar=dict(
+                                    radialaxis=dict(visible=True, tickfont=dict(color="gray")),
+                                    angularaxis=dict(tickfont=dict(size=14))
+                                ),
+                                paper_bgcolor='rgba(0,0,0,0)',
+                                plot_bgcolor='rgba(0,0,0,0)',
+                                margin=dict(l=40, r=40, t=20, b=20)
+                            )
+                            st.plotly_chart(fig, use_container_width=True)
+                            
+                        with col_chart2:
+                            st.markdown("**Overall Call Sentiment**")
+                            sentiment_counts = df_tags['Sentiment'].value_counts()
+                            st.bar_chart(sentiment_counts, color="#10b981")
+                            
+                        st.divider()
+                        st.markdown("**📝 Detailed Call Breakdown Database**")
+                        st.dataframe(df_tags, use_container_width=True)
+                        
+                    except Exception as e:
+                        st.error(f"Failed to process analysis. The AI may have struggled to format the JSON. Error: {e}")
