@@ -94,23 +94,15 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# -------------------------------------------------------------------------
-# BALANCE OF NATURE LOGO HEADER
-# -------------------------------------------------------------------------
-col_spacer1, col_logo, col_spacer2 = st.columns([1, 1.5, 1])
-with col_logo:
-    try:
-        # This will pull your actual local image file!
-        st.image("image_b6a55d.jpeg", use_container_width=True)
-    except Exception:
-        st.error("⚠️ Could not find 'image_b6a55d.jpeg'. Make sure the image is in the same folder as this app.py file!")
-
+# Custom Balance of Nature Header
 st.markdown("""
-<div style="text-align: center; margin-bottom: 25px; margin-top: -15px;">
-    <h3 style="color: #475569; font-weight: 400; letter-spacing: 4px; font-size: 1.2rem;">CALL QC CONSOLE</h3>
+<div style="text-align: center; margin-bottom: 25px; margin-top: -20px;">
+    <h1 style="font-size: 3.5rem; margin-bottom: 0; font-family: 'Arial Black', Impact, sans-serif; letter-spacing: 2px;">
+        <span style="color: #111111;">BALANCE OF N</span><span style="color: #8CC63F;">A</span><span style="color: #111111;">TURE</span>
+    </h1>
+    <h3 style="color: #475569; margin-top: -10px; font-weight: 400; letter-spacing: 4px; font-size: 1.2rem;">CALL QC CONSOLE</h3>
 </div>
 """, unsafe_allow_html=True)
-
 
 # -------------------------------------------------------------------------
 # GOOGLE DRIVE & GEMINI HELPER FUNCTIONS
@@ -736,7 +728,7 @@ else:
                 with st.chat_message("assistant"):
                     loader_placeholder = st.empty()
                     loader_placeholder.markdown("""
-                    <div style="background-color: #0f172a; padding: 20px; border-radius: 12px; border: 2px dashed #8CC63F; text-align: center; margin-bottom: 15px;">
+                    <div style="background-color: #0f172a; padding: 20px; border-radius: 12px; border: 2px dashed #ef4444; text-align: center; margin-bottom: 15px;">
                         <style>
                             @keyframes wobble {
                                 0% { transform: translateX(-20px); }
@@ -744,7 +736,7 @@ else:
                             }
                             @keyframes chomp-basic {
                                 0%, 100% { border-right-color: transparent; }
-                                50% { border-right-color: #8CC63F; }
+                                50% { border-right-color: #ef4444; }
                             }
                             .loader-row {
                                 display: flex;
@@ -756,14 +748,14 @@ else:
                             }
                             .pac-body {
                                 width: 0; height: 0;
-                                border: 20px solid #8CC63F;
+                                border: 20px solid #ef4444;
                                 border-right: 20px solid transparent;
                                 border-radius: 50%;
                                 animation: chomp-basic 0.3s infinite;
                             }
                         </style>
                         <div class="loader-row">
-                            <span style="color: #8CC63F; font-size: 35px; font-weight: 900; font-family: 'Impact', sans-serif;">13</span>
+                            <span style="color: #ef4444; font-size: 35px; font-weight: 900; font-family: 'Impact', sans-serif;">13</span>
                             <div class="pac-body"></div>
                             <span style="font-size: 25px;">🍪 🍪</span>
                             <span style="color: #3b82f6; font-size: 30px; font-weight: 900; font-family: 'Impact', sans-serif;">14 😱</span>
@@ -815,7 +807,7 @@ else:
             if st.button("🚀 Run Batch AI Analysis"):
                 loader_placeholder = st.empty()
                 loader_placeholder.markdown("""
-                <div style="background-color: #0f172a; padding: 20px; border-radius: 12px; border: 2px dashed #8CC63F; text-align: center; margin-bottom: 15px;">
+                <div style="background-color: #0f172a; padding: 20px; border-radius: 12px; border: 2px dashed #ef4444; text-align: center; margin-bottom: 15px;">
                     <style>
                         @keyframes wobble {
                             0% { transform: translateX(-20px); }
@@ -823,7 +815,7 @@ else:
                         }
                         @keyframes chomp-basic {
                             0%, 100% { border-right-color: transparent; }
-                            50% { border-right-color: #8CC63F; }
+                            50% { border-right-color: #ef4444; }
                         }
                         .loader-row {
                             display: flex;
@@ -835,14 +827,14 @@ else:
                         }
                         .pac-body {
                             width: 0; height: 0;
-                            border: 20px solid #8CC63F;
+                            border: 20px solid #ef4444;
                             border-right: 20px solid transparent;
                             border-radius: 50%;
                             animation: chomp-basic 0.3s infinite;
                         }
                     </style>
                     <div class="loader-row">
-                        <span style="color: #8CC63F; font-size: 35px; font-weight: 900; font-family: 'Impact', sans-serif;">13</span>
+                        <span style="color: #ef4444; font-size: 35px; font-weight: 900; font-family: 'Impact', sans-serif;">13</span>
                         <div class="pac-body"></div>
                         <span style="font-size: 25px;">🍪 🍪</span>
                         <span style="color: #3b82f6; font-size: 30px; font-weight: 900; font-family: 'Impact', sans-serif;">14 😱</span>
