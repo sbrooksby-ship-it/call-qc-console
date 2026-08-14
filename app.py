@@ -895,58 +895,113 @@ else:
                             v_pct = min(int((v_count / total_calls) * 100), 100)
                             fs_pct = min(int((fs_count / total_calls) * 100), 100)
                             
+                            # CSS updated to level bottoms on a "shelf" and match relative real-world sizing
                             st.markdown(f"""
                             <style>
-                                .bottle-container {{ display: flex; justify-content: space-around; align-items: flex-end; height: 250px; margin-top: 30px; }}
-                                .bottle-wrapper {{ display: flex; flex-direction: column; align-items: center; gap: 10px; width: 80px; }}
-                                .bottle {{
-                                    width: 70px; height: 160px;
-                                    border: 4px solid #cbd5e1;
-                                    border-radius: 25px 25px 8px 8px;
+                                .supplement-shelf {{
+                                    display: flex;
+                                    justify-content: space-evenly;
+                                    align-items: flex-end;
+                                    height: 240px;
+                                    margin-top: 20px;
+                                    padding-bottom: 10px;
+                                    border-bottom: 4px solid #e2e8f0;
+                                }}
+                                .btl-container {{
+                                    display: flex;
+                                    flex-direction: column;
+                                    align-items: center;
+                                    cursor: pointer;
+                                    transition: transform 0.2s;
+                                }}
+                                .btl-container:hover {{
+                                    transform: translateY(-5px);
+                                }}
+                                
+                                /* CAPS */
+                                .cap-small {{
+                                    width: 50px; height: 16px;
+                                    border-radius: 4px 4px 0 0;
+                                    margin-bottom: -2px;
+                                    z-index: 2;
+                                    background-image: repeating-linear-gradient(90deg, transparent, transparent 2px, rgba(0,0,0,0.1) 2px, rgba(0,0,0,0.1) 4px);
+                                }}
+                                .cap-large {{
+                                    width: 110px; height: 20px;
+                                    border-radius: 4px 4px 0 0;
+                                    margin-bottom: -2px;
+                                    z-index: 2;
+                                    background-image: repeating-linear-gradient(90deg, transparent, transparent 2px, rgba(0,0,0,0.1) 2px, rgba(0,0,0,0.1) 4px);
+                                }}
+                                
+                                /* BODIES */
+                                .body-small {{
+                                    width: 66px; height: 110px;
+                                    border-radius: 12px 12px 8px 8px;
                                     position: relative;
                                     overflow: hidden;
                                     background: #f8f9fa;
-                                    box-shadow: inset 0px 0px 10px rgba(0,0,0,0.1);
-                                    cursor: pointer;
+                                    border: 3px solid;
+                                    box-shadow: inset -5px 0px 10px rgba(0,0,0,0.1);
                                 }}
-                                .bottle-cap {{
-                                    width: 40px; height: 15px;
-                                    background: #94a3b8;
-                                    border-radius: 4px 4px 0 0;
-                                    margin-bottom: -4px;
-                                    z-index: 2;
+                                .body-large {{
+                                    width: 120px; height: 170px;
+                                    border-radius: 12px 12px 8px 8px;
+                                    position: relative;
+                                    overflow: hidden;
+                                    background: #f8f9fa;
+                                    border: 3px solid;
+                                    box-shadow: inset -8px 0px 15px rgba(0,0,0,0.1);
                                 }}
-                                .fill-fruits {{ background: #ef4444; position: absolute; bottom: 0; width: 100%; transition: height 1s ease-out; opacity: 0.85; }}
-                                .fill-veggies {{ background: #10b981; position: absolute; bottom: 0; width: 100%; transition: height 1s ease-out; opacity: 0.85; }}
-                                .fill-fiber {{ background: #3b82f6; position: absolute; bottom: 0; width: 100%; transition: height 1s ease-out; opacity: 0.85; }}
-                                .bottle-label {{ font-weight: 700; font-size: 14px; text-align: center; color: #334155; }}
-                                .bottle-pct {{ position: absolute; width: 100%; text-align: center; top: 40%; font-weight: 900; color: #334155; z-index: 10; text-shadow: 0px 0px 4px white; }}
+                                
+                                /* COLORS */
+                                .f-color {{ border-color: #dc2626; background-color: #ef4444; }}
+                                .v-color {{ border-color: #059669; background-color: #10b981; }}
+                                .fs-color {{ border-color: #1d4ed8; background-color: #2563eb; }}
+                                
+                                .fill-f {{ background: #dc2626; position: absolute; bottom: 0; width: 100%; transition: height 1.2s ease-out; opacity: 0.9; }}
+                                .fill-v {{ background: #059669; position: absolute; bottom: 0; width: 100%; transition: height 1.2s ease-out; opacity: 0.9; }}
+                                .fill-fs {{ background: #1d4ed8; position: absolute; bottom: 0; width: 100%; transition: height 1.2s ease-out; opacity: 0.9; }}
+                                
+                                /* TEXT */
+                                .pct-val {{
+                                    position: absolute;
+                                    width: 100%; top: 40%;
+                                    text-align: center;
+                                    font-size: 18px; font-weight: 900;
+                                    color: #1e293b; z-index: 10;
+                                    text-shadow: 0px 0px 6px rgba(255,255,255,0.9), 0px 0px 6px rgba(255,255,255,0.9);
+                                }}
+                                .btl-label {{
+                                    font-weight: 800; font-size: 14px;
+                                    color: #475569; margin-top: 8px;
+                                }}
                             </style>
                             
-                            <div class="bottle-container">
-                                <div class="bottle-wrapper" title="Mentioned in {f_count} out of {total_calls} calls">
-                                    <div class="bottle-cap"></div>
-                                    <div class="bottle">
-                                        <div class="bottle-pct">{f_pct}%</div>
-                                        <div class="fill-fruits" style="height: {f_pct}%;"></div>
+                            <div class="supplement-shelf">
+                                <div class="btl-container" title="Mentioned in {f_count} out of {total_calls} calls">
+                                    <div class="cap-small f-color"></div>
+                                    <div class="body-small" style="border-color: #dc2626;">
+                                        <div class="pct-val">{f_pct}%</div>
+                                        <div class="fill-f" style="height: {f_pct}%;"></div>
                                     </div>
-                                    <div class="bottle-label">Fruits</div>
+                                    <div class="btl-label">Fruits</div>
                                 </div>
-                                <div class="bottle-wrapper" title="Mentioned in {v_count} out of {total_calls} calls">
-                                    <div class="bottle-cap"></div>
-                                    <div class="bottle">
-                                        <div class="bottle-pct">{v_pct}%</div>
-                                        <div class="fill-veggies" style="height: {v_pct}%;"></div>
+                                <div class="btl-container" title="Mentioned in {v_count} out of {total_calls} calls">
+                                    <div class="cap-small v-color"></div>
+                                    <div class="body-small" style="border-color: #059669;">
+                                        <div class="pct-val">{v_pct}%</div>
+                                        <div class="fill-v" style="height: {v_pct}%;"></div>
                                     </div>
-                                    <div class="bottle-label">Veggies</div>
+                                    <div class="btl-label">Veggies</div>
                                 </div>
-                                <div class="bottle-wrapper" title="Mentioned in {fs_count} out of {total_calls} calls">
-                                    <div class="bottle-cap"></div>
-                                    <div class="bottle">
-                                        <div class="bottle-pct">{fs_pct}%</div>
-                                        <div class="fill-fiber" style="height: {fs_pct}%;"></div>
+                                <div class="btl-container" title="Mentioned in {fs_count} out of {total_calls} calls">
+                                    <div class="cap-large fs-color"></div>
+                                    <div class="body-large" style="border-color: #1d4ed8;">
+                                        <div class="pct-val">{fs_pct}%</div>
+                                        <div class="fill-fs" style="height: {fs_pct}%;"></div>
                                     </div>
-                                    <div class="bottle-label">Fiber & Spice</div>
+                                    <div class="btl-label">Fiber & Spice</div>
                                 </div>
                             </div>
                             """, unsafe_allow_html=True)
