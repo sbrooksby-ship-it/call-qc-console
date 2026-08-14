@@ -688,71 +688,77 @@ else:
                 with st.chat_message("assistant"):
                     loader_placeholder = st.empty()
                     loader_placeholder.markdown("""
-                    <div style="background-color: #0f172a; padding: 20px; border-radius: 12px; border: 2px dashed #ef4444; margin-bottom: 15px; text-align: center; color: white;">
+                    <div style="background-color: #0f172a; padding: 15px; border-radius: 12px; border: 2px dashed #ef4444; margin-bottom: 15px; position: relative; overflow: hidden; height: 130px;">
                         <style>
-                            @keyframes chomp {
+                            @keyframes chomp13 {
                                 0%, 100% { transform: scale(1) rotate(0deg); }
-                                50% { transform: scale(1.15) rotate(-15deg); }
+                                50% { transform: scale(1.1) rotate(-15deg); }
                             }
-                            @keyframes chase13 {
-                                0% { transform: translateX(-120px); }
-                                100% { transform: translateX(120px); }
+                            @keyframes move13 { 
+                                0% { left: -10%; } 
+                                100% { left: 110%; } 
                             }
-                            @keyframes flee14 {
-                                0% { transform: translateX(-30px); opacity: 1; }
-                                65% { transform: translateX(50px); opacity: 1; }
-                                75% { transform: translateX(60px) scale(0.2); opacity: 0; }
-                                100% { transform: translateX(60px) scale(0); opacity: 0; }
+                            @keyframes move14 { 
+                                0% { left: 40%; opacity: 1; transform: scale(1); } 
+                                58% { left: 61%; opacity: 1; transform: scale(1); } 
+                                62% { left: 63%; opacity: 0; transform: scale(0.2) rotate(45deg); } 
+                                100% { left: 63%; opacity: 0; transform: scale(0); } 
                             }
-                            @keyframes eatCookie {
-                                0%, 30% { opacity: 1; }
-                                35%, 100% { opacity: 0; }
-                            }
-                            .stage {
-                                display: flex;
-                                align-items: center;
-                                justify-content: center;
-                                height: 60px;
-                                position: relative;
-                                overflow: hidden;
-                            }
-                            .character-13 {
-                                font-size: 42px;
+                            @keyframes hideC1 { 0%, 19% { opacity: 1; transform: scale(1); } 20%, 100% { opacity: 0; transform: scale(0); } }
+                            @keyframes hideC2 { 0%, 39% { opacity: 1; transform: scale(1); } 40%, 100% { opacity: 0; transform: scale(0); } }
+                            
+                            .pac-13 {
+                                position: absolute;
+                                top: 25px;
+                                font-size: 45px;
                                 font-weight: 900;
                                 color: #ef4444;
                                 font-family: 'Impact', sans-serif;
-                                animation: chase13 3s infinite linear;
-                                position: absolute;
-                                z-index: 2;
+                                animation: move13 3s infinite linear;
+                                z-index: 10;
                             }
-                            .character-13 span {
+                            .pac-13-inner {
                                 display: inline-block;
-                                animation: chomp 0.3s infinite alternate;
+                                animation: chomp13 0.3s infinite alternate;
+                                text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
                             }
-                            .victim-14 {
-                                font-size: 32px;
+                            .ghost-14 {
+                                position: absolute;
+                                top: 30px;
+                                font-size: 35px;
                                 font-weight: 900;
                                 color: #3b82f6;
                                 font-family: 'Impact', sans-serif;
-                                animation: flee14 3s infinite linear;
-                                position: absolute;
-                                z-index: 1;
+                                animation: move14 3s infinite linear;
+                                text-shadow: 1px 1px 3px rgba(0,0,0,0.5);
                             }
-                            .cookie-dot {
-                                font-size: 20px;
+                            .cookie {
                                 position: absolute;
-                                animation: eatCookie 3s infinite linear;
+                                top: 40px;
+                                font-size: 24px;
+                            }
+                            .c1 { left: 14%; animation: hideC1 3s infinite linear; }
+                            .c2 { left: 38%; animation: hideC2 3s infinite linear; }
+                            
+                            .loading-text-new {
+                                position: absolute;
+                                bottom: 10px;
+                                width: 100%;
+                                left: 0;
+                                color: #cbd5e1;
+                                font-size: 15px;
+                                font-weight: 600;
+                                font-family: system-ui, sans-serif;
+                                text-align: center;
                             }
                         </style>
-                        <div class="stage">
-                            <div class="character-13"><span>13 👄</span></div>
-                            <div class="cookie-dot" style="left: 35%;">🍪</div>
-                            <div class="cookie-dot" style="left: 50%;">🍪</div>
-                            <div class="victim-14">14 😱</div>
-                        </div>
-                        <div style="color: #cbd5e1; font-size: 14px; font-weight: 600; margin-top: 10px; font-family: system-ui, sans-serif;">
-                            13 is chomping on cookies & chasing down 14 while Gemini analyzes your transcripts...
-                        </div>
+                        
+                        <div class="pac-13"><div class="pac-13-inner">13</div></div>
+                        <div class="cookie c1">🍪</div>
+                        <div class="cookie c2">🍪</div>
+                        <div class="ghost-14">14 🏃‍♂️</div>
+                        
+                        <div class="loading-text-new">13 is munching on 14 while Gemini analyzes your transcripts...</div>
                     </div>
                     """, unsafe_allow_html=True)
                     
@@ -785,7 +791,7 @@ else:
                         st.error(f"Error communicating with Gemini API: {e}")
 
     # =========================================================================
-    # TAB 3: AI TAGGING & SENTIMENT (WITH RADAR CHART)
+    # TAB 3: AI TAGGING & INSIGHTS (WITH RADAR & BOTTLE CHARTS)
     # =========================================================================
     elif selected_tab == "🏷️ Tagging & Insights":
         st.header("🏷️ AI Call Tagging & Sentiment Analysis")
@@ -810,6 +816,8 @@ else:
                         "Success Story Asked": (Set to "Yes" if the agent explicitly asked the customer to share a success story or positive health experience with the product, otherwise "No")
                         "Cancellation Reason": (The specific reason they canceled. Set to "N/A" if they did not cancel)
                         "Compliance Violation": (Set to "Yes" if the agent made unapproved health/medical claims treating or curing diseases, otherwise "No")
+                        "Products Mentioned": (A comma-separated list of Balance of Nature products mentioned. Example: "Fruits, Veggies, Fiber & Spice". If none, write "None")
+                        "Competitors Mentioned": (A comma-separated list of competitor products/brands mentioned. If none, write "None")
                         "Summary": (A 1-sentence summary of the call)
                         
                         Transcripts:
@@ -826,16 +834,7 @@ else:
                         
                         st.success("✅ Analysis Complete!")
                         
-                        all_topics = ["Cancellation", "Product Question", "Billing", "Angry Customer", "Upsell", "General Inquiry", "Other"]
-                        topic_counts = df_tags['Primary Topic'].value_counts()
-                        
-                        for topic in all_topics:
-                            if topic not in topic_counts:
-                                topic_counts[topic] = 0
-                                
-                        topic_counts = topic_counts.reset_index()
-                        topic_counts.columns = ['Topic', 'Count']
-                        
+                        # --- TOP METRIC CARDS ---
                         m1, m2, m3 = st.columns(3)
                         with m1:
                             success_count = len(df_tags[df_tags['Success Story Asked'].astype(str).str.upper() == 'YES'])
@@ -849,10 +848,19 @@ else:
                             
                         st.divider()
 
-                        col_chart1, col_chart2 = st.columns([1.5, 1])
+                        # --- RADAR & BOTTLE CHARTS ROW ---
+                        col_chart1, col_chart2 = st.columns([1.5, 1.5])
                         
                         with col_chart1:
                             st.markdown("**Radar Breakdown: Call Topics**")
+                            all_topics = ["Cancellation", "Product Question", "Billing", "Angry Customer", "Upsell", "General Inquiry", "Other"]
+                            topic_counts = df_tags['Primary Topic'].value_counts()
+                            for topic in all_topics:
+                                if topic not in topic_counts:
+                                    topic_counts[topic] = 0
+                            topic_counts = topic_counts.reset_index()
+                            topic_counts.columns = ['Topic', 'Count']
+                            
                             fig = px.line_polar(
                                 topic_counts, 
                                 r='Count', 
@@ -873,12 +881,92 @@ else:
                             st.plotly_chart(fig, use_container_width=True)
                             
                         with col_chart2:
-                            st.markdown("**Overall Call Sentiment**")
-                            sentiment_counts = df_tags['Sentiment'].value_counts()
-                            st.bar_chart(sentiment_counts, color="#10b981")
+                            st.markdown("**Product Mentions (Share of Call Volume)**")
                             
+                            # Safely handle product mention strings
+                            total_calls = len(df_tags) if len(df_tags) > 0 else 1
+                            prod_str = " ".join(df_tags['Products Mentioned'].fillna("").astype(str).str.lower())
+                            
+                            f_count = len(df_tags[df_tags['Products Mentioned'].str.lower().str.contains('fruits', na=False)])
+                            v_count = len(df_tags[df_tags['Products Mentioned'].str.lower().str.contains('veggies', na=False)])
+                            fs_count = len(df_tags[df_tags['Products Mentioned'].str.lower().str.contains('fiber|spice', na=False)])
+                            
+                            f_pct = min(int((f_count / total_calls) * 100), 100)
+                            v_pct = min(int((v_count / total_calls) * 100), 100)
+                            fs_pct = min(int((fs_count / total_calls) * 100), 100)
+                            
+                            st.markdown(f"""
+                            <style>
+                                .bottle-container {{ display: flex; justify-content: space-around; align-items: flex-end; height: 250px; margin-top: 30px; }}
+                                .bottle-wrapper {{ display: flex; flex-direction: column; align-items: center; gap: 10px; width: 80px; }}
+                                .bottle {{
+                                    width: 70px; height: 160px;
+                                    border: 4px solid #cbd5e1;
+                                    border-radius: 25px 25px 8px 8px;
+                                    position: relative;
+                                    overflow: hidden;
+                                    background: #f8f9fa;
+                                    box-shadow: inset 0px 0px 10px rgba(0,0,0,0.1);
+                                    cursor: pointer;
+                                }}
+                                .bottle-cap {{
+                                    width: 40px; height: 15px;
+                                    background: #94a3b8;
+                                    border-radius: 4px 4px 0 0;
+                                    margin-bottom: -4px;
+                                    z-index: 2;
+                                }}
+                                .fill-fruits {{ background: #ef4444; position: absolute; bottom: 0; width: 100%; transition: height 1s ease-out; opacity: 0.85; }}
+                                .fill-veggies {{ background: #10b981; position: absolute; bottom: 0; width: 100%; transition: height 1s ease-out; opacity: 0.85; }}
+                                .fill-fiber {{ background: #3b82f6; position: absolute; bottom: 0; width: 100%; transition: height 1s ease-out; opacity: 0.85; }}
+                                .bottle-label {{ font-weight: 700; font-size: 14px; text-align: center; color: #334155; }}
+                                .bottle-pct {{ position: absolute; width: 100%; text-align: center; top: 40%; font-weight: 900; color: #334155; z-index: 10; text-shadow: 0px 0px 4px white; }}
+                            </style>
+                            
+                            <div class="bottle-container">
+                                <div class="bottle-wrapper" title="Mentioned in {f_count} out of {total_calls} calls">
+                                    <div class="bottle-cap"></div>
+                                    <div class="bottle">
+                                        <div class="bottle-pct">{f_pct}%</div>
+                                        <div class="fill-fruits" style="height: {f_pct}%;"></div>
+                                    </div>
+                                    <div class="bottle-label">Fruits</div>
+                                </div>
+                                <div class="bottle-wrapper" title="Mentioned in {v_count} out of {total_calls} calls">
+                                    <div class="bottle-cap"></div>
+                                    <div class="bottle">
+                                        <div class="bottle-pct">{v_pct}%</div>
+                                        <div class="fill-veggies" style="height: {v_pct}%;"></div>
+                                    </div>
+                                    <div class="bottle-label">Veggies</div>
+                                </div>
+                                <div class="bottle-wrapper" title="Mentioned in {fs_count} out of {total_calls} calls">
+                                    <div class="bottle-cap"></div>
+                                    <div class="bottle">
+                                        <div class="bottle-pct">{fs_pct}%</div>
+                                        <div class="fill-fiber" style="height: {fs_pct}%;"></div>
+                                    </div>
+                                    <div class="bottle-label">Fiber & Spice</div>
+                                </div>
+                            </div>
+                            """, unsafe_allow_html=True)
+
+                        
                         st.divider()
-                        st.markdown("**📝 Detailed Call Breakdown Database**")
+                        
+                        # --- COMPETITORS & FULL DATABASE ---
+                        st.markdown("### ⚠️ Competitor Threat Board")
+                        comps_list = df_tags['Competitors Mentioned'].dropna().astype(str).tolist()
+                        found_comps = [c.strip() for items in comps_list for c in items.split(',') if c.strip().lower() != 'none']
+                        
+                        if found_comps:
+                            comp_counts = pd.Series(found_comps).value_counts().reset_index()
+                            comp_counts.columns = ['Competitor', 'Mentions']
+                            st.dataframe(comp_counts, use_container_width=False)
+                        else:
+                            st.info("No competitors were mentioned in this batch of calls! 🎉")
+                            
+                        st.markdown("### 📝 Detailed Call Breakdown Database")
                         st.dataframe(df_tags, use_container_width=True)
                         
                     except Exception as e:
