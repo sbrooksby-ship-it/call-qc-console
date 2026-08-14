@@ -94,15 +94,23 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# Custom Balance of Nature Header
+# -------------------------------------------------------------------------
+# BALANCE OF NATURE LOGO HEADER
+# -------------------------------------------------------------------------
+col_spacer1, col_logo, col_spacer2 = st.columns([1, 1.5, 1])
+with col_logo:
+    try:
+        # This will pull your actual local image file!
+        st.image("image_b6a55d.png", use_container_width=True)
+    except Exception:
+        st.error("⚠️ Could not find 'image_b6a55d.png'. Make sure the image is in the same folder as this app.py file!")
+
 st.markdown("""
-<div style="text-align: center; margin-bottom: 25px; margin-top: -20px;">
-    <h1 style="font-size: 3.5rem; margin-bottom: 0; font-family: 'Arial Black', Impact, sans-serif; letter-spacing: 2px;">
-        <span style="color: #111111;">BALANCE OF N</span><span style="color: #8CC63F;">A</span><span style="color: #111111;">TURE</span>
-    </h1>
-    <h3 style="color: #475569; margin-top: -10px; font-weight: 400; letter-spacing: 4px; font-size: 1.2rem;">CALL QC CONSOLE</h3>
+<div style="text-align: center; margin-bottom: 25px; margin-top: -15px;">
+    <h3 style="color: #475569; font-weight: 400; letter-spacing: 4px; font-size: 1.2rem;">CALL QC CONSOLE</h3>
 </div>
 """, unsafe_allow_html=True)
+
 
 # -------------------------------------------------------------------------
 # GOOGLE DRIVE & GEMINI HELPER FUNCTIONS
