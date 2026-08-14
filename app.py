@@ -762,7 +762,7 @@ else:
                             <span style="color: #3b82f6; font-size: 30px; font-weight: 900; font-family: 'Impact', sans-serif;">14 😱</span>
                         </div>
                         <div style="color: #cbd5e1; font-size: 16px; font-weight: 600; font-family: system-ui, sans-serif;">
-                            13 is chomping on cookies & chasing down 14 while Gemini thinks...
+                            Dept 13. is munching on 14 while Gemini thinks...
                         </div>
                     </div>
                     """, unsafe_allow_html=True)
@@ -841,7 +841,7 @@ else:
                         <span style="color: #3b82f6; font-size: 30px; font-weight: 900; font-family: 'Impact', sans-serif;">14 😱</span>
                     </div>
                     <div style="color: #cbd5e1; font-size: 16px; font-weight: 600; font-family: system-ui, sans-serif;">
-                        13 is chomping on cookies & chasing down 14 while Gemini thinks...
+                        Dept 13. is munching on 14 while Gemini thinks...
                     </div>
                 </div>
                 """, unsafe_allow_html=True)
