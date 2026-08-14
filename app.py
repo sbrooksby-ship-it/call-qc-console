@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import json
+import plotly.express as px
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 import google.generativeai as genai
@@ -271,7 +272,7 @@ transcripts_data = fetch_all_transcripts(active_target_id)
 # -------------------------------------------------------------------------
 # TABS SETUP
 # -------------------------------------------------------------------------
-tab_dashboard, tab_ai, tab_tagging = st.tabs(["📊 Performance Dashboard", "💬 AI Assistant", "🏷️ Tagging & Sentiment"])
+tab_dashboard, tab_ai, tab_tagging = st.tabs(["📊 Performance Dashboard", "💬 AI Assistant", "🏷️ Tagging & Insights"])
 
 # =========================================================================
 # TAB 1: QC DASHBOARD
@@ -753,29 +754,32 @@ with tab_ai:
                     st.error(f"Error communicating with Gemini API: {e}")
 
 # =========================================================================
-# TAB 3: AI TAGGING & SENTIMENT (NEW!)
+# TAB 3: AI TAGGING & SENTIMENT (WITH RADAR CHART)
 # =========================================================================
 with tab_tagging:
     st.header("🏷️ AI Call Tagging & Sentiment Analysis")
-    st.markdown(f"Gemini will read the transcripts from **{selected_ai_folder}**, categorize them, and build a database automatically.")
+    st.markdown(f"Gemini will read the transcripts from **{selected_ai_folder}**, categorize them, and extract key metrics.")
     
     if "No transcript files found" in transcripts_data or "Error" in transcripts_data:
         st.warning("Please select a valid folder with transcripts in the sidebar.")
     else:
         if st.button("🚀 Run Batch AI Analysis"):
-            with st.spinner("Gemini is reading and tagging all calls..."):
+            with st.spinner("Gemini is analyzing calls... (this may take up to 30 seconds depending on volume)"):
                 try:
                     model = genai.GenerativeModel('gemini-3.1-flash-lite')
                     
-                    # Force Gemini to output pure JSON data
+                    # Force Gemini to output structured JSON data
                     prompt = f"""
-                    You are a QA AI analyzing call transcripts. Read the following transcripts.
+                    You are a strict QA API analyzing call transcripts. Read all the transcripts provided.
                     You MUST return a valid JSON array of objects. 
                     
-                    Each object must have exactly these keys:
+                    Each object must represent a single transcript and have EXACTLY these keys:
                     "File Name": (The name of the transcript file)
                     "Primary Topic": (Choose ONE: Cancellation, Product Question, Billing, Angry Customer, Upsell, General Inquiry, or Other)
                     "Sentiment": (Choose ONE: Positive, Neutral, or Negative)
+                    "Success Story": (Set to "Yes" if the customer shared a positive health win/testimonial, otherwise "No")
+                    "Cancellation Reason": (The specific reason they canceled. Set to "N/A" if they did not cancel)
+                    "Compliance Violation": (Set to "Yes" if the agent made unapproved health/medical claims treating or curing diseases, otherwise "No")
                     "Summary": (A 1-sentence summary of the call)
                     
                     Transcripts:
@@ -787,25 +791,61 @@ with tab_tagging:
                         generation_config={"response_mime_type": "application/json"}
                     )
                     
-                    # Convert the JSON text from Gemini into a Python Dictionary, then a Pandas Table
                     json_data = json.loads(response.text)
                     df_tags = pd.DataFrame(json_data)
                     
                     st.success("✅ Analysis Complete!")
                     
-                    # Draw Charts
-                    col_chart1, col_chart2 = st.columns(2)
+                    # Ensure topic counts are ready for plotting
+                    topic_counts = df_tags['Primary Topic'].value_counts().reset_index()
+                    topic_counts.columns = ['Topic', 'Count']
                     
-                    with col_chart1:
-                        st.markdown("**Call Topics Breakdown**")
-                        st.bar_chart(df_tags['Primary Topic'].value_counts())
-                        
-                    with col_chart2:
-                        st.markdown("**Overall Sentiment**")
-                        st.bar_chart(df_tags['Sentiment'].value_counts())
+                    # Setup Top Metric Cards
+                    m1, m2, m3 = st.columns(3)
+                    with m1:
+                        success_count = len(df_tags[df_tags['Success Story'].astype(str).str.upper() == 'YES'])
+                        st.metric("🌟 Success Stories Found", success_count)
+                    with m2:
+                        comp_viol = len(df_tags[df_tags['Compliance Violation'].astype(str).str.upper() == 'YES'])
+                        st.metric("🚨 Compliance Violations", comp_viol)
+                    with m3:
+                        cancellations = len(df_tags[df_tags['Primary Topic'] == 'Cancellation'])
+                        st.metric("❌ Total Cancellations", cancellations)
                         
                     st.divider()
-                    st.markdown("**📝 Call Summaries Log**")
+
+                    # Charts Row
+                    col_chart1, col_chart2 = st.columns([1.5, 1])
+                    
+                    with col_chart1:
+                        st.markdown("**Radar Breakdown: Call Topics**")
+                        # Build the sleek Plotly Radar Chart
+                        fig = px.line_polar(
+                            topic_counts, 
+                            r='Count', 
+                            theta='Topic', 
+                            line_close=True,
+                            color_discrete_sequence=['#3b82f6'] # Blue line to match the theme
+                        )
+                        fig.update_traces(fill='toself', fillcolor='rgba(59, 130, 246, 0.4)')
+                        fig.update_layout(
+                            polar=dict(
+                                radialaxis=dict(visible=True, tickfont=dict(color="gray")),
+                                angularaxis=dict(tickfont=dict(size=14))
+                            ),
+                            paper_bgcolor='rgba(0,0,0,0)',
+                            plot_bgcolor='rgba(0,0,0,0)',
+                            margin=dict(l=40, r=40, t=20, b=20)
+                        )
+                        st.plotly_chart(fig, use_container_width=True)
+                        
+                    with col_chart2:
+                        st.markdown("**Overall Call Sentiment**")
+                        sentiment_counts = df_tags['Sentiment'].value_counts()
+                        st.bar_chart(sentiment_counts, color="#10b981") # Green bars
+                        
+                    st.divider()
+                    st.markdown("**📝 Detailed Call Breakdown Database**")
                     st.dataframe(df_tags, use_container_width=True)
                     
                 except Exception as e:
