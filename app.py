@@ -407,7 +407,17 @@ if selected_tab == "📊 Performance Dashboard":
             
             if sel_agent != "All agents" and not coach_df.empty:
                 if 'Agent Name' in coach_df.columns and 'Date Range' in coach_df.columns:
-                    agent_coach_data = coach_df[coach_df['Agent Name'] == sel_agent]
+                    # Grab JUST the first name of the selected agent (lowercase)
+                    first_name = str(sel_agent).split()[0].strip().lower()
+                    
+                    # Create a clean version of the coaching dataframe
+                    coach_df_clean = coach_df.copy()
+                    # Extract JUST the first name from the Coaching Sheet column
+                    coach_df_clean['First_Name'] = coach_df_clean['Agent Name'].astype(str).apply(lambda x: x.split()[0].strip().lower() if pd.notna(x) else "")
+                    
+                    # Match them based on the first name!
+                    agent_coach_data = coach_df_clean[coach_df_clean['First_Name'] == first_name]
+                    
                     if not agent_coach_data.empty:
                         avail_dates = agent_coach_data['Date Range'].dropna().unique()
                         sel_coaching_date = st.sidebar.selectbox("🔍 SELECT COACHING DATE RANGE (1-on-1 View)", ["Hide 1-on-1 View"] + list(avail_dates))
