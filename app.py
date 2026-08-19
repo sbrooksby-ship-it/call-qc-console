@@ -96,19 +96,14 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # -------------------------------------------------------------------------
-# BALANCE OF NATURE LOGO HEADER
+# BALANCE OF NATURE LOGO HEADER (PURE CSS - GITHUB FRIENDLY!)
 # -------------------------------------------------------------------------
-col_spacer1, col_logo, col_spacer2 = st.columns([1, 1.5, 1])
-with col_logo:
-    try:
-        # Using the Absolute Path! Adjust if your folder name is different.
-        st.image(r"C:\Users\sbrooksby\Downloads\Python\image_b6a55d.jpeg", use_container_width=True)
-    except Exception:
-        st.error("⚠️ Could not find 'image_b6a55d.jpeg'. Please double check the absolute path on line 117!")
-
 st.markdown("""
-<div style="text-align: center; margin-bottom: 25px; margin-top: -15px;">
-    <h3 style="color: #475569; font-weight: 400; letter-spacing: 4px; font-size: 1.2rem;">CALL QC CONSOLE</h3>
+<div style="text-align: center; margin-bottom: 25px; margin-top: -20px;">
+    <h1 style="font-size: 3.5rem; margin-bottom: 0; font-family: 'Arial Black', Impact, sans-serif; letter-spacing: 2px;">
+        <span style="color: #111111;">BALANCE OF N</span><span style="color: #8CC63F;">A</span><span style="color: #111111;">TURE</span>
+    </h1>
+    <h3 style="color: #475569; margin-top: -10px; font-weight: 400; letter-spacing: 4px; font-size: 1.2rem;">CALL QC CONSOLE</h3>
 </div>
 """, unsafe_allow_html=True)
 
@@ -118,7 +113,6 @@ st.markdown("""
 # -------------------------------------------------------------------------
 FOLDER_ID = "19SEHIDCcIdggzSVzl1dhClmHTXXqrwK9"
 
-# Removed @st.cache_resource here to fix the "Broken Pipe" Error!
 def get_drive_service():
     """Authenticates with Google Drive using secrets.toml."""
     try:
@@ -130,7 +124,6 @@ def get_drive_service():
             creds_dict,
             scopes=['https://www.googleapis.com/auth/drive.readonly']
         )
-        # Added cache_discovery=False to prevent background network timeouts
         return build('drive', 'v3', credentials=creds, cache_discovery=False)
     except Exception as e:
         st.error(f"Failed to connect to Google Drive Service: {e}")
@@ -687,7 +680,9 @@ if selected_tab == "📊 Performance Dashboard":
 else:
     st.sidebar.header("AI Transcript Vault")
     subfolders = get_drive_subfolders(FOLDER_ID)
-    folder_options = ["📁 All Transcripts (All Weeks)"] + [f"📅 {name}" for name in sorted(subfolders.keys())]
+    
+    # Weekly folders first (newest to oldest), with "All Transcripts" at the very bottom
+    folder_options = [f"📅 {name}" for name in sorted(subfolders.keys(), reverse=True)] + ["📁 All Transcripts (All Weeks)"]
     selected_ai_folder = st.sidebar.selectbox("Select Week to Analyze:", folder_options)
 
     if st.sidebar.button("🔄 Sync Drive Cache"):
@@ -872,7 +867,7 @@ else:
                         
                         current_batch = (i // chunk_size) + 1
                         total_batches = (total_calls + chunk_size - 1) // chunk_size
-                        status_text.markdown(f"**⏳ Processing batch {current_batch} of {total_batches}...** *(Analyzing calls {i+1} to min(i+chunk_size, total_calls))*")
+                        status_text.markdown(f"**⏳ Processing batch {current_batch} of {total_batches}...** *(Analyzing calls {i+1} to {min(i+chunk_size, total_calls)})*")
                         
                         prompt = f"""
                         You are a strict QA API analyzing call transcripts. Read all the transcripts provided.
