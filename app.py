@@ -298,7 +298,7 @@ def create_section_bar_chart(summary_df, threshold):
         text=df_chart['Percentage'],
         labels={'Pct_Num': 'Score (%)', 'Section': ''},
         range_x=[0, 100],
-        color_discrete_sequence=['#8CC63F']
+        color_discrete_sequence=['#dcf0c3'] # <--- Updated to match the soft sidebar background green!
     )
     
     # Add a dashed target line based on the manager's Pass Threshold
@@ -642,8 +642,8 @@ if selected_tab == "📊 Performance Dashboard":
                                 st.markdown(f"**📈 {sel_agent.upper()}'S SCORE TREND**")
                                 
                             trend_df = filtered_call_df.groupby('Clean_Date')['Call Percentage'].mean()
-                            # Updated line chart to use the matching Balance of Nature Green
-                            st.line_chart(trend_df, height=350, color="#8CC63F")
+                            # Reverted line chart back to Streamlit default blue!
+                            st.line_chart(trend_df, height=350)
         
                         with col_sections:
                             col_sec_title, col_sec_toggle = st.columns([1, 1])
@@ -870,7 +870,7 @@ else:
                         st.error(f"Error communicating with Gemini API: {e}")
 
     # =========================================================================
-    # TAB 3: AI TAGGING & INSIGHTS (WITH RADAR & BOTTLE CHARTS)
+    # TAB 3: AI TAGGING & Insights (WITH RADAR & BOTTLE CHARTS)
     # =========================================================================
     elif selected_tab == "🏷️ Tagging & Insights":
         st.header("🏷️ AI Call Tagging & Sentiment Analysis")
