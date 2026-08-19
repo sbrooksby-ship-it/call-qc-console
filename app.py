@@ -387,7 +387,10 @@ if selected_tab == "📊 Performance Dashboard":
                 
             st.sidebar.divider()
             
-            fixed_columns = ['Date', 'Agent Name', 'Call']
+            # Create a hidden unique ID for every single row so identical call names don't merge!
+            raw_df['Unique_Row_ID'] = raw_df.index 
+            
+            fixed_columns = ['Unique_Row_ID', 'Date', 'Agent Name', 'Call']
             score_columns = [col for col in raw_df.columns if col not in fixed_columns and "total" not in col.lower()]
             
             df = pd.melt(raw_df, 
@@ -405,7 +408,8 @@ if selected_tab == "📊 Performance Dashboard":
             
             df['Section'] = df['Category'].apply(get_section_name)
             
-            call_df = df.groupby(['Clean_Date', 'Date', 'Agent', 'Call'])['Score'].sum().reset_index()
+            # Grouping by Unique_Row_ID so calls with identical names do not get merged!
+            call_df = df.groupby(['Unique_Row_ID', 'Clean_Date', 'Date', 'Agent', 'Call'])['Score'].sum().reset_index()
             call_df = call_df.rename(columns={'Score': 'Total Raw Score'})
             call_df['Call Percentage'] = (call_df['Total Raw Score'] / 180) * 100
             
@@ -658,7 +662,7 @@ if selected_tab == "📊 Performance Dashboard":
                                 st.markdown(f"**📈 {sel_agent.upper()}'S SCORE TREND**")
                                 
                             trend_df = filtered_call_df.groupby('Clean_Date')['Call Percentage'].mean()
-                            # Updated line chart to use Steel Blue
+                            # Updated line chart with Steel Blue
                             st.line_chart(trend_df, height=350, color="#4682B4")
         
                         with col_sections:
