@@ -101,9 +101,10 @@ st.markdown("""
 col_spacer1, col_logo, col_spacer2 = st.columns([1, 1.5, 1])
 with col_logo:
     try:
-        st.image("image_b6a55d.jpeg", use_container_width=True)
+        # Using the Absolute Path! Adjust if your folder name is different.
+        st.image(r"C:\Users\sbrooksby\Downloads\Python\image_b6a55d.jpeg", use_container_width=True)
     except Exception:
-        st.error("⚠️ Could not find 'image_b6a55d.jpeg'. Make sure the image is in the same folder as this app.py file!")
+        st.error("⚠️ Could not find 'image_b6a55d.jpeg'. Please double check the absolute path on line 117!")
 
 st.markdown("""
 <div style="text-align: center; margin-bottom: 25px; margin-top: -15px;">
@@ -861,12 +862,12 @@ else:
                     
                     all_json_data = []
                     total_calls = len(transcripts_list)
-                    chunk_size = 5 # Processing 5 calls at a time to stay under TPM limits
+                    chunk_size = 20 # Processing 20 calls at a time!
                     
                     for i in range(0, total_calls, chunk_size):
                         chunk = transcripts_list[i:i + chunk_size]
                         
-                        # Build the string for just this chunk of 5 calls
+                        # Build the string for just this chunk of calls
                         chunk_str = "\n\n".join([f"--- File: {c['file_name']} ---\n{c['content']}" for c in chunk])
                         
                         current_batch = (i // chunk_size) + 1
