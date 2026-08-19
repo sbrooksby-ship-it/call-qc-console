@@ -642,7 +642,8 @@ if selected_tab == "📊 Performance Dashboard":
                                 st.markdown(f"**📈 {sel_agent.upper()}'S SCORE TREND**")
                                 
                             trend_df = filtered_call_df.groupby('Clean_Date')['Call Percentage'].mean()
-                            st.line_chart(trend_df, height=350)
+                            # Updated line chart to use the matching Balance of Nature Green
+                            st.line_chart(trend_df, height=350, color="#8CC63F")
         
                         with col_sections:
                             col_sec_title, col_sec_toggle = st.columns([1, 1])
