@@ -964,7 +964,7 @@ else:
                         
                         Each object must represent a single transcript and have EXACTLY these keys:
                         "File Name": (The name of the transcript file)
-                        "Primary Topic": (Choose ONE: Cancellation, Product Question, Billing, Angry Customer, Upsell, General Inquiry, or Other)
+                        "Topics": (A comma-separated list of ALL that apply from this list: Cancellation, Product Question, Billing, Angry Customer, Upsell, General Inquiry. If none apply, write "Other")
                         "Sentiment": (Choose ONE: Positive, Neutral, or Negative)
                         "Success Story Asked": (Set to "Yes" if the agent explicitly asked the customer to share a success story or positive health experience with the product, otherwise "No")
                         "Cancellation Reason": (The specific reason they canceled. Set to "N/A" if they did not cancel)
@@ -1010,7 +1010,8 @@ else:
                         comp_viol = len(df_tags[df_tags['Compliance Violation'].astype(str).str.upper() == 'YES'])
                         st.metric("🚨 Compliance Violations", comp_viol)
                     with m3:
-                        cancellations = len(df_tags[df_tags['Primary Topic'] == 'Cancellation'])
+                        # Updated to handle multiple tags in a string!
+                        cancellations = len(df_tags[df_tags['Topics'].astype(str).str.contains('Cancellation', case=False, na=False)])
                         st.metric("❌ Total Cancellations", cancellations)
                         
                     st.divider()
@@ -1021,10 +1022,17 @@ else:
                     with col_chart1:
                         st.markdown("**Radar Breakdown: Call Topics**")
                         all_topics = ["Cancellation", "Product Question", "Billing", "Angry Customer", "Upsell", "General Inquiry", "Other"]
-                        topic_counts = df_tags['Primary Topic'].value_counts()
+                        
+                        # Split comma-separated topics, explode into separate rows, and strip whitespace
+                        topics_series = df_tags['Topics'].dropna().astype(str).str.split(',').explode().str.strip()
+                        topics_series = topics_series[topics_series != ""] # Filter out any empty strings
+                        
+                        topic_counts = topics_series.value_counts()
+                        
                         for topic in all_topics:
                             if topic not in topic_counts:
                                 topic_counts[topic] = 0
+                                
                         topic_counts = topic_counts.reset_index()
                         topic_counts.columns = ['Topic', 'Count']
                         
