@@ -298,7 +298,7 @@ def create_section_bar_chart(summary_df, threshold):
         text=df_chart['Percentage'],
         labels={'Pct_Num': 'Score (%)', 'Section': ''},
         range_x=[0, 100],
-        color_discrete_sequence=['#3b82f6'] # <--- Updated to match the soft sidebar background green!
+        color_discrete_sequence=['#4682B4'] # <--- Updated to match the soft sidebar background green!
     )
     
     # Add a dashed target line based on the manager's Pass Threshold
@@ -643,7 +643,7 @@ if selected_tab == "📊 Performance Dashboard":
                                 
                             trend_df = filtered_call_df.groupby('Clean_Date')['Call Percentage'].mean()
                             # Reverted line chart back to Streamlit default blue!
-                            st.line_chart(trend_df, height=350)
+                            st.line_chart(trend_df, height=350, color='#4682B4')
         
                         with col_sections:
                             col_sec_title, col_sec_toggle = st.columns([1, 1])
