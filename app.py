@@ -281,6 +281,38 @@ def generate_section_summary(data_df):
     section_summary = section_summary.sort_values('Section').set_index('Section')
     return section_summary[['Score (Raw)', 'Percentage']]
 
+def create_section_bar_chart(summary_df, threshold):
+    """Creates a horizontal bar chart from the section summary dataframe."""
+    if summary_df.empty:
+        return None
+        
+    df_chart = summary_df.reset_index().copy()
+    # Convert 'Percentage' string (e.g. '85.5%') back to a float for charting
+    df_chart['Pct_Num'] = pd.to_numeric(df_chart['Percentage'].astype(str).str.replace('%', ''), errors='coerce').fillna(0)
+    
+    fig = px.bar(
+        df_chart,
+        x='Pct_Num',
+        y='Section',
+        orientation='h',
+        text=df_chart['Percentage'],
+        labels={'Pct_Num': 'Score (%)', 'Section': ''},
+        range_x=[0, 100],
+        color_discrete_sequence=['#8CC63F']
+    )
+    
+    # Add a dashed target line based on the manager's Pass Threshold
+    fig.add_vline(x=threshold, line_dash="dash", line_color="#dc2626", annotation_text=f"Target ({threshold}%)")
+    
+    fig.update_layout(
+        yaxis={'categoryorder': 'array', 'categoryarray': df_chart['Section'].tolist()[::-1]},
+        paper_bgcolor='rgba(0,0,0,0)',
+        plot_bgcolor='rgba(0,0,0,0)',
+        margin=dict(l=10, r=20, t=10, b=20),
+        height=330
+    )
+    return fig
+
 def generate_meter_bank(data_df, agent_filter):
     if data_df.empty:
         return pd.DataFrame().style
@@ -552,19 +584,35 @@ if selected_tab == "📊 Performance Dashboard":
                     # COMPARISON MODE RENDER
                     if compare_mode:
                         
-                        st.markdown("**📑 SECTION PERFORMANCE COMPARISON**")
+                        col_comp_title, col_comp_toggle = st.columns([1, 1])
+                        with col_comp_title:
+                            st.markdown("**📑 SECTION PERFORMANCE COMPARISON**")
+                        with col_comp_toggle:
+                            # Add toggle for comparison mode view
+                            sec_view_comp = st.radio("Display:", ["📊 Chart", "📑 Table"], horizontal=True, label_visibility="collapsed", key="comp_sec_view")
+                            
                         col_sec1, col_sec2 = st.columns(2)
                         
                         with col_sec1:
                             st.markdown(f"**Period 1 ({start_date.strftime('%m/%d')} to {end_date.strftime('%m/%d')})**")
-                            st.dataframe(generate_section_summary(filtered_df), use_container_width=True, height=350)
+                            sum_df1 = generate_section_summary(filtered_df)
+                            if sec_view_comp == "📑 Table":
+                                st.dataframe(sum_df1, use_container_width=True, height=350)
+                            else:
+                                fig1 = create_section_bar_chart(sum_df1, pass_threshold)
+                                if fig1: st.plotly_chart(fig1, use_container_width=True)
                             
                         with col_sec2:
                             st.markdown(f"**Period 2 ({start_date_2.strftime('%m/%d')} to {end_date_2.strftime('%m/%d')})**")
                             if filtered_df_2.empty:
                                 st.warning("No data for this date range.")
                             else:
-                                st.dataframe(generate_section_summary(filtered_df_2), use_container_width=True, height=350)
+                                sum_df2 = generate_section_summary(filtered_df_2)
+                                if sec_view_comp == "📑 Table":
+                                    st.dataframe(sum_df2, use_container_width=True, height=350)
+                                else:
+                                    fig2 = create_section_bar_chart(sum_df2, pass_threshold)
+                                    if fig2: st.plotly_chart(fig2, use_container_width=True)
                                 
                         st.divider()
 
@@ -597,8 +645,22 @@ if selected_tab == "📊 Performance Dashboard":
                             st.line_chart(trend_df, height=350)
         
                         with col_sections:
-                            st.markdown("**📑 SECTION PERFORMANCE**")
-                            st.dataframe(generate_section_summary(filtered_df), use_container_width=True, height=350)
+                            col_sec_title, col_sec_toggle = st.columns([1, 1])
+                            with col_sec_title:
+                                st.markdown("**📑 SECTION PERFORMANCE**")
+                            with col_sec_toggle:
+                                # Add toggle for standard mode view
+                                sec_view_std = st.radio("Display:", ["📊 Chart", "📑 Table"], horizontal=True, label_visibility="collapsed", key="std_sec_view")
+                                
+                            summary_df = generate_section_summary(filtered_df)
+                            
+                            # Render based on user's button choice
+                            if sec_view_std == "📑 Table":
+                                st.dataframe(summary_df, use_container_width=True, height=330)
+                            else:
+                                fig = create_section_bar_chart(summary_df, pass_threshold)
+                                if fig:
+                                    st.plotly_chart(fig, use_container_width=True)
         
                         st.divider()
         
