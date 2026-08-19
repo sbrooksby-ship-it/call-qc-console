@@ -616,7 +616,7 @@ if selected_tab == "📊 Performance Dashboard":
                                 st.dataframe(sum_df1, use_container_width=True, height=350)
                             else:
                                 fig1 = create_section_bar_chart(sum_df1, pass_threshold)
-                                if fig1: st.plotly_chart(fig1, use_container_width=True)
+                                if fig1: st.plotly_chart(fig1, use_container_width=True, key="chart_comp_1") # UNIQUE KEY
                             
                         with col_sec2:
                             st.markdown(f"**Period 2 ({start_date_2.strftime('%m/%d')} to {end_date_2.strftime('%m/%d')})**")
@@ -628,7 +628,7 @@ if selected_tab == "📊 Performance Dashboard":
                                     st.dataframe(sum_df2, use_container_width=True, height=350)
                                 else:
                                     fig2 = create_section_bar_chart(sum_df2, pass_threshold)
-                                    if fig2: st.plotly_chart(fig2, use_container_width=True)
+                                    if fig2: st.plotly_chart(fig2, use_container_width=True, key="chart_comp_2") # UNIQUE KEY
                                 
                         st.divider()
 
@@ -658,7 +658,7 @@ if selected_tab == "📊 Performance Dashboard":
                                 st.markdown(f"**📈 {sel_agent.upper()}'S SCORE TREND**")
                                 
                             trend_df = filtered_call_df.groupby('Clean_Date')['Call Percentage'].mean()
-                            # Updated line chart with Steel Blue
+                            # Updated line chart to use Steel Blue
                             st.line_chart(trend_df, height=350, color="#4682B4")
         
                         with col_sections:
@@ -677,7 +677,7 @@ if selected_tab == "📊 Performance Dashboard":
                             else:
                                 fig = create_section_bar_chart(summary_df, pass_threshold)
                                 if fig:
-                                    st.plotly_chart(fig, use_container_width=True)
+                                    st.plotly_chart(fig, use_container_width=True, key="chart_std") # UNIQUE KEY
         
                         st.divider()
         
