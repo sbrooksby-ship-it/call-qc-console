@@ -154,21 +154,37 @@ def fetch_all_transcripts(target_folder_id):
         files_list = []
         try:
             query = f"'{current_folder_id}' in parents and trashed = false"
-            results = service.files().list(q=query, fields="files(id, name, mimeType)").execute()
-            items = results.get('files', [])
+            page_token = None
             
-            for item in items:
-                if item['mimeType'] == 'application/vnd.google-apps.folder':
-                    files_list.extend(get_files_recursively(item['id'], path_prefix=f"{path_prefix}{item['name']}/"))
-                else:
-                    file_id = item['id']
-                    file_name = f"{path_prefix}{item['name']}"
-                    try:
-                        request = service.files().get_media(fileId=file_id)
-                        content = request.execute().decode('utf-8', errors='ignore')
-                        files_list.append({"file_name": file_name, "content": content})
-                    except Exception:
-                        pass
+            # Keep looping until there are no more pages of files left in Google Drive
+            while True:
+                results = service.files().list(
+                    q=query, 
+                    fields="nextPageToken, files(id, name, mimeType)",
+                    pageSize=1000, # Increased from default 100 to max 1000
+                    pageToken=page_token
+                ).execute()
+                
+                items = results.get('files', [])
+                
+                for item in items:
+                    if item['mimeType'] == 'application/vnd.google-apps.folder':
+                        files_list.extend(get_files_recursively(item['id'], path_prefix=f"{path_prefix}{item['name']}/"))
+                    else:
+                        file_id = item['id']
+                        file_name = f"{path_prefix}{item['name']}"
+                        try:
+                            request = service.files().get_media(fileId=file_id)
+                            content = request.execute().decode('utf-8', errors='ignore')
+                            files_list.append({"file_name": file_name, "content": content})
+                        except Exception:
+                            pass
+                
+                # Check if there's another page of files. If not, break the loop.
+                page_token = results.get('nextPageToken')
+                if not page_token:
+                    break
+                    
             return files_list
         except Exception:
             return files_list
@@ -298,7 +314,7 @@ def create_section_bar_chart(summary_df, threshold):
         text=df_chart['Percentage'],
         labels={'Pct_Num': 'Score (%)', 'Section': ''},
         range_x=[0, 100],
-        color_discrete_sequence=['#4682B4'] # <--- Updated to match the soft sidebar background green!
+        color_discrete_sequence=['#4682B4'] # <--- Steel Blue
     )
     
     # Add a dashed target line based on the manager's Pass Threshold
@@ -642,8 +658,8 @@ if selected_tab == "📊 Performance Dashboard":
                                 st.markdown(f"**📈 {sel_agent.upper()}'S SCORE TREND**")
                                 
                             trend_df = filtered_call_df.groupby('Clean_Date')['Call Percentage'].mean()
-                            # Reverted line chart back to Streamlit default blue!
-                            st.line_chart(trend_df, height=350, color='#4682B4')
+                            # Updated line chart with Steel Blue
+                            st.line_chart(trend_df, height=350, color="#4682B4")
         
                         with col_sections:
                             col_sec_title, col_sec_toggle = st.columns([1, 1])
@@ -870,7 +886,7 @@ else:
                         st.error(f"Error communicating with Gemini API: {e}")
 
     # =========================================================================
-    # TAB 3: AI TAGGING & Insights (WITH RADAR & BOTTLE CHARTS)
+    # TAB 3: AI TAGGING & INSIGHTS (WITH RADAR & BOTTLE CHARTS)
     # =========================================================================
     elif selected_tab == "🏷️ Tagging & Insights":
         st.header("🏷️ AI Call Tagging & Sentiment Analysis")
