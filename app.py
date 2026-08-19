@@ -298,7 +298,7 @@ def create_section_bar_chart(summary_df, threshold):
         text=df_chart['Percentage'],
         labels={'Pct_Num': 'Score (%)', 'Section': ''},
         range_x=[0, 100],
-        color_discrete_sequence=['#1E40AF'] # <--- Updated to match the soft sidebar background green!
+        color_discrete_sequence=['#4682B4'] # <--- Updated to match the soft sidebar background green!
     )
     
     # Add a dashed target line based on the manager's Pass Threshold
