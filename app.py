@@ -3,6 +3,7 @@ import pandas as pd
 import numpy as np
 import json
 import plotly.express as px
+import time
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 import google.generativeai as genai
@@ -94,28 +95,33 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# Custom Balance of Nature Header
+# -------------------------------------------------------------------------
+# BALANCE OF NATURE LOGO HEADER
+# -------------------------------------------------------------------------
+col_spacer1, col_logo, col_spacer2 = st.columns([1, 1.5, 1])
+with col_logo:
+    try:
+        st.image("image_b6a55d.jpeg", use_container_width=True)
+    except Exception:
+        st.error("⚠️ Could not find 'image_b6a55d.jpeg'. Make sure the image is in the same folder as this app.py file!")
+
 st.markdown("""
-<div style="text-align: center; margin-bottom: 25px; margin-top: -20px;">
-    <h1 style="font-size: 3.5rem; margin-bottom: 0; font-family: 'Arial Black', Impact, sans-serif; letter-spacing: 2px;">
-        <span style="color: #111111;">BALANCE OF N</span><span style="color: #8CC63F;">A</span><span style="color: #111111;">TURE</span>
-    </h1>
-    <h3 style="color: #475569; margin-top: -10px; font-weight: 400; letter-spacing: 4px; font-size: 1.2rem;">CALL QC CONSOLE</h3>
+<div style="text-align: center; margin-bottom: 25px; margin-top: -15px;">
+    <h3 style="color: #475569; font-weight: 400; letter-spacing: 4px; font-size: 1.2rem;">CALL QC CONSOLE</h3>
 </div>
 """, unsafe_allow_html=True)
+
 
 # -------------------------------------------------------------------------
 # GOOGLE DRIVE & GEMINI HELPER FUNCTIONS
 # -------------------------------------------------------------------------
 FOLDER_ID = "19SEHIDCcIdggzSVzl1dhClmHTXXqrwK9"
 
-@st.cache_resource(ttl=3600)
+# Removed @st.cache_resource here to fix the "Broken Pipe" Error!
 def get_drive_service():
     """Authenticates with Google Drive using secrets.toml."""
     try:
         creds_dict = dict(st.secrets["google_service_account"])
-        
-        # FIX FOR PEM INVALID LENGTH / UNESCAPED NEWLINES
         if "private_key" in creds_dict:
             creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
             
@@ -123,14 +129,14 @@ def get_drive_service():
             creds_dict,
             scopes=['https://www.googleapis.com/auth/drive.readonly']
         )
-        return build('drive', 'v3', credentials=creds)
+        # Added cache_discovery=False to prevent background network timeouts
+        return build('drive', 'v3', credentials=creds, cache_discovery=False)
     except Exception as e:
         st.error(f"Failed to connect to Google Drive Service: {e}")
         return None
 
 @st.cache_data(ttl=300)
 def get_drive_subfolders(folder_id):
-    """Fetches list of subfolders (e.g. weeks) inside the main Drive folder."""
     service = get_drive_service()
     if not service:
         return {}
@@ -145,13 +151,13 @@ def get_drive_subfolders(folder_id):
 
 @st.cache_data(ttl=300)
 def fetch_all_transcripts(target_folder_id):
-    """Recursively fetches text content from all files inside a specific folder AND subfolders."""
+    """Recursively fetches text content and returns a list of dictionaries for chunking."""
     service = get_drive_service()
     if not service:
-        return ""
+        return []
     
     def get_files_recursively(current_folder_id, path_prefix=""):
-        combined_text = ""
+        files_list = []
         try:
             query = f"'{current_folder_id}' in parents and trashed = false"
             results = service.files().list(q=query, fields="files(id, name, mimeType)").execute()
@@ -159,27 +165,21 @@ def fetch_all_transcripts(target_folder_id):
             
             for item in items:
                 if item['mimeType'] == 'application/vnd.google-apps.folder':
-                    combined_text += get_files_recursively(item['id'], path_prefix=f"{path_prefix}{item['name']}/")
+                    files_list.extend(get_files_recursively(item['id'], path_prefix=f"{path_prefix}{item['name']}/"))
                 else:
                     file_id = item['id']
                     file_name = f"{path_prefix}{item['name']}"
-                    
                     try:
                         request = service.files().get_media(fileId=file_id)
                         content = request.execute().decode('utf-8', errors='ignore')
-                        combined_text += f"\n\n--- TRANSCRIPT FILE: {file_name} ---\n{content}\n"
+                        files_list.append({"file_name": file_name, "content": content})
                     except Exception:
                         pass
-                        
-            return combined_text
-        except Exception as e:
-            return f"Error fetching from folder {current_folder_id}: {e}"
+            return files_list
+        except Exception:
+            return files_list
 
-    all_text = get_files_recursively(target_folder_id)
-    if not all_text.strip():
-        return "No transcript files found in the selected folder."
-        
-    return all_text
+    return get_files_recursively(target_folder_id)
 
 # Initialize Gemini AI
 if "GEMINI_API_KEY" in st.secrets:
@@ -699,7 +699,13 @@ else:
         folder_name_clean = selected_ai_folder.replace("📅 ", "")
         active_target_id = subfolders.get(folder_name_clean, FOLDER_ID)
         
-    transcripts_data = fetch_all_transcripts(active_target_id)
+    transcripts_list = fetch_all_transcripts(active_target_id)
+    
+    # Format a string version for the chat assistant
+    if not transcripts_list:
+        transcripts_data_str = "No transcript files found in the selected folder."
+    else:
+        transcripts_data_str = "\n\n".join([f"--- TRANSCRIPT FILE: {t['file_name']} ---\n{t['content']}" for t in transcripts_list])
 
     # =========================================================================
     # TAB 2: AI CALL ASSISTANT
@@ -708,8 +714,8 @@ else:
         st.header("💬 Gemini Call Transcript Intelligence")
         st.markdown(f"Ask questions across the transcripts in your **{selected_ai_folder}** vault.")
         
-        if "No transcript files found" in transcripts_data or "Error" in transcripts_data:
-            st.warning(transcripts_data)
+        if "No transcript files found" in transcripts_data_str or "Error" in transcripts_data_str:
+            st.warning(transcripts_data_str)
         else:
             st.success("🔒 Transcripts loaded securely into AI memory.")
             
@@ -728,7 +734,7 @@ else:
                 with st.chat_message("assistant"):
                     loader_placeholder = st.empty()
                     loader_placeholder.markdown("""
-                    <div style="background-color: #0f172a; padding: 20px; border-radius: 12px; border: 2px dashed #ef4444; text-align: center; margin-bottom: 15px;">
+                    <div style="background-color: #0f172a; padding: 20px; border-radius: 12px; border: 2px dashed #8CC63F; text-align: center; margin-bottom: 15px;">
                         <style>
                             @keyframes wobble {
                                 0% { transform: translateX(-20px); }
@@ -736,7 +742,7 @@ else:
                             }
                             @keyframes chomp-basic {
                                 0%, 100% { border-right-color: transparent; }
-                                50% { border-right-color: #ef4444; }
+                                50% { border-right-color: #8CC63F; }
                             }
                             .loader-row {
                                 display: flex;
@@ -748,14 +754,14 @@ else:
                             }
                             .pac-body {
                                 width: 0; height: 0;
-                                border: 20px solid #ef4444;
+                                border: 20px solid #8CC63F;
                                 border-right: 20px solid transparent;
                                 border-radius: 50%;
                                 animation: chomp-basic 0.3s infinite;
                             }
                         </style>
                         <div class="loader-row">
-                            <span style="color: #ef4444; font-size: 35px; font-weight: 900; font-family: 'Impact', sans-serif;">13</span>
+                            <span style="color: #8CC63F; font-size: 35px; font-weight: 900; font-family: 'Impact', sans-serif;">13</span>
                             <div class="pac-body"></div>
                             <span style="font-size: 25px;">🍪 🍪</span>
                             <span style="color: #3b82f6; font-size: 30px; font-weight: 900; font-family: 'Impact', sans-serif;">14 😱</span>
@@ -775,7 +781,7 @@ else:
                         Be concise, objective, and highlight exact quotes or call examples when relevant.
                         
                         TRANSCRIPT DATABASE:
-                        {transcripts_data}
+                        {transcripts_data_str}
                         
                         MANAGER'S QUESTION:
                         {user_prompt}
@@ -801,13 +807,18 @@ else:
         st.header("🏷️ AI Call Tagging & Sentiment Analysis")
         st.markdown(f"Gemini will read the transcripts from **{selected_ai_folder}**, categorize them, and extract key metrics.")
         
-        if "No transcript files found" in transcripts_data or "Error" in transcripts_data:
+        if not transcripts_list:
             st.warning("Please select a valid folder with transcripts in the sidebar.")
         else:
             if st.button("🚀 Run Batch AI Analysis"):
+                
+                # UI Layout for Batching
+                status_text = st.empty()
+                progress_bar = st.progress(0)
+                
                 loader_placeholder = st.empty()
                 loader_placeholder.markdown("""
-                <div style="background-color: #0f172a; padding: 20px; border-radius: 12px; border: 2px dashed #ef4444; text-align: center; margin-bottom: 15px;">
+                <div style="background-color: #0f172a; padding: 20px; border-radius: 12px; border: 2px dashed #8CC63F; text-align: center; margin-bottom: 15px;">
                     <style>
                         @keyframes wobble {
                             0% { transform: translateX(-20px); }
@@ -815,7 +826,7 @@ else:
                         }
                         @keyframes chomp-basic {
                             0%, 100% { border-right-color: transparent; }
-                            50% { border-right-color: #ef4444; }
+                            50% { border-right-color: #8CC63F; }
                         }
                         .loader-row {
                             display: flex;
@@ -827,20 +838,20 @@ else:
                         }
                         .pac-body {
                             width: 0; height: 0;
-                            border: 20px solid #ef4444;
+                            border: 20px solid #8CC63F;
                             border-right: 20px solid transparent;
                             border-radius: 50%;
                             animation: chomp-basic 0.3s infinite;
                         }
                     </style>
                     <div class="loader-row">
-                        <span style="color: #ef4444; font-size: 35px; font-weight: 900; font-family: 'Impact', sans-serif;">13</span>
+                        <span style="color: #8CC63F; font-size: 35px; font-weight: 900; font-family: 'Impact', sans-serif;">13</span>
                         <div class="pac-body"></div>
                         <span style="font-size: 25px;">🍪 🍪</span>
                         <span style="color: #3b82f6; font-size: 30px; font-weight: 900; font-family: 'Impact', sans-serif;">14 😱</span>
                     </div>
                     <div style="color: #cbd5e1; font-size: 16px; font-weight: 600; font-family: system-ui, sans-serif;">
-                        Dept 13. is munching on 14 while Gemini thinks...
+                        Dept 13. is munching on 14 while Gemini processes your call batches...
                     </div>
                 </div>
                 """, unsafe_allow_html=True)
@@ -848,35 +859,62 @@ else:
                 try:
                     model = genai.GenerativeModel('gemini-3.1-flash-lite')
                     
-                    prompt = f"""
-                    You are a strict QA API analyzing call transcripts. Read all the transcripts provided.
-                    You MUST return a valid JSON array of objects. 
+                    all_json_data = []
+                    total_calls = len(transcripts_list)
+                    chunk_size = 5 # Processing 5 calls at a time to stay under TPM limits
                     
-                    Each object must represent a single transcript and have EXACTLY these keys:
-                    "File Name": (The name of the transcript file)
-                    "Primary Topic": (Choose ONE: Cancellation, Product Question, Billing, Angry Customer, Upsell, General Inquiry, or Other)
-                    "Sentiment": (Choose ONE: Positive, Neutral, or Negative)
-                    "Success Story Asked": (Set to "Yes" if the agent explicitly asked the customer to share a success story or positive health experience with the product, otherwise "No")
-                    "Cancellation Reason": (The specific reason they canceled. Set to "N/A" if they did not cancel)
-                    "Compliance Violation": (Set to "Yes" if the agent made unapproved health/medical claims treating or curing diseases, otherwise "No")
-                    "Products Mentioned": (A comma-separated list of Balance of Nature products mentioned. Example: "Fruits, Veggies, Fiber & Spice". If none, write "None")
-                    "Competitors Mentioned": (A comma-separated list of competitor products/brands mentioned. If none, write "None")
-                    "Summary": (A 1-sentence summary of the call)
+                    for i in range(0, total_calls, chunk_size):
+                        chunk = transcripts_list[i:i + chunk_size]
+                        
+                        # Build the string for just this chunk of 5 calls
+                        chunk_str = "\n\n".join([f"--- File: {c['file_name']} ---\n{c['content']}" for c in chunk])
+                        
+                        current_batch = (i // chunk_size) + 1
+                        total_batches = (total_calls + chunk_size - 1) // chunk_size
+                        status_text.markdown(f"**⏳ Processing batch {current_batch} of {total_batches}...** *(Analyzing calls {i+1} to min(i+chunk_size, total_calls))*")
+                        
+                        prompt = f"""
+                        You are a strict QA API analyzing call transcripts. Read all the transcripts provided.
+                        You MUST return a valid JSON array of objects. 
+                        
+                        Each object must represent a single transcript and have EXACTLY these keys:
+                        "File Name": (The name of the transcript file)
+                        "Primary Topic": (Choose ONE: Cancellation, Product Question, Billing, Angry Customer, Upsell, General Inquiry, or Other)
+                        "Sentiment": (Choose ONE: Positive, Neutral, or Negative)
+                        "Success Story Asked": (Set to "Yes" if the agent explicitly asked the customer to share a success story or positive health experience with the product, otherwise "No")
+                        "Cancellation Reason": (The specific reason they canceled. Set to "N/A" if they did not cancel)
+                        "Compliance Violation": (Set to "Yes" if the agent made unapproved health/medical claims treating or curing diseases, otherwise "No")
+                        "Products Mentioned": (A comma-separated list of Balance of Nature products mentioned. Example: "Fruits, Veggies, Fiber & Spice". If none, write "None")
+                        "Competitors Mentioned": (A comma-separated list of competitor products/brands mentioned. If none, write "None")
+                        "Summary": (A 1-sentence summary of the call)
+                        
+                        Transcripts:
+                        {chunk_str}
+                        """
+                        
+                        response = model.generate_content(
+                            prompt, 
+                            generation_config={"response_mime_type": "application/json"}
+                        )
+                        
+                        batch_data = json.loads(response.text)
+                        all_json_data.extend(batch_data)
+                        
+                        # Update Progress Bar
+                        progress = min(1.0, (i + chunk_size) / total_calls)
+                        progress_bar.progress(progress)
+                        
+                        # Add a 3-second delay between batches to respect Google's TPM limit (skip on last batch)
+                        if i + chunk_size < total_calls:
+                            time.sleep(3)
                     
-                    Transcripts:
-                    {transcripts_data}
-                    """
-                    
-                    response = model.generate_content(
-                        prompt, 
-                        generation_config={"response_mime_type": "application/json"}
-                    )
-                    
-                    json_data = json.loads(response.text)
-                    df_tags = pd.DataFrame(json_data)
+                    # Consolidate all the batches into one giant DataFrame
+                    df_tags = pd.DataFrame(all_json_data)
                     
                     loader_placeholder.empty()
-                    st.success("✅ Analysis Complete!")
+                    status_text.empty()
+                    progress_bar.empty()
+                    st.success("✅ Batch Analysis Complete!")
                     
                     # --- TOP METRIC CARDS ---
                     m1, m2, m3 = st.columns(3)
@@ -1066,6 +1104,17 @@ else:
                     st.markdown("### 📝 Detailed Call Breakdown Database")
                     st.dataframe(df_tags, use_container_width=True)
                     
+                    # THE NEW CSV EXPORT BUTTON!
+                    csv_export = df_tags.to_csv(index=False).encode('utf-8')
+                    st.download_button(
+                        label="📥 Download AI Tagging Data to CSV",
+                        data=csv_export,
+                        file_name=f"AI_Tagging_Export_{selected_ai_folder}.csv",
+                        mime="text/csv",
+                    )
+                    
                 except Exception as e:
                     loader_placeholder.empty()
+                    status_text.empty()
+                    progress_bar.empty()
                     st.error(f"Failed to process analysis. The AI may have struggled to format the JSON. Error: {e}")
