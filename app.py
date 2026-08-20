@@ -767,7 +767,6 @@ else:
     st.sidebar.header("AI Transcript Vault")
     subfolders = get_drive_subfolders(FOLDER_ID)
     
-    # Reordered dropdown list: Weekly folders newest -> oldest, with "All Transcripts" at the very bottom
     folder_options = [f"📅 {name}" for name in sorted(subfolders.keys(), reverse=True)] + ["📁 All Transcripts (All Weeks)"]
     selected_ai_folder = st.sidebar.selectbox("Select Week to Analyze:", folder_options)
 
@@ -791,7 +790,7 @@ else:
         transcripts_data_str = "\n\n".join([f"--- TRANSCRIPT FILE: {t['file_name']} ---\n{t['content']}" for t in transcripts_list])
 
     # =========================================================================
-    # TAB 2: AI CALL ASSISTANT
+    # TAB 2: AI CALL ASSISTANT (WITH MAP-REDUCE DEEP SEARCH!)
     # =========================================================================
     if selected_tab == "💬 AI Assistant":
         st.header("💬 Gemini Call Transcript Intelligence")
@@ -816,52 +815,126 @@ else:
                     
                 with st.chat_message("assistant"):
                     loader_placeholder = st.empty()
-                    loader_placeholder.markdown("""
-                    <div style="background-color: #0f172a; padding: 20px; border-radius: 12px; border: 2px dashed #8CC63F; text-align: center; margin-bottom: 15px;">
-                        <style>
-                            @keyframes wobble { 0% { transform: translateX(-20px); } 100% { transform: translateX(20px); } }
-                            @keyframes chomp-basic { 0%, 100% { border-right-color: transparent; } 50% { border-right-color: #8CC63F; } }
-                            .loader-row { display: flex; justify-content: center; align-items: center; gap: 15px; animation: wobble 1.5s infinite alternate ease-in-out; margin-bottom: 15px; }
-                            .pac-body { width: 0; height: 0; border: 20px solid #8CC63F; border-right: 20px solid transparent; border-radius: 50%; animation: chomp-basic 0.3s infinite; }
-                        </style>
-                        <div class="loader-row">
-                            <span style="color: #8CC63F; font-size: 35px; font-weight: 900; font-family: 'Impact', sans-serif;">13</span>
-                            <div class="pac-body"></div>
-                            <span style="font-size: 25px;">🍪 🍪</span>
-                            <span style="color: #3b82f6; font-size: 30px; font-weight: 900; font-family: 'Impact', sans-serif;">14 😱</span>
-                        </div>
-                        <div style="color: #cbd5e1; font-size: 16px; font-weight: 600; font-family: system-ui, sans-serif;">
-                            Dept 13. is munching on 14 while Gemini thinks...
-                        </div>
-                    </div>
-                    """, unsafe_allow_html=True)
                     
                     try:
                         model = genai.GenerativeModel('gemini-3.1-flash-lite')
-                        full_prompt = f"""
-                        You are an expert QA and Customer Service Analyst for Balance of Nature.
-                        Answer the manager's question accurately using ONLY the call transcripts provided below.
-                        If the information is not contained in the transcripts, clearly state that you do not have enough data.
-                        Be concise, objective, and highlight exact quotes or call examples when relevant.
+                        total_calls = len(transcripts_list)
+                        chunk_size = 25 # ~35,000 tokens (Safely under the 250k free tier limit)
                         
-                        TRANSCRIPT DATABASE:
-                        {transcripts_data_str}
-                        
-                        MANAGER'S QUESTION:
-                        {user_prompt}
-                        """
-                        
-                        response = model.generate_content(full_prompt, stream=True)
-                        
-                        def stream_generator():
+                        # IF FEW CALLS: Normal fast prompt
+                        if total_calls <= chunk_size:
+                            loader_placeholder.markdown("""
+                            <div style="background-color: #0f172a; padding: 20px; border-radius: 12px; border: 2px dashed #8CC63F; text-align: center; margin-bottom: 15px;">
+                                <style>
+                                    @keyframes wobble { 0% { transform: translateX(-20px); } 100% { transform: translateX(20px); } }
+                                    @keyframes chomp-basic { 0%, 100% { border-right-color: transparent; } 50% { border-right-color: #8CC63F; } }
+                                    .loader-row { display: flex; justify-content: center; align-items: center; gap: 15px; animation: wobble 1.5s infinite alternate ease-in-out; margin-bottom: 15px; }
+                                    .pac-body { width: 0; height: 0; border: 20px solid #8CC63F; border-right: 20px solid transparent; border-radius: 50%; animation: chomp-basic 0.3s infinite; }
+                                </style>
+                                <div class="loader-row">
+                                    <span style="color: #8CC63F; font-size: 35px; font-weight: 900; font-family: 'Impact', sans-serif;">13</span>
+                                    <div class="pac-body"></div>
+                                    <span style="font-size: 25px;">🍪 🍪</span>
+                                    <span style="color: #3b82f6; font-size: 30px; font-weight: 900; font-family: 'Impact', sans-serif;">14 😱</span>
+                                </div>
+                                <div style="color: #cbd5e1; font-size: 16px; font-weight: 600; font-family: system-ui, sans-serif;">
+                                    Dept 13. is munching on 14 while Gemini thinks...
+                                </div>
+                            </div>
+                            """, unsafe_allow_html=True)
+                            
+                            full_prompt = f"""
+                            You are an expert QA and Customer Service Analyst for Balance of Nature.
+                            Answer the manager's question accurately using ONLY the call transcripts provided below.
+                            If the information is not contained in the transcripts, clearly state that you do not have enough data.
+                            Be concise, objective, and highlight exact quotes or call examples when relevant.
+                            
+                            TRANSCRIPT DATABASE:
+                            {transcripts_data_str}
+                            
+                            MANAGER'S QUESTION:
+                            {user_prompt}
+                            """
+                            
+                            response = model.generate_content(full_prompt, stream=True)
                             loader_placeholder.empty()
-                            for chunk in response:
-                                yield chunk.text
+                            
+                            def stream_generator():
+                                for chunk in response:
+                                    yield chunk.text
 
-                        full_response = st.write_stream(stream_generator)
-                        st.session_state.chat_history.append({"role": "assistant", "content": full_response})
+                            full_response = st.write_stream(stream_generator)
+                            st.session_state.chat_history.append({"role": "assistant", "content": full_response})
+                            
+                        # IF TOO MANY CALLS: Trigger "Deep Search" Map-Reduce Mode!
+                        else:
+                            loader_placeholder.warning(f"🧠 **Deep Search Activated!** You are querying {total_calls} calls simultaneously. To bypass Google's API limits, I am sending the AI to investigate the vault in batches and take notes. This will take a minute or two...")
+                            
+                            progress_bar = st.progress(0)
+                            status_text = st.empty()
+                            intermediate_notes = []
+                            
+                            for i in range(0, total_calls, chunk_size):
+                                chunk = transcripts_list[i:i + chunk_size]
+                                chunk_str = "\n\n".join([f"--- File: {c['file_name']} ---\n{c['content']}" for c in chunk])
+                                
+                                current_batch = (i // chunk_size) + 1
+                                total_batches = (total_calls + chunk_size - 1) // chunk_size
+                                
+                                status_text.markdown(f"**⏳ Investigating batch {current_batch} of {total_batches}...** *(Calls {i+1} to {min(i+chunk_size, total_calls)})*")
+                                
+                                batch_prompt = f"""
+                                You are helping analyze a large database of call transcripts in batches.
+                                MANAGER'S QUESTION: {user_prompt}
+                                
+                                Read this batch of transcripts and extract ANY information relevant to the manager's question. 
+                                Keep your notes concise. If there is nothing relevant in this specific batch, simply reply "No relevant findings in this batch."
+                                
+                                TRANSCRIPT BATCH:
+                                {chunk_str}
+                                """
+                                
+                                response = model.generate_content(batch_prompt)
+                                if "No relevant findings" not in response.text and response.text.strip() != "":
+                                    intermediate_notes.append(f"--- BATCH {current_batch} FINDINGS ---\n{response.text}")
+                                    
+                                progress_bar.progress(min(1.0, (i + chunk_size) / total_calls))
+                                
+                                if i + chunk_size < total_calls:
+                                    time.sleep(8) # Cooldown to protect Free Tier Limits!
+                                    
+                            status_text.markdown("✨ **Investigation complete! Synthesizing final answer...**")
+                            
+                            final_prompt = f"""
+                            You are an expert QA and Customer Service Analyst for Balance of Nature.
+                            A manager asked this question: {user_prompt}
+                            
+                            To answer this, an AI read {total_calls} transcripts in batches and took the following notes:
+                            
+                            {chr(10).join(intermediate_notes) if intermediate_notes else "No relevant information found across any batches."}
+                            
+                            Using ONLY these collected notes, provide a comprehensive, objective answer to the manager. 
+                            Synthesize the findings, highlight trends, and format it beautifully. 
+                            If no relevant information was found, state that clearly.
+                            """
+                            
+                            final_response = model.generate_content(final_prompt, stream=True)
+                            
+                            loader_placeholder.empty()
+                            status_text.empty()
+                            progress_bar.empty()
+                            
+                            def stream_generator():
+                                for chunk in final_response:
+                                    yield chunk.text
+
+                            full_response = st.write_stream(stream_generator)
+                            st.session_state.chat_history.append({"role": "assistant", "content": full_response})
+
                     except Exception as e:
                         loader_placeholder.empty()
+                        if 'status_text' in locals(): status_text.empty()
+                        if 'progress_bar' in locals(): progress_bar.empty()
                         st.error(f"Error communicating with Gemini API: {e}")
 
     # =========================================================================
@@ -879,7 +952,6 @@ else:
         else:
             run_analysis = st.button("🚀 Run Batch AI Analysis")
             
-            # RUN BATCH ANALYSIS (IF BUTTON CLICKED)
             if run_analysis:
                 status_text = st.empty()
                 progress_bar = st.progress(0)
@@ -943,7 +1015,6 @@ else:
                             generation_config={"response_mime_type": "application/json"}
                         )
                         
-                        # --- ROBUST JSON SANITIZING FIX ---
                         raw_text = response.text.strip()
                         start_idx = raw_text.find('[')
                         end_idx = raw_text.rfind(']')
@@ -960,7 +1031,7 @@ else:
                         progress_bar.progress(progress)
                         
                         if i + chunk_size < total_calls:
-                            time.sleep(2)
+                            time.sleep(6) # Increased cooldown to heavily protect the API limit
                     
                     st.session_state.ai_analysis_results[active_target_id] = pd.DataFrame(all_json_data)
                     
@@ -975,11 +1046,9 @@ else:
                     progress_bar.empty()
                     st.error(f"Failed to process analysis. Details: {e}")
 
-            # RENDER ANALYSIS RESULTS IF THEY EXIST IN MEMORY!
             if active_target_id in st.session_state.ai_analysis_results:
                 df_tags = st.session_state.ai_analysis_results[active_target_id]
                 
-                # --- TOP METRIC CARDS ---
                 m1, m2, m3 = st.columns(3)
                 with m1:
                     success_count = len(df_tags[df_tags['Success Story Asked'].astype(str).str.upper() == 'YES'])
@@ -993,7 +1062,6 @@ else:
                     
                 st.divider()
 
-                # --- RADAR & BOTTLE CHARTS ROW ---
                 col_chart1, col_chart2 = st.columns([1.5, 1.5])
                 
                 with col_chart1:
@@ -1101,7 +1169,6 @@ else:
 
                 st.divider()
                 
-                # --- COMPETITORS & FULL DATABASE ---
                 st.markdown("### ⚠️ Competitor Threat Board")
                 comps_list = df_tags['Competitors Mentioned'].dropna().astype(str).tolist()
                 found_comps = [c.strip() for items in comps_list for c in items.split(',') if c.strip().lower() != 'none']
