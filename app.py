@@ -4,6 +4,7 @@ import numpy as np
 import json
 import plotly.express as px
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 import google.generativeai as genai
@@ -143,25 +144,36 @@ def get_drive_subfolders(folder_id):
         st.error(f"Error fetching subfolders from Drive: {e}")
         return {}
 
-@st.cache_data(ttl=300)
+def download_file_content(file_id, file_name):
+    """Helper function to download individual files in parallel threads."""
+    service = get_drive_service()
+    if not service:
+        return None
+    try:
+        request = service.files().get_media(fileId=file_id)
+        content = request.execute().decode('utf-8', errors='ignore')
+        return {"file_name": file_name, "content": content}
+    except Exception:
+        return None
+
+@st.cache_data(ttl=600)
 def fetch_all_transcripts(target_folder_id):
-    """Recursively fetches text content and returns a list of dictionaries for chunking."""
+    """Recursively fetches text content using MULTI-THREADING for 10x faster downloads."""
     service = get_drive_service()
     if not service:
         return []
     
-    def get_files_recursively(current_folder_id, path_prefix=""):
-        files_list = []
+    def get_file_metadata_recursively(current_folder_id, path_prefix=""):
+        items_to_download = []
         try:
             query = f"'{current_folder_id}' in parents and trashed = false"
             page_token = None
             
-            # Keep looping until there are no more pages of files left in Google Drive
             while True:
                 results = service.files().list(
                     q=query, 
                     fields="nextPageToken, files(id, name, mimeType)",
-                    pageSize=1000, # Increased from default 100 to max 1000
+                    pageSize=1000,
                     pageToken=page_token
                 ).execute()
                 
@@ -169,27 +181,33 @@ def fetch_all_transcripts(target_folder_id):
                 
                 for item in items:
                     if item['mimeType'] == 'application/vnd.google-apps.folder':
-                        files_list.extend(get_files_recursively(item['id'], path_prefix=f"{path_prefix}{item['name']}/"))
+                        items_to_download.extend(get_file_metadata_recursively(item['id'], path_prefix=f"{path_prefix}{item['name']}/"))
                     else:
-                        file_id = item['id']
-                        file_name = f"{path_prefix}{item['name']}"
-                        try:
-                            request = service.files().get_media(fileId=file_id)
-                            content = request.execute().decode('utf-8', errors='ignore')
-                            files_list.append({"file_name": file_name, "content": content})
-                        except Exception:
-                            pass
+                        items_to_download.append((item['id'], f"{path_prefix}{item['name']}"))
                 
-                # Check if there's another page of files. If not, break the loop.
                 page_token = results.get('nextPageToken')
                 if not page_token:
                     break
                     
-            return files_list
+            return items_to_download
         except Exception:
-            return files_list
+            return items_to_download
 
-    return get_files_recursively(target_folder_id)
+    # Step 1: Rapidly list all file IDs
+    file_metadata = get_file_metadata_recursively(target_folder_id)
+    if not file_metadata:
+        return []
+
+    # Step 2: Download files in PARALLEL using 20 threads!
+    files_list = []
+    with ThreadPoolExecutor(max_workers=20) as executor:
+        futures = [executor.submit(download_file_content, f_id, f_name) for f_id, f_name in file_metadata]
+        for future in as_completed(futures):
+            res = future.result()
+            if res:
+                files_list.append(res)
+
+    return files_list
 
 # Initialize Gemini AI
 if "GEMINI_API_KEY" in st.secrets:
@@ -303,7 +321,6 @@ def create_section_bar_chart(summary_df, threshold):
         return None
         
     df_chart = summary_df.reset_index().copy()
-    # Convert 'Percentage' string (e.g. '85.5%') back to a float for charting
     df_chart['Pct_Num'] = pd.to_numeric(df_chart['Percentage'].astype(str).str.replace('%', ''), errors='coerce').fillna(0)
     
     fig = px.bar(
@@ -314,10 +331,9 @@ def create_section_bar_chart(summary_df, threshold):
         text=df_chart['Percentage'],
         labels={'Pct_Num': 'Score (%)', 'Section': ''},
         range_x=[0, 100],
-        color_discrete_sequence=['#4682B4'] # <--- Steel Blue
+        color_discrete_sequence=['#4682B4'] # Steel Blue
     )
     
-    # Add a dashed target line based on the manager's Pass Threshold
     fig.add_vline(x=threshold, line_dash="dash", line_color="#dc2626", annotation_text=f"Target ({threshold}%)")
     
     fig.update_layout(
@@ -408,7 +424,6 @@ if selected_tab == "📊 Performance Dashboard":
             
             df['Section'] = df['Category'].apply(get_section_name)
             
-            # Grouping by Unique_Row_ID so calls with identical names do not get merged!
             call_df = df.groupby(['Unique_Row_ID', 'Clean_Date', 'Date', 'Agent', 'Call'])['Score'].sum().reset_index()
             call_df = call_df.rename(columns={'Score': 'Total Raw Score'})
             call_df['Call Percentage'] = (call_df['Total Raw Score'] / 180) * 100
@@ -459,15 +474,9 @@ if selected_tab == "📊 Performance Dashboard":
             
             if sel_agent != "All agents" and not coach_df.empty:
                 if 'Agent Name' in coach_df.columns and 'Date Range' in coach_df.columns:
-                    # Grab JUST the first name of the selected agent (lowercase)
                     first_name = str(sel_agent).split()[0].strip().lower()
-                    
-                    # Create a clean version of the coaching dataframe
                     coach_df_clean = coach_df.copy()
-                    # Extract JUST the first name from the Coaching Sheet column
                     coach_df_clean['First_Name'] = coach_df_clean['Agent Name'].astype(str).apply(lambda x: x.split()[0].strip().lower() if pd.notna(x) else "")
-                    
-                    # Match them based on the first name!
                     agent_coach_data = coach_df_clean[coach_df_clean['First_Name'] == first_name]
                     
                     if not agent_coach_data.empty:
@@ -498,7 +507,6 @@ if selected_tab == "📊 Performance Dashboard":
             if filtered_call_df.empty:
                 st.warning("No data found for these filters.")
             else:
-                # TOP KPI ROW & DELTAS
                 col_empty, col_thresh = st.columns([4, 1])
                 with col_thresh:
                     pass_threshold = st.number_input("PASS THRESHOLD (%)", value=80, step=1)
@@ -553,13 +561,11 @@ if selected_tab == "📊 Performance Dashboard":
 
                 # 1-ON-1 COACHING VIEW vs. STANDARD DASHBOARD VIEW
                 if sel_coaching_date != "Hide 1-on-1 View":
-                    
                     st.info("🖨️ **How to Export this Scorecard:** Press **Ctrl + P** (or **Cmd + P** on Mac) to open the print menu, then select **'Save as PDF'**.")
 
                     st.markdown(f"## 📝 COACHING FEEDBACK: {sel_coaching_date}")
                     st.markdown(f"**Agent:** {sel_agent} | **Average Call Score during this period:** {avg_call_score:.1f}%")
 
-                    # RECURRING ISSUE DETECTION
                     historical_df = df[(df['Agent'] == sel_agent) & (df['Clean_Date'].dt.date < start_date)]
                     past_fails = historical_df[historical_df['Score'].isin([1, 2])]['Category'].unique()
                     current_fails = filtered_df[filtered_df['Score'].isin([1, 2])]['Category'].unique()
@@ -601,14 +607,11 @@ if selected_tab == "📊 Performance Dashboard":
                     st.info("To return to the main dashboard charts, change the 'Select Coaching Date Range' dropdown in the sidebar back to 'Hide 1-on-1 View'.")
 
                 else:
-                    # COMPARISON MODE RENDER
                     if compare_mode:
-                        
                         col_comp_title, col_comp_toggle = st.columns([1, 1])
                         with col_comp_title:
                             st.markdown("**📑 SECTION PERFORMANCE COMPARISON**")
                         with col_comp_toggle:
-                            # Add toggle for comparison mode view
                             sec_view_comp = st.radio("Display:", ["📊 Chart", "📑 Table"], horizontal=True, label_visibility="collapsed", key="comp_sec_view")
                             
                         col_sec1, col_sec2 = st.columns(2)
@@ -620,7 +623,7 @@ if selected_tab == "📊 Performance Dashboard":
                                 st.dataframe(sum_df1, use_container_width=True, height=350)
                             else:
                                 fig1 = create_section_bar_chart(sum_df1, pass_threshold)
-                                if fig1: st.plotly_chart(fig1, use_container_width=True, key="chart_comp_1") # UNIQUE KEY
+                                if fig1: st.plotly_chart(fig1, use_container_width=True, key="chart_comp_1")
                             
                         with col_sec2:
                             st.markdown(f"**Period 2 ({start_date_2.strftime('%m/%d')} to {end_date_2.strftime('%m/%d')})**")
@@ -632,7 +635,7 @@ if selected_tab == "📊 Performance Dashboard":
                                     st.dataframe(sum_df2, use_container_width=True, height=350)
                                 else:
                                     fig2 = create_section_bar_chart(sum_df2, pass_threshold)
-                                    if fig2: st.plotly_chart(fig2, use_container_width=True, key="chart_comp_2") # UNIQUE KEY
+                                    if fig2: st.plotly_chart(fig2, use_container_width=True, key="chart_comp_2")
                                 
                         st.divider()
 
@@ -651,7 +654,6 @@ if selected_tab == "📊 Performance Dashboard":
                             else:
                                 st.dataframe(generate_meter_bank(filtered_df_2, sel_agent), use_container_width=True, height=350, column_config=col_config)
 
-                    # STANDARD MODE RENDER
                     else:
                         col_trend, col_sections = st.columns([2, 1])
                         
@@ -662,7 +664,6 @@ if selected_tab == "📊 Performance Dashboard":
                                 st.markdown(f"**📈 {sel_agent.upper()}'S SCORE TREND**")
                                 
                             trend_df = filtered_call_df.groupby('Clean_Date')['Call Percentage'].mean()
-                            # Updated line chart with Steel Blue
                             st.line_chart(trend_df, height=350, color="#4682B4")
         
                         with col_sections:
@@ -670,18 +671,16 @@ if selected_tab == "📊 Performance Dashboard":
                             with col_sec_title:
                                 st.markdown("**📑 SECTION PERFORMANCE**")
                             with col_sec_toggle:
-                                # Add toggle for standard mode view
                                 sec_view_std = st.radio("Display:", ["📊 Chart", "📑 Table"], horizontal=True, label_visibility="collapsed", key="std_sec_view")
                                 
                             summary_df = generate_section_summary(filtered_df)
                             
-                            # Render based on user's button choice
                             if sec_view_std == "📑 Table":
                                 st.dataframe(summary_df, use_container_width=True, height=330)
                             else:
                                 fig = create_section_bar_chart(summary_df, pass_threshold)
                                 if fig:
-                                    st.plotly_chart(fig, use_container_width=True, key="chart_std") # UNIQUE KEY
+                                    st.plotly_chart(fig, use_container_width=True, key="chart_std")
         
                         st.divider()
         
@@ -691,7 +690,6 @@ if selected_tab == "📊 Performance Dashboard":
 
                     st.divider()
 
-                    # LEADERBOARD & PRIORITIES
                     col_board, col_coach = st.columns([2, 1])
 
                     with col_board:
@@ -725,7 +723,6 @@ if selected_tab == "📊 Performance Dashboard":
                                 return "➖ 0.0%"
                                 
                         leaderboard['Trend (vs First Half)'] = leaderboard['Trend (vs First Half)'].apply(format_trend)
-                        
                         leaderboard['AVG_CALL_SCORE'] = leaderboard['AVG_CALL_SCORE'].round(1).astype(str) + '%'
                         leaderboard['PASS RATE %'] = leaderboard['PASS RATE %'].round(0).astype(str) + '%'
                         leaderboard = leaderboard.sort_values(by='AVG_CALL_SCORE', ascending=False)
@@ -735,7 +732,6 @@ if selected_tab == "📊 Performance Dashboard":
                         if sel_agent != "All agents":
                             st.markdown("**INDIVIDUAL CALL BREAKDOWN (PERIOD 1)**")
                             call_breakdown = filtered_call_df[['Date', 'Call', 'Total Raw Score', 'Call Percentage']].copy()
-                            
                             call_breakdown['Status'] = call_breakdown['Call Percentage'].apply(
                                 lambda x: "✅ Pass" if x >= pass_threshold else "❌ Fail"
                             )
@@ -768,19 +764,20 @@ if selected_tab == "📊 Performance Dashboard":
         st.info("👈 Please paste your Google Sheet Share Link(s) in the sidebar to load the dashboard.")
 
 # =========================================================================
-# AI SIDEBAR & DATA LOADING (FOR AI ASSISTANT & TAGGING TABS)
+# AI SIDEBAR & DATA LOADING (PERSISTENT MEMORY & PARALLEL FETCHING)
 # =========================================================================
 else:
     st.sidebar.header("AI Transcript Vault")
     subfolders = get_drive_subfolders(FOLDER_ID)
     
-    # Weekly folders first (newest to oldest), with "All Transcripts" at the very bottom
     folder_options = [f"📅 {name}" for name in sorted(subfolders.keys(), reverse=True)] + ["📁 All Transcripts (All Weeks)"]
     selected_ai_folder = st.sidebar.selectbox("Select Week to Analyze:", folder_options)
 
     if st.sidebar.button("🔄 Sync Drive Cache"):
         st.cache_data.clear()
-        st.sidebar.success("Drive cache refreshed!")
+        if 'ai_analysis_results' in st.session_state:
+            del st.session_state['ai_analysis_results']
+        st.sidebar.success("Drive & Analysis memory cleared!")
 
     if selected_ai_folder == "📁 All Transcripts (All Weeks)":
         active_target_id = FOLDER_ID
@@ -788,9 +785,9 @@ else:
         folder_name_clean = selected_ai_folder.replace("📅 ", "")
         active_target_id = subfolders.get(folder_name_clean, FOLDER_ID)
         
+    # FETCH TRANSCRIPTS WITH MULTI-THREADED SPEED!
     transcripts_list = fetch_all_transcripts(active_target_id)
     
-    # Format a string version for the chat assistant
     if not transcripts_list:
         transcripts_data_str = "No transcript files found in the selected folder."
     else:
@@ -801,12 +798,12 @@ else:
     # =========================================================================
     if selected_tab == "💬 AI Assistant":
         st.header("💬 Gemini Call Transcript Intelligence")
-        st.markdown(f"Ask questions across the transcripts in your **{selected_ai_folder}** vault.")
+        st.markdown(f"Ask questions across the **{len(transcripts_list)} transcripts** loaded in your **{selected_ai_folder}** vault.")
         
         if "No transcript files found" in transcripts_data_str or "Error" in transcripts_data_str:
             st.warning(transcripts_data_str)
         else:
-            st.success("🔒 Transcripts loaded securely into AI memory.")
+            st.success(f"🔒 {len(transcripts_list)} Transcripts loaded securely into AI memory.")
             
             if "chat_history" not in st.session_state:
                 st.session_state.chat_history = []
@@ -825,29 +822,10 @@ else:
                     loader_placeholder.markdown("""
                     <div style="background-color: #0f172a; padding: 20px; border-radius: 12px; border: 2px dashed #8CC63F; text-align: center; margin-bottom: 15px;">
                         <style>
-                            @keyframes wobble {
-                                0% { transform: translateX(-20px); }
-                                100% { transform: translateX(20px); }
-                            }
-                            @keyframes chomp-basic {
-                                0%, 100% { border-right-color: transparent; }
-                                50% { border-right-color: #8CC63F; }
-                            }
-                            .loader-row {
-                                display: flex;
-                                justify-content: center;
-                                align-items: center;
-                                gap: 15px;
-                                animation: wobble 1.5s infinite alternate ease-in-out;
-                                margin-bottom: 15px;
-                            }
-                            .pac-body {
-                                width: 0; height: 0;
-                                border: 20px solid #8CC63F;
-                                border-right: 20px solid transparent;
-                                border-radius: 50%;
-                                animation: chomp-basic 0.3s infinite;
-                            }
+                            @keyframes wobble { 0% { transform: translateX(-20px); } 100% { transform: translateX(20px); } }
+                            @keyframes chomp-basic { 0%, 100% { border-right-color: transparent; } 50% { border-right-color: #8CC63F; } }
+                            .loader-row { display: flex; justify-content: center; align-items: center; gap: 15px; animation: wobble 1.5s infinite alternate ease-in-out; margin-bottom: 15px; }
+                            .pac-body { width: 0; height: 0; border: 20px solid #8CC63F; border-right: 20px solid transparent; border-radius: 50%; animation: chomp-basic 0.3s infinite; }
                         </style>
                         <div class="loader-row">
                             <span style="color: #8CC63F; font-size: 35px; font-weight: 900; font-family: 'Impact', sans-serif;">13</span>
@@ -890,18 +868,22 @@ else:
                         st.error(f"Error communicating with Gemini API: {e}")
 
     # =========================================================================
-    # TAB 3: AI TAGGING & INSIGHTS (WITH RADAR & BOTTLE CHARTS)
+    # TAB 3: AI TAGGING & INSIGHTS (PERSISTENT ANALYSIS RESULTS)
     # =========================================================================
     elif selected_tab == "🏷️ Tagging & Insights":
         st.header("🏷️ AI Call Tagging & Sentiment Analysis")
-        st.markdown(f"Gemini will read the transcripts from **{selected_ai_folder}**, categorize them, and extract key metrics.")
+        st.markdown(f"Gemini will read **{len(transcripts_list)} transcripts** from **{selected_ai_folder}**, categorize them, and extract key metrics.")
         
+        if 'ai_analysis_results' not in st.session_state:
+            st.session_state.ai_analysis_results = {}
+
         if not transcripts_list:
             st.warning("Please select a valid folder with transcripts in the sidebar.")
         else:
-            if st.button("🚀 Run Batch AI Analysis"):
-                
-                # UI Layout for Batching
+            run_analysis = st.button("🚀 Run Batch AI Analysis")
+            
+            # RUN BATCH ANALYSIS (IF BUTTON CLICKED)
+            if run_analysis:
                 status_text = st.empty()
                 progress_bar = st.progress(0)
                 
@@ -909,29 +891,10 @@ else:
                 loader_placeholder.markdown("""
                 <div style="background-color: #0f172a; padding: 20px; border-radius: 12px; border: 2px dashed #8CC63F; text-align: center; margin-bottom: 15px;">
                     <style>
-                        @keyframes wobble {
-                            0% { transform: translateX(-20px); }
-                            100% { transform: translateX(20px); }
-                        }
-                        @keyframes chomp-basic {
-                            0%, 100% { border-right-color: transparent; }
-                            50% { border-right-color: #8CC63F; }
-                        }
-                        .loader-row {
-                            display: flex;
-                            justify-content: center;
-                            align-items: center;
-                            gap: 15px;
-                            animation: wobble 1.5s infinite alternate ease-in-out;
-                            margin-bottom: 15px;
-                        }
-                        .pac-body {
-                            width: 0; height: 0;
-                            border: 20px solid #8CC63F;
-                            border-right: 20px solid transparent;
-                            border-radius: 50%;
-                            animation: chomp-basic 0.3s infinite;
-                        }
+                        @keyframes wobble { 0% { transform: translateX(-20px); } 100% { transform: translateX(20px); } }
+                        @keyframes chomp-basic { 0%, 100% { border-right-color: transparent; } 50% { border-right-color: #8CC63F; } }
+                        .loader-row { display: flex; justify-content: center; align-items: center; gap: 15px; animation: wobble 1.5s infinite alternate ease-in-out; margin-bottom: 15px; }
+                        .pac-body { width: 0; height: 0; border: 20px solid #8CC63F; border-right: 20px solid transparent; border-radius: 50%; animation: chomp-basic 0.3s infinite; }
                     </style>
                     <div class="loader-row">
                         <span style="color: #8CC63F; font-size: 35px; font-weight: 900; font-family: 'Impact', sans-serif;">13</span>
@@ -947,15 +910,12 @@ else:
                 
                 try:
                     model = genai.GenerativeModel('gemini-3.1-flash-lite')
-                    
                     all_json_data = []
                     total_calls = len(transcripts_list)
-                    chunk_size = 20 # Processing 20 calls at a time!
+                    chunk_size = 20
                     
                     for i in range(0, total_calls, chunk_size):
                         chunk = transcripts_list[i:i + chunk_size]
-                        
-                        # Build the string for just this chunk of calls
                         chunk_str = "\n\n".join([f"--- File: {c['file_name']} ---\n{c['content']}" for c in chunk])
                         
                         current_batch = (i // chunk_size) + 1
@@ -989,229 +949,171 @@ else:
                         batch_data = json.loads(response.text)
                         all_json_data.extend(batch_data)
                         
-                        # Update Progress Bar
                         progress = min(1.0, (i + chunk_size) / total_calls)
                         progress_bar.progress(progress)
                         
-                        # Add a 3-second delay between batches to respect Google's TPM limit (skip on last batch)
                         if i + chunk_size < total_calls:
-                            time.sleep(3)
+                            time.sleep(2)
                     
-                    # Consolidate all the batches into one giant DataFrame
-                    df_tags = pd.DataFrame(all_json_data)
+                    # Store in SESSION STATE so switching tabs NEVER erases it!
+                    st.session_state.ai_analysis_results[active_target_id] = pd.DataFrame(all_json_data)
                     
                     loader_placeholder.empty()
                     status_text.empty()
                     progress_bar.empty()
                     st.success("✅ Batch Analysis Complete!")
                     
-                    # --- TOP METRIC CARDS ---
-                    m1, m2, m3 = st.columns(3)
-                    with m1:
-                        success_count = len(df_tags[df_tags['Success Story Asked'].astype(str).str.upper() == 'YES'])
-                        st.metric("🌟 Success Stories Asked", success_count)
-                    with m2:
-                        comp_viol = len(df_tags[df_tags['Compliance Violation'].astype(str).str.upper() == 'YES'])
-                        st.metric("🚨 Compliance Violations", comp_viol)
-                    with m3:
-                        # Updated to handle multiple tags in a string!
-                        cancellations = len(df_tags[df_tags['Topics'].astype(str).str.contains('Cancellation', case=False, na=False)])
-                        st.metric("❌ Total Cancellations", cancellations)
-                        
-                    st.divider()
-
-                    # --- RADAR & BOTTLE CHARTS ROW ---
-                    col_chart1, col_chart2 = st.columns([1.5, 1.5])
-                    
-                    with col_chart1:
-                        st.markdown("**Radar Breakdown: Call Topics**")
-                        all_topics = ["Cancellation", "Product Question", "Billing", "Angry Customer", "Upsell", "General Inquiry", "Other"]
-                        
-                        # Split comma-separated topics, explode into separate rows, and strip whitespace
-                        topics_series = df_tags['Topics'].dropna().astype(str).str.split(',').explode().str.strip()
-                        topics_series = topics_series[topics_series != ""] # Filter out any empty strings
-                        
-                        topic_counts = topics_series.value_counts()
-                        
-                        for topic in all_topics:
-                            if topic not in topic_counts:
-                                topic_counts[topic] = 0
-                                
-                        topic_counts = topic_counts.reset_index()
-                        topic_counts.columns = ['Topic', 'Count']
-                        
-                        fig = px.line_polar(
-                            topic_counts, 
-                            r='Count', 
-                            theta='Topic', 
-                            line_close=True,
-                            color_discrete_sequence=['#8CC63F']
-                        )
-                        fig.update_traces(fill='toself', fillcolor='rgba(140, 198, 63, 0.4)')
-                        fig.update_layout(
-                            polar=dict(
-                                radialaxis=dict(visible=True, tickfont=dict(color="gray")),
-                                angularaxis=dict(tickfont=dict(size=14))
-                            ),
-                            paper_bgcolor='rgba(0,0,0,0)',
-                            plot_bgcolor='rgba(0,0,0,0)',
-                            margin=dict(l=40, r=40, t=20, b=20)
-                        )
-                        st.plotly_chart(fig, use_container_width=True)
-                        
-                    with col_chart2:
-                        st.markdown("**Product Mentions (Share of Call Volume)**")
-                        
-                        # Safely handle product mention strings
-                        total_calls = len(df_tags) if len(df_tags) > 0 else 1
-                        prod_str = " ".join(df_tags['Products Mentioned'].fillna("").astype(str).str.lower())
-                        
-                        f_count = len(df_tags[df_tags['Products Mentioned'].str.lower().str.contains('fruits', na=False)])
-                        v_count = len(df_tags[df_tags['Products Mentioned'].str.lower().str.contains('veggies', na=False)])
-                        fs_count = len(df_tags[df_tags['Products Mentioned'].str.lower().str.contains('fiber|spice', na=False)])
-                        
-                        f_pct = min(int((f_count / total_calls) * 100), 100)
-                        v_pct = min(int((v_count / total_calls) * 100), 100)
-                        fs_pct = min(int((fs_count / total_calls) * 100), 100)
-                        
-                        st.markdown(f"""
-                        <style>
-                            .supplement-shelf {{
-                                display: flex;
-                                justify-content: space-evenly;
-                                align-items: flex-end;
-                                height: 240px;
-                                margin-top: 20px;
-                                padding-bottom: 10px;
-                                border-bottom: 4px solid #e2e8f0;
-                            }}
-                            .btl-container {{
-                                display: flex;
-                                flex-direction: column;
-                                align-items: center;
-                                cursor: pointer;
-                                transition: transform 0.2s;
-                            }}
-                            .btl-container:hover {{
-                                transform: translateY(-5px);
-                            }}
-                            
-                            /* CAPS */
-                            .cap-small {{
-                                width: 50px; height: 16px;
-                                border-radius: 4px 4px 0 0;
-                                margin-bottom: -2px;
-                                z-index: 2;
-                                background-image: repeating-linear-gradient(90deg, transparent, transparent 2px, rgba(0,0,0,0.1) 2px, rgba(0,0,0,0.1) 4px);
-                            }}
-                            .cap-large {{
-                                width: 110px; height: 20px;
-                                border-radius: 4px 4px 0 0;
-                                margin-bottom: -2px;
-                                z-index: 2;
-                                background-image: repeating-linear-gradient(90deg, transparent, transparent 2px, rgba(0,0,0,0.1) 2px, rgba(0,0,0,0.1) 4px);
-                            }}
-                            
-                            /* BODIES */
-                            .body-small {{
-                                width: 66px; height: 110px;
-                                border-radius: 12px 12px 8px 8px;
-                                position: relative;
-                                overflow: hidden;
-                                background: #ffffff;
-                                border: 3px solid;
-                                box-shadow: inset -5px 0px 10px rgba(0,0,0,0.05);
-                            }}
-                            .body-large {{
-                                width: 120px; height: 170px;
-                                border-radius: 12px 12px 8px 8px;
-                                position: relative;
-                                overflow: hidden;
-                                background: #ffffff;
-                                border: 3px solid;
-                                box-shadow: inset -8px 0px 15px rgba(0,0,0,0.05);
-                            }}
-                            
-                            /* COLORS */
-                            .f-color {{ border-color: #dc2626; background-color: #ef4444; }}
-                            .v-color {{ border-color: #059669; background-color: #10b981; }}
-                            .fs-color {{ border-color: #1d4ed8; background-color: #2563eb; }}
-                            
-                            .fill-f {{ background: #dc2626; position: absolute; bottom: 0; width: 100%; transition: height 1.2s ease-out; opacity: 0.9; }}
-                            .fill-v {{ background: #059669; position: absolute; bottom: 0; width: 100%; transition: height 1.2s ease-out; opacity: 0.9; }}
-                            .fill-fs {{ background: #1d4ed8; position: absolute; bottom: 0; width: 100%; transition: height 1.2s ease-out; opacity: 0.9; }}
-                            
-                            /* TEXT */
-                            .pct-val {{
-                                position: absolute;
-                                width: 100%; top: 40%;
-                                text-align: center;
-                                font-size: 18px; font-weight: 900;
-                                color: #1e293b; z-index: 10;
-                                text-shadow: 0px 0px 6px rgba(255,255,255,0.9), 0px 0px 6px rgba(255,255,255,0.9);
-                            }}
-                            .btl-label {{
-                                font-weight: 800; font-size: 14px;
-                                color: #475569; margin-top: 8px;
-                            }}
-                        </style>
-                        
-                        <div class="supplement-shelf">
-                            <div class="btl-container" title="Mentioned in {f_count} out of {total_calls} calls">
-                                <div class="cap-small f-color"></div>
-                                <div class="body-small" style="border-color: #dc2626;">
-                                    <div class="pct-val">{f_pct}%</div>
-                                    <div class="fill-f" style="height: {f_pct}%;"></div>
-                                </div>
-                                <div class="btl-label">Fruits</div>
-                            </div>
-                            <div class="btl-container" title="Mentioned in {v_count} out of {total_calls} calls">
-                                <div class="cap-small v-color"></div>
-                                <div class="body-small" style="border-color: #059669;">
-                                    <div class="pct-val">{v_pct}%</div>
-                                    <div class="fill-v" style="height: {v_pct}%;"></div>
-                                </div>
-                                <div class="btl-label">Veggies</div>
-                            </div>
-                            <div class="btl-container" title="Mentioned in {fs_count} out of {total_calls} calls">
-                                <div class="cap-large fs-color"></div>
-                                <div class="body-large" style="border-color: #1d4ed8;">
-                                    <div class="pct-val">{fs_pct}%</div>
-                                    <div class="fill-fs" style="height: {fs_pct}%;"></div>
-                                </div>
-                                <div class="btl-label">Fiber & Spice</div>
-                            </div>
-                        </div>
-                        """, unsafe_allow_html=True)
-
-                    st.divider()
-                    
-                    # --- COMPETITORS & FULL DATABASE ---
-                    st.markdown("### ⚠️ Competitor Threat Board")
-                    comps_list = df_tags['Competitors Mentioned'].dropna().astype(str).tolist()
-                    found_comps = [c.strip() for items in comps_list for c in items.split(',') if c.strip().lower() != 'none']
-                    
-                    if found_comps:
-                        comp_counts = pd.Series(found_comps).value_counts().reset_index()
-                        comp_counts.columns = ['Competitor', 'Mentions']
-                        st.dataframe(comp_counts, use_container_width=False)
-                    else:
-                        st.info("No competitors were mentioned in this batch of calls! 🎉")
-                        
-                    st.markdown("### 📝 Detailed Call Breakdown Database")
-                    st.dataframe(df_tags, use_container_width=True)
-                    
-                    # THE NEW CSV EXPORT BUTTON!
-                    csv_export = df_tags.to_csv(index=False).encode('utf-8')
-                    st.download_button(
-                        label="📥 Download AI Tagging Data to CSV",
-                        data=csv_export,
-                        file_name=f"AI_Tagging_Export_{selected_ai_folder}.csv",
-                        mime="text/csv",
-                    )
-                    
                 except Exception as e:
                     loader_placeholder.empty()
                     status_text.empty()
                     progress_bar.empty()
-                    st.error(f"Failed to process analysis. The AI may have struggled to format the JSON. Error: {e}")
+                    st.error(f"Failed to process analysis. Details: {e}")
+
+            # RENDER ANALYSIS RESULTS IF THEY EXIST IN MEMORY!
+            if active_target_id in st.session_state.ai_analysis_results:
+                df_tags = st.session_state.ai_analysis_results[active_target_id]
+                
+                # --- TOP METRIC CARDS ---
+                m1, m2, m3 = st.columns(3)
+                with m1:
+                    success_count = len(df_tags[df_tags['Success Story Asked'].astype(str).str.upper() == 'YES'])
+                    st.metric("🌟 Success Stories Asked", success_count)
+                with m2:
+                    comp_viol = len(df_tags[df_tags['Compliance Violation'].astype(str).str.upper() == 'YES'])
+                    st.metric("🚨 Compliance Violations", comp_viol)
+                with m3:
+                    cancellations = len(df_tags[df_tags['Topics'].astype(str).str.contains('Cancellation', case=False, na=False)])
+                    st.metric("❌ Total Cancellations", cancellations)
+                    
+                st.divider()
+
+                # --- RADAR & BOTTLE CHARTS ROW ---
+                col_chart1, col_chart2 = st.columns([1.5, 1.5])
+                
+                with col_chart1:
+                    st.markdown("**Radar Breakdown: Call Topics**")
+                    all_topics = ["Cancellation", "Product Question", "Billing", "Angry Customer", "Upsell", "General Inquiry", "Other"]
+                    
+                    topics_series = df_tags['Topics'].dropna().astype(str).str.split(',').explode().str.strip()
+                    topics_series = topics_series[topics_series != ""]
+                    
+                    topic_counts = topics_series.value_counts()
+                    
+                    for topic in all_topics:
+                        if topic not in topic_counts:
+                            topic_counts[topic] = 0
+                            
+                    topic_counts = topic_counts.reset_index()
+                    topic_counts.columns = ['Topic', 'Count']
+                    
+                    fig = px.line_polar(
+                        topic_counts, 
+                        r='Count', 
+                        theta='Topic', 
+                        line_close=True,
+                        color_discrete_sequence=['#8CC63F']
+                    )
+                    fig.update_traces(fill='toself', fillcolor='rgba(140, 198, 63, 0.4)')
+                    fig.update_layout(
+                        polar=dict(
+                            radialaxis=dict(visible=True, tickfont=dict(color="gray")),
+                            angularaxis=dict(tickfont=dict(size=14))
+                        ),
+                        paper_bgcolor='rgba(0,0,0,0)',
+                        plot_bgcolor='rgba(0,0,0,0)',
+                        margin=dict(l=40, r=40, t=20, b=20)
+                    )
+                    st.plotly_chart(fig, use_container_width=True)
+                    
+                with col_chart2:
+                    st.markdown("**Product Mentions (Share of Call Volume)**")
+                    
+                    total_calls_analyzed = len(df_tags) if len(df_tags) > 0 else 1
+                    
+                    f_count = len(df_tags[df_tags['Products Mentioned'].astype(str).str.lower().str.contains('fruits', na=False)])
+                    v_count = len(df_tags[df_tags['Products Mentioned'].astype(str).str.lower().str.contains('veggies', na=False)])
+                    fs_count = len(df_tags[df_tags['Products Mentioned'].astype(str).str.lower().str.contains('fiber|spice', na=False)])
+                    
+                    f_pct = min(int((f_count / total_calls_analyzed) * 100), 100)
+                    v_pct = min(int((v_count / total_calls_analyzed) * 100), 100)
+                    fs_pct = min(int((fs_count / total_calls_analyzed) * 100), 100)
+                    
+                    st.markdown(f"""
+                    <style>
+                        .supplement-shelf {{
+                            display: flex; justify-content: space-evenly; align-items: flex-end;
+                            height: 240px; margin-top: 20px; padding-bottom: 10px; border-bottom: 4px solid #e2e8f0;
+                        }}
+                        .btl-container {{ display: flex; flex-direction: column; align-items: center; cursor: pointer; transition: transform 0.2s; }}
+                        .btl-container:hover {{ transform: translateY(-5px); }}
+                        
+                        .cap-small {{ width: 50px; height: 16px; border-radius: 4px 4px 0 0; margin-bottom: -2px; z-index: 2; background-image: repeating-linear-gradient(90deg, transparent, transparent 2px, rgba(0,0,0,0.1) 2px, rgba(0,0,0,0.1) 4px); }}
+                        .cap-large {{ width: 110px; height: 20px; border-radius: 4px 4px 0 0; margin-bottom: -2px; z-index: 2; background-image: repeating-linear-gradient(90deg, transparent, transparent 2px, rgba(0,0,0,0.1) 2px, rgba(0,0,0,0.1) 4px); }}
+                        
+                        .body-small {{ width: 66px; height: 110px; border-radius: 12px 12px 8px 8px; position: relative; overflow: hidden; background: #ffffff; border: 3px solid; box-shadow: inset -5px 0px 10px rgba(0,0,0,0.05); }}
+                        .body-large {{ width: 120px; height: 170px; border-radius: 12px 12px 8px 8px; position: relative; overflow: hidden; background: #ffffff; border: 3px solid; box-shadow: inset -8px 0px 15px rgba(0,0,0,0.05); }}
+                        
+                        .f-color {{ border-color: #dc2626; background-color: #ef4444; }}
+                        .v-color {{ border-color: #059669; background-color: #10b981; }}
+                        .fs-color {{ border-color: #1d4ed8; background-color: #2563eb; }}
+                        
+                        .fill-f {{ background: #dc2626; position: absolute; bottom: 0; width: 100%; transition: height 1.2s ease-out; opacity: 0.9; }}
+                        .fill-v {{ background: #059669; position: absolute; bottom: 0; width: 100%; transition: height 1.2s ease-out; opacity: 0.9; }}
+                        .fill-fs {{ background: #1d4ed8; position: absolute; bottom: 0; width: 100%; transition: height 1.2s ease-out; opacity: 0.9; }}
+                        
+                        .pct-val {{ position: absolute; width: 100%; top: 40%; text-align: center; font-size: 18px; font-weight: 900; color: #1e293b; z-index: 10; text-shadow: 0px 0px 6px rgba(255,255,255,0.9), 0px 0px 6px rgba(255,255,255,0.9); }}
+                        .btl-label {{ font-weight: 800; font-size: 14px; color: #475569; margin-top: 8px; }}
+                    </style>
+                    
+                    <div class="supplement-shelf">
+                        <div class="btl-container" title="Mentioned in {f_count} out of {total_calls_analyzed} calls">
+                            <div class="cap-small f-color"></div>
+                            <div class="body-small" style="border-color: #dc2626;">
+                                <div class="pct-val">{f_pct}%</div>
+                                <div class="fill-f" style="height: {f_pct}%;"></div>
+                            </div>
+                            <div class="btl-label">Fruits</div>
+                        </div>
+                        <div class="btl-container" title="Mentioned in {v_count} out of {total_calls_analyzed} calls">
+                            <div class="cap-small v-color"></div>
+                            <div class="body-small" style="border-color: #059669;">
+                                <div class="pct-val">{v_pct}%</div>
+                                <div class="fill-v" style="height: {v_pct}%;"></div>
+                            </div>
+                            <div class="btl-label">Veggies</div>
+                        </div>
+                        <div class="btl-container" title="Mentioned in {fs_count} out of {total_calls_analyzed} calls">
+                            <div class="cap-large fs-color"></div>
+                            <div class="body-large" style="border-color: #1d4ed8;">
+                                <div class="pct-val">{fs_pct}%</div>
+                                <div class="fill-fs" style="height: {fs_pct}%;"></div>
+                            </div>
+                            <div class="btl-label">Fiber & Spice</div>
+                        </div>
+                    </div>
+                    """, unsafe_allow_html=True)
+
+                st.divider()
+                
+                # --- COMPETITORS & FULL DATABASE ---
+                st.markdown("### ⚠️ Competitor Threat Board")
+                comps_list = df_tags['Competitors Mentioned'].dropna().astype(str).tolist()
+                found_comps = [c.strip() for items in comps_list for c in items.split(',') if c.strip().lower() != 'none']
+                
+                if found_comps:
+                    comp_counts = pd.Series(found_comps).value_counts().reset_index()
+                    comp_counts.columns = ['Competitor', 'Mentions']
+                    st.dataframe(comp_counts, use_container_width=False)
+                else:
+                    st.info("No competitors were mentioned in this batch of calls! 🎉")
+                    
+                st.markdown("### 📝 Detailed Call Breakdown Database")
+                st.dataframe(df_tags, use_container_width=True)
+                
+                csv_export = df_tags.to_csv(index=False).encode('utf-8')
+                st.download_button(
+                    label="📥 Download AI Tagging Data to CSV",
+                    data=csv_export,
+                    file_name=f"AI_Tagging_Export_{selected_ai_folder}.csv",
+                    mime="text/csv",
+                )
