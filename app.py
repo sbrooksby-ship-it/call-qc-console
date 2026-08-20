@@ -193,12 +193,10 @@ def fetch_all_transcripts(target_folder_id):
         except Exception:
             return items_to_download
 
-    # Step 1: Rapidly list all file IDs
     file_metadata = get_file_metadata_recursively(target_folder_id)
     if not file_metadata:
         return []
 
-    # Step 2: Download files in PARALLEL using 20 threads!
     files_list = []
     with ThreadPoolExecutor(max_workers=20) as executor:
         futures = [executor.submit(download_file_content, f_id, f_name) for f_id, f_name in file_metadata]
@@ -403,7 +401,6 @@ if selected_tab == "📊 Performance Dashboard":
                 
             st.sidebar.divider()
             
-            # Create a hidden unique ID for every single row so identical call names don't merge!
             raw_df['Unique_Row_ID'] = raw_df.index 
             
             fixed_columns = ['Unique_Row_ID', 'Date', 'Agent Name', 'Call']
@@ -770,6 +767,7 @@ else:
     st.sidebar.header("AI Transcript Vault")
     subfolders = get_drive_subfolders(FOLDER_ID)
     
+    # Reordered dropdown list: Weekly folders newest -> oldest, with "All Transcripts" at the very bottom
     folder_options = [f"📅 {name}" for name in sorted(subfolders.keys(), reverse=True)] + ["📁 All Transcripts (All Weeks)"]
     selected_ai_folder = st.sidebar.selectbox("Select Week to Analyze:", folder_options)
 
@@ -785,7 +783,6 @@ else:
         folder_name_clean = selected_ai_folder.replace("📅 ", "")
         active_target_id = subfolders.get(folder_name_clean, FOLDER_ID)
         
-    # FETCH TRANSCRIPTS WITH MULTI-THREADED SPEED!
     transcripts_list = fetch_all_transcripts(active_target_id)
     
     if not transcripts_list:
@@ -868,7 +865,7 @@ else:
                         st.error(f"Error communicating with Gemini API: {e}")
 
     # =========================================================================
-    # TAB 3: AI TAGGING & INSIGHTS (PERSISTENT ANALYSIS RESULTS)
+    # TAB 3: AI TAGGING & INSIGHTS (PERSISTENT ANALYSIS RESULTS & ROBUST JSON)
     # =========================================================================
     elif selected_tab == "🏷️ Tagging & Insights":
         st.header("🏷️ AI Call Tagging & Sentiment Analysis")
@@ -946,7 +943,17 @@ else:
                             generation_config={"response_mime_type": "application/json"}
                         )
                         
-                        batch_data = json.loads(response.text)
+                        # --- ROBUST JSON SANITIZING FIX ---
+                        raw_text = response.text.strip()
+                        start_idx = raw_text.find('[')
+                        end_idx = raw_text.rfind(']')
+                        
+                        if start_idx != -1 and end_idx != -1:
+                            clean_text = raw_text[start_idx:end_idx + 1]
+                        else:
+                            clean_text = raw_text
+                            
+                        batch_data = json.loads(clean_text)
                         all_json_data.extend(batch_data)
                         
                         progress = min(1.0, (i + chunk_size) / total_calls)
@@ -955,7 +962,6 @@ else:
                         if i + chunk_size < total_calls:
                             time.sleep(2)
                     
-                    # Store in SESSION STATE so switching tabs NEVER erases it!
                     st.session_state.ai_analysis_results[active_target_id] = pd.DataFrame(all_json_data)
                     
                     loader_placeholder.empty()
