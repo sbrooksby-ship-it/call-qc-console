@@ -556,22 +556,55 @@ if selected_tab == "📊 Performance Dashboard":
                     if norm_col in norm_tooltips:
                         col_config[col] = st.column_config.Column(help=norm_tooltips[norm_col])
 
-                # 1-ON-1 COACHING VIEW vs. STANDARD DASHBOARD VIEW
+                # =========================================================================
+                # 1-ON-1 COACHING VIEW (WITH ACTION PLAN TRACKER!)
+                # =========================================================================
                 if sel_coaching_date != "Hide 1-on-1 View":
                     st.info("🖨️ **How to Export this Scorecard:** Press **Ctrl + P** (or **Cmd + P** on Mac) to open the print menu, then select **'Save as PDF'**.")
 
                     st.markdown(f"## 📝 COACHING FEEDBACK: {sel_coaching_date}")
                     st.markdown(f"**Agent:** {sel_agent} | **Average Call Score during this period:** {avg_call_score:.1f}%")
 
+                    # ACTION PLAN TRACKER
+                    st.markdown("### 🎯 Automated Action Plan Tracker")
+                    st.markdown(f"Tracking {sel_agent}'s lowest scoring categories from **before** {start_date.strftime('%m/%d')} into the current period.")
+                    
                     historical_df = df[(df['Agent'] == sel_agent) & (df['Clean_Date'].dt.date < start_date)]
-                    past_fails = historical_df[historical_df['Score'].isin([1, 2])]['Category'].unique()
-                    current_fails = filtered_df[filtered_df['Score'].isin([1, 2])]['Category'].unique()
-                    recurring_issues = [issue for issue in current_fails if issue in past_fails]
+                    current_df = filtered_df[filtered_df['Agent'] == sel_agent]
                     
-                    if recurring_issues:
-                        issue_names = ", ".join([f"**{issue}**" for issue in recurring_issues])
-                        st.warning(f"🔄 **Recurring Critical Issues Detected:** {issue_names} scored a 1 or 2 during this current date range AND in previous periods.")
-                    
+                    if not historical_df.empty and not current_df.empty:
+                        hist_avg = historical_df.groupby('Category')['Score'].mean().reset_index()
+                        lowest_hist = hist_avg.sort_values('Score').head(3)
+                        
+                        tracker_data = []
+                        for _, row in lowest_hist.iterrows():
+                            cat = row['Category']
+                            base_score = row['Score']
+                            
+                            curr_cat_df = current_df[current_df['Category'] == cat]
+                            curr_score = curr_cat_df['Score'].mean() if not curr_cat_df.empty else base_score
+                            
+                            if curr_score >= 4.0:
+                                status = "✅ Resolved"
+                            elif curr_score > base_score + 0.2:
+                                status = "🟡 In Progress"
+                            else:
+                                status = "🔴 Action Needed"
+                                
+                            tracker_data.append({
+                                "Focus Category": cat,
+                                "Baseline Score (Past)": f"{base_score:.1f} / 5.0",
+                                "Current Avg (New)": f"{curr_score:.1f} / 5.0",
+                                "Trend": f"{curr_score - base_score:+.1f}",
+                                "Status": status
+                            })
+                            
+                        tracker_df = pd.DataFrame(tracker_data)
+                        st.dataframe(tracker_df, use_container_width=True, hide_index=True)
+                    else:
+                        st.info("Not enough historical data to generate the Action Plan Tracker for this period.")
+
+                    # COACHING TEXT BOXES
                     coach_row = agent_coach_data[agent_coach_data['Date Range'] == sel_coaching_date].iloc[0]
                     default_wins = coach_row['Top 3 Wins'] if pd.notna(coach_row.get('Top 3 Wins')) else "No wins recorded for this period."
                     default_improve = coach_row['Top 3 Areas for Improvement'] if pd.notna(coach_row.get('Top 3 Areas for Improvement')) else "No areas for improvement recorded for this period."
