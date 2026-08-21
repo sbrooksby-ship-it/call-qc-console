@@ -770,6 +770,18 @@ if selected_tab == "📊 Performance Dashboard":
                             
                             st.dataframe(call_breakdown, use_container_width=True)
 
+                            # INTERACTIVE TRANSCRIPT VIEWER
+                            with st.expander("👁️ Inspect Full Call Transcript"):
+                                selected_call_name = st.selectbox("Select a call from the table above:", options=call_breakdown.index.unique(), key="ts_viewer_select")
+                                if selected_call_name:
+                                    vault_transcripts = fetch_all_transcripts(FOLDER_ID)
+                                    matched_t = next((t for t in vault_transcripts if str(selected_call_name).lower() in t['file_name'].lower()), None)
+                                    if matched_t:
+                                        st.caption(f"📄 **Matched File:** `{matched_t['file_name']}`")
+                                        st.text_area("Raw Transcript Text:", value=matched_t['content'], height=350, disabled=True)
+                                    else:
+                                        st.info(f"No matching file found in the Drive Vault containing '{selected_call_name}'.")
+
                         csv_data = leaderboard.to_csv().encode('utf-8')
                         st.download_button(
                             label="📥 Download Summary CSV",
@@ -854,7 +866,6 @@ else:
                         total_calls = len(transcripts_list)
                         chunk_size = 25 # ~35,000 tokens (Safely under the 250k free tier limit)
                         
-                        # IF FEW CALLS: Normal fast prompt
                         if total_calls <= chunk_size:
                             loader_placeholder.markdown("""
                             <div style="background-color: #0f172a; padding: 20px; border-radius: 12px; border: 2px dashed #8CC63F; text-align: center; margin-bottom: 15px;">
@@ -899,7 +910,6 @@ else:
                             full_response = st.write_stream(stream_generator)
                             st.session_state.chat_history.append({"role": "assistant", "content": full_response})
                             
-                        # IF TOO MANY CALLS: Trigger "Deep Search" Map-Reduce Mode!
                         else:
                             loader_placeholder.warning(f"🧠 **Deep Search Activated!** You are querying {total_calls} calls simultaneously. To bypass Google's API limits, I am sending the AI to investigate the vault in batches and take notes. This will take a minute or two...")
                             
@@ -934,7 +944,7 @@ else:
                                 progress_bar.progress(min(1.0, (i + chunk_size) / total_calls))
                                 
                                 if i + chunk_size < total_calls:
-                                    time.sleep(8) # Cooldown to protect Free Tier Limits!
+                                    time.sleep(8)
                                     
                             status_text.markdown("✨ **Investigation complete! Synthesizing final answer...**")
                             
@@ -1064,7 +1074,7 @@ else:
                         progress_bar.progress(progress)
                         
                         if i + chunk_size < total_calls:
-                            time.sleep(6) # Increased cooldown to heavily protect the API limit
+                            time.sleep(6)
                     
                     st.session_state.ai_analysis_results[active_target_id] = pd.DataFrame(all_json_data)
                     
