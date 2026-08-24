@@ -611,6 +611,15 @@ if selected_tab == "📊 Performance Dashboard":
 
                 st.divider()
 
+                # TEMPORARY DIAGNOSTIC CHECK
+                with st.expander("🔍 Diagnostic: View Calls Scoring < 100 Points (Missing/Incomplete Data Check)", expanded=False):
+                    incomplete_calls = filtered_call_df[filtered_call_df['Total Raw Score'] < 100]
+                    if not incomplete_calls.empty:
+                        st.warning(f"Found {len(incomplete_calls)} calls scoring under 100 total points out of 180. These drag down the overall average score.")
+                        st.dataframe(incomplete_calls[['Date', 'Agent', 'Call', 'Total Raw Score', 'Call Percentage']], use_container_width=True)
+                    else:
+                        st.success("No calls found scoring under 100 points in this date range.")
+
                 norm_tooltips = {k.replace(" ", "").upper(): v for k, v in question_tooltips.items()}
                 col_config = {}
                 for col in df['Category'].unique():
