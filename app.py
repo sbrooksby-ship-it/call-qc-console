@@ -315,6 +315,18 @@ section_map = {
     "COMP": "Compliance"
 }
 
+# Hardcoded exact max possible scores matching the official 36-question scorecard
+SECTION_MAX_SCORES = {
+    "Beginning": 10,                            # 2 questions (BG 1-2)
+    "ARC & Trust": 20,                         # 4 questions (ARC 1-4)
+    "Ownership & Responsibility & Effort": 15,  # 3 questions (OE 1-3)
+    "Personalization & Education": 25,         # 5 questions (PE 1-5)
+    "Quality Communication": 40,               # 8 questions (QC 1-8)
+    "Closing": 20,                             # 4 questions (CL 1-4)
+    "Call Control": 25,                        # 5 questions (CC 1-5)
+    "Compliance": 25                           # 5 questions (COMP 1-5)
+}
+
 def get_section_name(category):
     cat_upper = str(category).upper()
     for prefix, section in section_map.items():
@@ -341,21 +353,16 @@ def load_sheet_data(url):
 def generate_section_summary(data_df):
     if data_df.empty:
         return pd.DataFrame()
-    call_section_df = data_df.groupby(['Call', 'Section']).agg(
-        Total_Score=('Score', 'sum'),
-        Questions=('Score', 'count')
-    ).reset_index()
-    call_section_df['Max_Score'] = call_section_df['Questions'] * 5
+        
+    call_section_df = data_df.groupby(['Call', 'Section'])['Score'].sum().reset_index()
     
-    section_summary = call_section_df.groupby('Section').agg(
-        Avg_Score=('Total_Score', 'mean'),
-        Max_Possible=('Max_Score', 'mean')
-    ).reset_index()
+    section_summary = call_section_df.groupby('Section')['Score'].mean().reset_index()
+    section_summary = section_summary.rename(columns={'Score': 'Avg_Score'})
     
-    # Round Max_Possible to nearest integer for clean display
-    section_summary['Max_Display'] = section_summary['Max_Possible'].round().astype(int)
+    # Map the official standard max score based on question count
+    section_summary['Max_Display'] = section_summary['Section'].map(SECTION_MAX_SCORES).fillna(10).astype(int)
     
-    # Compute percentage directly from the displayed numbers for strict mathematical alignment
+    # Calculate percentage based on exact standard max score
     section_summary['Avg_Percentage'] = (section_summary['Avg_Score'] / section_summary['Max_Display']) * 100
     
     section_summary['Score (Raw)'] = section_summary['Avg_Score'].round(1).astype(str) + " / " + section_summary['Max_Display'].astype(str)
