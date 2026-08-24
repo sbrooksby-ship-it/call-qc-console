@@ -354,7 +354,8 @@ def generate_section_summary(data_df):
     if data_df.empty:
         return pd.DataFrame()
         
-    call_section_df = data_df.groupby(['Call', 'Section'])['Score'].sum().reset_index()
+    # FIX: Group by Unique_Row_ID to perfectly match the overall average math
+    call_section_df = data_df.groupby(['Unique_Row_ID', 'Section'])['Score'].sum().reset_index()
     
     section_summary = call_section_df.groupby('Section')['Score'].mean().reset_index()
     section_summary = section_summary.rename(columns={'Score': 'Avg_Score'})
@@ -610,15 +611,6 @@ if selected_tab == "📊 Performance Dashboard":
                     kpi5.metric(f"PASS RATE (>{pass_threshold}%)", f"{pass_rate:.0f}%")
 
                 st.divider()
-
-                # TEMPORARY DIAGNOSTIC CHECK
-                with st.expander("🔍 Diagnostic: View Calls Scoring < 100 Points (Missing/Incomplete Data Check)", expanded=False):
-                    incomplete_calls = filtered_call_df[filtered_call_df['Total Raw Score'] < 100]
-                    if not incomplete_calls.empty:
-                        st.warning(f"Found {len(incomplete_calls)} calls scoring under 100 total points out of 180. These drag down the overall average score.")
-                        st.dataframe(incomplete_calls[['Date', 'Agent', 'Call', 'Total Raw Score', 'Call Percentage']], use_container_width=True)
-                    else:
-                        st.success("No calls found scoring under 100 points in this date range.")
 
                 norm_tooltips = {k.replace(" ", "").upper(): v for k, v in question_tooltips.items()}
                 col_config = {}
