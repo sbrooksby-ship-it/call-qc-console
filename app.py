@@ -885,7 +885,7 @@ if selected_tab == "📊 Performance Dashboard":
                         lowest_scores = lowest_scores.sort_values(by='Score', ascending=True).head(5)
                         
                         for index, row in lowest_scores.iterrows():
-                            st.error(f"**{row['Category']}**  \n Avg Score: {row['Score']:.2f} / 5.0")
+                            st.error(f"**{row['Category']}** \n Avg Score: {row['Score']:.2f} / 5.0")
                             
         except Exception as e:
             st.error(f"⚠️ Unable to access Google Sheet data. Details: {e}")
@@ -1320,7 +1320,5 @@ else:
                     label="📥 Download AI Tagging Data to CSV",
                     data=csv_export,
                     file_name=f"AI_Tagging_Export_{selected_ai_folder}.csv",
-                    mime="text/csv",
-                )
-                    mime="text/csv",
+                    mime="text/csv"
                 )
