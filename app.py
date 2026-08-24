@@ -346,14 +346,21 @@ def generate_section_summary(data_df):
         Questions=('Score', 'count')
     ).reset_index()
     call_section_df['Max_Score'] = call_section_df['Questions'] * 5
-    call_section_df['Percentage'] = (call_section_df['Total_Score'] / call_section_df['Max_Score']) * 100
+    
     section_summary = call_section_df.groupby('Section').agg(
         Avg_Score=('Total_Score', 'mean'),
-        Max_Possible=('Max_Score', 'mean'),
-        Avg_Percentage=('Percentage', 'mean')
+        Max_Possible=('Max_Score', 'mean')
     ).reset_index()
-    section_summary['Score (Raw)'] = section_summary['Avg_Score'].round(1).astype(str) + " / " + section_summary['Max_Possible'].astype(int).astype(str)
+    
+    # Round Max_Possible to nearest integer for clean display
+    section_summary['Max_Display'] = section_summary['Max_Possible'].round().astype(int)
+    
+    # Compute percentage directly from the displayed numbers for strict mathematical alignment
+    section_summary['Avg_Percentage'] = (section_summary['Avg_Score'] / section_summary['Max_Display']) * 100
+    
+    section_summary['Score (Raw)'] = section_summary['Avg_Score'].round(1).astype(str) + " / " + section_summary['Max_Display'].astype(str)
     section_summary['Percentage'] = section_summary['Avg_Percentage'].round(1).astype(str) + "%"
+    
     section_order = ["Beginning", "ARC & Trust", "Ownership & Responsibility & Effort", 
                      "Personalization & Education", "Quality Communication", 
                      "Closing", "Call Control", "Compliance"]
