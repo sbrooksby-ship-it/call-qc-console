@@ -4,6 +4,7 @@ import numpy as np
 import json
 import plotly.express as px
 import time
+import re
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
@@ -113,6 +114,7 @@ st.markdown("""
 # GOOGLE DRIVE & GEMINI HELPER FUNCTIONS
 # -------------------------------------------------------------------------
 FOLDER_ID = "19SEHIDCcIdggzSVzl1dhClmHTXXqrwK9"
+AUDIO_FOLDER_ID = "18wGQo88AkkRNSWcFCBMtCNZEQph12jW3"
 
 def get_drive_service():
     """Authenticates with Google Drive using secrets.toml."""
@@ -206,6 +208,52 @@ def fetch_all_transcripts(target_folder_id):
                 files_list.append(res)
 
     return files_list
+
+@st.cache_data(ttl=600)
+def fetch_audio_files_metadata(target_folder_id):
+    """Fetches lightweight metadata for audio files across all subfolders."""
+    service = get_drive_service()
+    if not service:
+        return []
+
+    def get_audio_metadata_recursively(current_folder_id):
+        audio_items = []
+        try:
+            query = f"'{current_folder_id}' in parents and trashed = false"
+            page_token = None
+            while True:
+                results = service.files().list(
+                    q=query,
+                    fields="nextPageToken, files(id, name, mimeType)",
+                    pageSize=1000,
+                    pageToken=page_token
+                ).execute()
+                items = results.get('files', [])
+                for item in items:
+                    if item['mimeType'] == 'application/vnd.google-apps.folder':
+                        audio_items.extend(get_audio_metadata_recursively(item['id']))
+                    elif item['name'].endswith('.wav') or item['name'].endswith('.mp3'):
+                        audio_items.append({'id': item['id'], 'name': item['name']})
+                page_token = results.get('nextPageToken')
+                if not page_token:
+                    break
+            return audio_items
+        except Exception:
+            return audio_items
+
+    return get_audio_metadata_recursively(target_folder_id)
+
+def download_audio_bytes(file_id):
+    """Downloads audio bytes on demand when selected by user."""
+    service = get_drive_service()
+    if not service:
+        return None
+    try:
+        request = service.files().get_media(fileId=file_id)
+        return request.execute()
+    except Exception as e:
+        st.error(f"Error streaming audio file: {e}")
+        return None
 
 # Initialize Gemini AI
 if "GEMINI_API_KEY" in st.secrets:
@@ -695,7 +743,7 @@ if selected_tab == "📊 Performance Dashboard":
                                 
                             trend_df = filtered_call_df.groupby('Clean_Date')['Call Percentage'].mean()
                             st.line_chart(trend_df, height=350, color="#4682B4")
-        
+                        
                         with col_sections:
                             col_sec_title, col_sec_toggle = st.columns([1, 1])
                             with col_sec_title:
@@ -711,9 +759,9 @@ if selected_tab == "📊 Performance Dashboard":
                                 fig = create_section_bar_chart(summary_df, pass_threshold)
                                 if fig:
                                     st.plotly_chart(fig, use_container_width=True, key="chart_std")
-        
+                        
                         st.divider()
-        
+                        
                         st.markdown("**((o)) METER BANK — CLICK A CELL TO FOCUS COACHING PRIORITIES**")
                         st.markdown("*Legend: 🔴 Critical (1-2) | 🟡 Average (3) | 🟢 Excellent (4-5)*")
                         st.dataframe(generate_meter_bank(filtered_df, sel_agent), use_container_width=True, height=350, column_config=col_config)
@@ -770,17 +818,58 @@ if selected_tab == "📊 Performance Dashboard":
                             
                             st.dataframe(call_breakdown, use_container_width=True)
 
-                            # INTERACTIVE TRANSCRIPT VIEWER
-                            with st.expander("👁️ Inspect Full Call Transcript"):
-                                selected_call_name = st.selectbox("Select a call from the table above:", options=call_breakdown.index.unique(), key="ts_viewer_select")
+                            # INTERACTIVE TRANSCRIPT & AUDIO VIEWER (ON-DEMAND)
+                            with st.expander("👁️ Inspect Full Call Transcript & Audio Recording"):
+                                selected_call_name = st.selectbox(
+                                    "Select a call from the table above:", 
+                                    options=call_breakdown.index.unique(), 
+                                    key="ts_viewer_select"
+                                )
+                                
                                 if selected_call_name:
+                                    raw_call_str = str(selected_call_name).strip()
+                                    extracted_ids = re.findall(r'\d{6,8}', raw_call_str)
+                                    search_call_id = extracted_ids[0] if extracted_ids else raw_call_str.lower()
+                                    
+                                    st.markdown(f"### 🔍 Call Audit for ID: `{search_call_id}`")
+                                    
+                                    # 1. Fetch & Match Metadata
                                     vault_transcripts = fetch_all_transcripts(FOLDER_ID)
-                                    matched_t = next((t for t in vault_transcripts if str(selected_call_name).lower() in t['file_name'].lower()), None)
+                                    matched_t = next((t for t in vault_transcripts if search_call_id.lower() in t['file_name'].lower()), None)
+                                    
+                                    audio_vault_files = fetch_audio_files_metadata(AUDIO_FOLDER_ID)
+                                    matched_a = next((a for a in audio_vault_files if search_call_id.lower() in a['name'].lower()), None)
+                                    
+                                    # --- AUDIO SECTION (REQUIRES CLICK) ---
+                                    st.markdown("#### 🎧 Call Audio Recording")
+                                    if matched_a:
+                                        st.caption(f"🔊 **Available File:** `{matched_a['name']}`")
+                                        if st.button("▶️ Load & Play Audio", key=f"btn_audio_{search_call_id}"):
+                                            with st.spinner("Fetching audio stream from Google Drive..."):
+                                                audio_bytes = download_audio_bytes(matched_a['id'])
+                                                if audio_bytes:
+                                                    st.audio(audio_bytes, format="audio/wav")
+                                                    st.download_button(
+                                                        label="📥 Download .WAV File",
+                                                        data=audio_bytes,
+                                                        file_name=matched_a['name'],
+                                                        mime="audio/wav",
+                                                        key=f"dl_audio_{search_call_id}"
+                                                    )
+                                                else:
+                                                    st.error("Failed to load audio stream from Google Drive.")
+                                    else:
+                                        st.warning(f"⚠️ No matching audio file found in Drive containing Call ID `{search_call_id}`.")
+                                        
+                                    st.divider()
+                                    
+                                    # --- TRANSCRIPT SECTION ---
+                                    st.markdown("#### 📄 Call Transcript Text")
                                     if matched_t:
-                                        st.caption(f"📄 **Matched File:** `{matched_t['file_name']}`")
+                                        st.caption(f"📄 **Matched Transcript File:** `{matched_t['file_name']}`")
                                         st.text_area("Raw Transcript Text:", value=matched_t['content'], height=350, disabled=True)
                                     else:
-                                        st.info(f"No matching file found in the Drive Vault containing '{selected_call_name}'.")
+                                        st.warning(f"⚠️ No matching transcript text found in Drive containing Call ID `{search_call_id}`.")
 
                         csv_data = leaderboard.to_csv().encode('utf-8')
                         st.download_button(
@@ -1231,5 +1320,7 @@ else:
                     label="📥 Download AI Tagging Data to CSV",
                     data=csv_export,
                     file_name=f"AI_Tagging_Export_{selected_ai_folder}.csv",
+                    mime="text/csv",
+                )
                     mime="text/csv",
                 )
