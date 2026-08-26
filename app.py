@@ -430,7 +430,14 @@ if selected_tab == "📊 Performance Dashboard":
                 df = raw_df.copy()
                 df = df.rename(columns={'Agent Name': 'Agent'})
                 df['Score'] = pd.to_numeric(df['Score'], errors='coerce').fillna(0)
-                df['Clean_Date'] = pd.to_datetime(df['Date'], errors='coerce')
+                
+                # --- NEW BULLETPROOF DATE PARSER ---
+                # Extracts the first date from strings like "8/17-8/21 Week"
+                extracted_date = df['Date'].astype(str).str.extract(r'(\d{1,2}[-/]\d{1,2})')[0]
+                extracted_date = extracted_date.str.replace('-', '/')
+                df['Clean_Date'] = pd.to_datetime(extracted_date + "/2026", errors='coerce')
+                # -----------------------------------
+                
                 df['Section'] = df['Category'].apply(get_section_name)
                 
                 # Because the data is already melted (long format), we just assign a unique ID per call
