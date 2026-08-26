@@ -295,7 +295,7 @@ SECTION_MAX_SCORES = {
 }
 
 # -------------------------------------------------------------------------
-# PYTHON AI PARSER (Replaces Google Sheets Formats)
+# NEW PYTHON AI PARSER (Replaces Google Sheets Formats)
 # -------------------------------------------------------------------------
 RUBRIC_IDS = [
     "BG 1", "BG 2", "ARC 1", "ARC 2", "ARC 3", "ARC 4", "OE 1", "OE 2", "OE 3",
@@ -339,12 +339,8 @@ def extract_score_py(chunk):
 @st.cache_data(ttl=60)
 def parse_raw_to_master(raw_df_import):
     rows = []
+    # Combine headers and values to ensure we don't miss the first row if there's no official header
     all_data = [raw_df_import.columns.tolist()] + raw_df_import.values.tolist()
-
-    eval_keywords = [
-        "Detailed Adherence Report", "Category |", "Top 3 Wins", "ID: BG", "ID: ARC", "ID: OE", 
-        "ID: PE", "ID: QC", "ID: CC", "ID: CL", "ID: COMP", "cl.corp.google.com", "Score:", "Score -"
-    ]
 
     for idx, row in enumerate(all_data):
         text = str(row[0]) if len(row) > 0 else ""
@@ -352,14 +348,9 @@ def parse_raw_to_master(raw_df_import):
         call_hint = str(row[2]) if len(row) > 2 else ""
         agent_hint = str(row[3]) if len(row) > 3 else ""
 
-        if not text or text.lower() == 'nan': continue
-
-        looks_like_eval = any(x.lower() in text.lower() for x in eval_keywords)
-        if not looks_like_eval:
-            id_count = len(re.findall(r'\b(?:BG|ARC|OE|PE|QC|CL|CC|COMP)\s*[-_]?\s*[1-8]\b', text, re.IGNORECASE))
-            if id_count >= 5: looks_like_eval = True
-            
-        if not looks_like_eval: continue
+        # EXTREMELY FORGIVING CHECK: If it's shorter than 150 chars, it's just a header or blank line. Skip it.
+        if not text or str(text).lower() == 'nan' or len(str(text)) < 150: 
+            continue
 
         date_str = pd.Timestamp.today().strftime('%m/%d/%Y')
         if "PROCESSED:" in status.upper():
@@ -569,6 +560,11 @@ if selected_tab == "📊 Performance Dashboard":
     if sheet_url:
         try:
             raw_df_import = load_sheet_data(sheet_url)
+            
+            with st.sidebar.expander("🛠️ Debug Data View"):
+                st.write("What Streamlit sees from your link:")
+                st.dataframe(raw_df_import.head(3))
+
             raw_df = parse_raw_to_master(raw_df_import)
             
             if raw_df.empty:
