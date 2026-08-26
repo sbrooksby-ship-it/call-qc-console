@@ -98,7 +98,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # -------------------------------------------------------------------------
-# BALANCE OF NATURE LOGO HEADER (PURE CSS - GITHUB FRIENDLY!)
+# BALANCE OF NATURE LOGO HEADER
 # -------------------------------------------------------------------------
 st.markdown("""
 <div style="text-align: center; margin-bottom: 25px; margin-top: -20px;">
@@ -147,7 +147,6 @@ def get_drive_subfolders(folder_id):
         return {}
 
 def download_file_content(file_id, file_name):
-    """Helper function to download individual files in parallel threads."""
     service = get_drive_service()
     if not service:
         return None
@@ -160,7 +159,6 @@ def download_file_content(file_id, file_name):
 
 @st.cache_data(ttl=600)
 def fetch_all_transcripts(target_folder_id):
-    """Recursively fetches text content using MULTI-THREADING for 10x faster downloads."""
     service = get_drive_service()
     if not service:
         return []
@@ -170,51 +168,38 @@ def fetch_all_transcripts(target_folder_id):
         try:
             query = f"'{current_folder_id}' in parents and trashed = false"
             page_token = None
-            
             while True:
                 results = service.files().list(
-                    q=query, 
-                    fields="nextPageToken, files(id, name, mimeType)",
-                    pageSize=1000,
-                    pageToken=page_token
+                    q=query, fields="nextPageToken, files(id, name, mimeType)",
+                    pageSize=1000, pageToken=page_token
                 ).execute()
-                
                 items = results.get('files', [])
-                
                 for item in items:
                     if item['mimeType'] == 'application/vnd.google-apps.folder':
                         items_to_download.extend(get_file_metadata_recursively(item['id'], path_prefix=f"{path_prefix}{item['name']}/"))
                     else:
                         items_to_download.append((item['id'], f"{path_prefix}{item['name']}"))
-                
                 page_token = results.get('nextPageToken')
-                if not page_token:
-                    break
-                    
+                if not page_token: break
             return items_to_download
         except Exception:
             return items_to_download
 
     file_metadata = get_file_metadata_recursively(target_folder_id)
-    if not file_metadata:
-        return []
+    if not file_metadata: return []
 
     files_list = []
     with ThreadPoolExecutor(max_workers=20) as executor:
         futures = [executor.submit(download_file_content, f_id, f_name) for f_id, f_name in file_metadata]
         for future in as_completed(futures):
             res = future.result()
-            if res:
-                files_list.append(res)
-
+            if res: files_list.append(res)
     return files_list
 
 @st.cache_data(ttl=600)
 def fetch_audio_files_metadata(target_folder_id):
-    """Fetches lightweight metadata for audio files across all subfolders."""
     service = get_drive_service()
-    if not service:
-        return []
+    if not service: return []
 
     def get_audio_metadata_recursively(current_folder_id):
         audio_items = []
@@ -223,10 +208,8 @@ def fetch_audio_files_metadata(target_folder_id):
             page_token = None
             while True:
                 results = service.files().list(
-                    q=query,
-                    fields="nextPageToken, files(id, name, mimeType)",
-                    pageSize=1000,
-                    pageToken=page_token
+                    q=query, fields="nextPageToken, files(id, name, mimeType)",
+                    pageSize=1000, pageToken=page_token
                 ).execute()
                 items = results.get('files', [])
                 for item in items:
@@ -235,8 +218,7 @@ def fetch_audio_files_metadata(target_folder_id):
                     elif item['name'].endswith('.wav') or item['name'].endswith('.mp3'):
                         audio_items.append({'id': item['id'], 'name': item['name']})
                 page_token = results.get('nextPageToken')
-                if not page_token:
-                    break
+                if not page_token: break
             return audio_items
         except Exception:
             return audio_items
@@ -244,10 +226,8 @@ def fetch_audio_files_metadata(target_folder_id):
     return get_audio_metadata_recursively(target_folder_id)
 
 def download_audio_bytes(file_id):
-    """Downloads audio bytes on demand when selected by user."""
     service = get_drive_service()
-    if not service:
-        return None
+    if not service: return None
     try:
         request = service.files().get_media(fileId=file_id)
         return request.execute()
@@ -255,7 +235,6 @@ def download_audio_bytes(file_id):
         st.error(f"Error streaming audio file: {e}")
         return None
 
-# Initialize Gemini AI
 if "GEMINI_API_KEY" in st.secrets:
     genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
 else:
@@ -305,26 +284,15 @@ question_tooltips = {
 }
 
 section_map = {
-    "BG": "Beginning",
-    "ARC": "ARC & Trust",
-    "OE": "Ownership & Responsibility & Effort",
-    "PE": "Personalization & Education",
-    "QC": "Quality Communication",
-    "CL": "Closing",
-    "CC": "Call Control",
-    "COMP": "Compliance"
+    "BG": "Beginning", "ARC": "ARC & Trust", "OE": "Ownership & Responsibility & Effort",
+    "PE": "Personalization & Education", "QC": "Quality Communication", "CL": "Closing",
+    "CC": "Call Control", "COMP": "Compliance"
 }
 
-# Hardcoded exact max possible scores matching the official 36-question scorecard
 SECTION_MAX_SCORES = {
-    "Beginning": 10,                            # 2 questions (BG 1-2)
-    "ARC & Trust": 20,                         # 4 questions (ARC 1-4)
-    "Ownership & Responsibility & Effort": 15,  # 3 questions (OE 1-3)
-    "Personalization & Education": 25,         # 5 questions (PE 1-5)
-    "Quality Communication": 40,               # 8 questions (QC 1-8)
-    "Closing": 20,                             # 4 questions (CL 1-4)
-    "Call Control": 25,                        # 5 questions (CC 1-5)
-    "Compliance": 25                           # 5 questions (COMP 1-5)
+    "Beginning": 10, "ARC & Trust": 20, "Ownership & Responsibility & Effort": 15,
+    "Personalization & Education": 25, "Quality Communication": 40, "Closing": 20,
+    "Call Control": 25, "Compliance": 25
 }
 
 # -------------------------------------------------------------------------
@@ -337,27 +305,34 @@ RUBRIC_IDS = [
     "CC 4", "CC 5", "COMP 1", "COMP 2", "COMP 3", "COMP 4", "COMP 5"
 ]
 
+CRITERIA_KEYWORDS = {
+    "BG 1": "first 30", "BG 2": "greeting", "ARC 1": "early arc", "ARC 2": "emotion",
+    "ARC 3": "elevate tone", "ARC 4": "product trust", "OE 1": "advocate|interest", "OE 2": "responsibility",
+    "OE 3": "evidence of effort", "PE 1": "specific info", "PE 2": "discovery", "PE 3": "success",
+    "PE 4": "educational", "PE 5": "next step", "QC 1": "natural", "QC 2": "acknowledge",
+    "QC 3": "clear", "QC 4": "listening", "QC 5": "empowering", "QC 6": "confidence",
+    "QC 7": "assumed", "QC 8": "appropriate tone", "CL 1": "summarize", "CL 2": "next step",
+    "CL 3": "additional assistance", "CL 4": "warm", "CC 1": "guid",
+    "CC 2": "primary concern", "CC 3": "talk time", "CC 4": "call flow", "CC 5": "vfp",
+    "COMP 1": "verified account", "COMP 2": "verified email", "COMP 3": "survey",
+    "COMP 4": "medical claim|treating", "COMP 5": "complaint|adverse"
+}
+
 def extract_score_py(chunk):
-    # 1. Explicit
     m = re.search(r'Score\s*[:\-]?\s*\*?\*?\s*([1-5]|0|N/?A)\b', chunk, re.IGNORECASE)
     if m: return m.group(1).upper().replace('/', '')
-    # 2. Table cell | 4 |
     m = re.search(r'\|\s*\*?\*?\s*([1-5]|0|N/?A)\s*\*?\*?\s*\|', chunk, re.IGNORECASE)
     if m: return m.group(1).upper().replace('/', '')
-    # 3. Trailing pipe block | 4
     m = re.search(r'\|\s*\*?\*?\s*([1-5]|0|N/?A)\s*\*?\*?\s*$', chunk, re.IGNORECASE)
     if m: return m.group(1).upper().replace('/', '')
-    # 4. Bracketed [4]
     m = re.search(r'[\(\[\*]\s*([1-5]|0|N/?A)\s*[\)\]\*]', chunk, re.IGNORECASE)
     if m: return m.group(1).upper().replace('/', '')
-    # 5. Split by pipes
     if '|' in chunk:
         parts = chunk.split('|')
         for p in parts:
             clean_p = re.sub(r'[\*\s]', '', p).strip()
             if re.match(r'^([1-5]|0|N/?A)$', clean_p, re.IGNORECASE):
                 return clean_p.upper().replace('/', '')
-    # 6. Last isolated number
     m = re.search(r'\b([1-5]|0|N/?A)\b(?=[^\d]*$)', chunk, re.IGNORECASE)
     if m: return m.group(1).upper().replace('/', '')
     return None
@@ -365,8 +340,13 @@ def extract_score_py(chunk):
 @st.cache_data(ttl=60)
 def parse_raw_to_master(raw_df_import):
     rows = []
-    # Combine headers and values to ensure we don't miss the first row if there's no official header
     all_data = [raw_df_import.columns.tolist()] + raw_df_import.values.tolist()
+
+    # Broadened search words to ensure the script doesn't skip calls
+    eval_keywords = [
+        "Detailed Adherence Report", "Category |", "Top 3 Wins", "ID: BG", "ID: ARC", "ID: OE", 
+        "ID: PE", "ID: QC", "ID: CC", "ID: CL", "ID: COMP", "cl.corp.google.com", "Score:", "Score -"
+    ]
 
     for idx, row in enumerate(all_data):
         text = str(row[0]) if len(row) > 0 else ""
@@ -376,30 +356,36 @@ def parse_raw_to_master(raw_df_import):
 
         if not text or text.lower() == 'nan': continue
 
-        # Verify it actually looks like an AI evaluation
-        looks_like_eval = any(x in text for x in ["Detailed Adherence Report", "Category |", "Top 3 Wins", "QC 1"])
+        looks_like_eval = any(x.lower() in text.lower() for x in eval_keywords)
+        # Failsafe: if we see multiple rubric IDs, it's definitely an evaluation
+        if not looks_like_eval:
+            id_count = len(re.findall(r'\b(?:BG|ARC|OE|PE|QC|CL|CC|COMP)\s*[-_]?\s*[1-8]\b', text, re.IGNORECASE))
+            if id_count >= 5: looks_like_eval = True
+            
         if not looks_like_eval: continue
 
-        # Determine processing date
+        # Date Parsing
         date_str = pd.Timestamp.today().strftime('%m/%d/%Y')
-        if "PROCESSED:" in status:
-            try: date_str = status.split("PROCESSED:")[1].strip().split(" ")[0]
+        if "PROCESSED:" in status.upper():
+            try: 
+                raw_date = re.search(r'PROCESSED:\s*(\d{4}-\d{2}-\d{2})', status, re.IGNORECASE)
+                if raw_date:
+                    date_str = pd.to_datetime(raw_date.group(1)).strftime('%m/%d/%Y')
             except: pass
 
-        # Pre-clean formatting and URLs
+        # Intercept fake URLs
         clean_text = re.sub(r'\[([A-Za-z0-9\s]+)\]\([^)]+\)', r'\1', text)
         clean_text = re.sub(r'\b(BG|ARC|OE|PE|QC|CL|CC|COMP)\b[\s\|]*https?:\/\/[^\|\s]*?cl\.corp\.google\.com\/(\d+)[^\|\s]*', r'\1 \2', clean_text, flags=re.IGNORECASE)
 
         part4_pos = clean_text.lower().find('part 4: coaching action plan')
         score_text = clean_text[:part4_pos] if part4_pos != -1 else clean_text
 
-        # Strip noisy numbers
         score_text = re.sub(r'https?:\/\/\S+', '', score_text, flags=re.IGNORECASE)
         score_text = re.sub(r'\b(?:page|pg\.?)\s*\d+\b', '', score_text, flags=re.IGNORECASE)
         score_text = re.sub(r'\/\s*5\b', '', score_text)
         score_text = re.sub(r'out\s*of\s*5', '', score_text, flags=re.IGNORECASE)
 
-        # Slice into chunks and extract scores
+        # Slice into chunks
         scores = {}
         found_ids = []
         for item in RUBRIC_IDS:
@@ -416,12 +402,23 @@ def parse_raw_to_master(raw_df_import):
             val = extract_score_py(chunk)
             if val: scores[current['id']] = "" if val in ['NA', '0'] else int(val)
 
+        # Fallback Keywords (If ID was completely missing from the text)
+        for k in RUBRIC_IDS:
+            if k not in scores:
+                kw = CRITERIA_KEYWORDS.get(k, k.lower())
+                match = re.search(kw, score_text, re.IGNORECASE)
+                if match:
+                    chunk = score_text[match.start():match.start()+150]
+                    val = extract_score_py(chunk)
+                    if val:
+                        scores[k] = "" if val in ['NA', '0'] else int(val)
+
         # Agent Name Sanitizer
         agent_name = agent_hint
-        if not agent_name or agent_name == 'nan':
+        if not agent_name or str(agent_name).lower() == 'nan':
             am = re.search(r'Agent(?:\s*Name)?\s*:\s*([^\n\r(|]+)', text, re.IGNORECASE)
             if am and "information not provided" not in am.group(1).lower(): agent_name = am.group(1).strip()
-        if not agent_name or agent_name == 'nan': agent_name = "Unknown Agent"
+        if not agent_name or str(agent_name).lower() == 'nan': agent_name = "Unknown Agent"
 
         agent_name = re.sub(r'\s*\[source:\s*\d+\]', '', agent_name, flags=re.IGNORECASE).strip()
         ln = agent_name.lower()
@@ -443,9 +440,8 @@ def parse_raw_to_master(raw_df_import):
             raw_ext = re.search(r'_(\d{4,15})\.(?:txt|mp3|wav|m4a)', text, re.IGNORECASE)
             if raw_ext: call_name = raw_ext.group(1)
         if not call_name:
-            call_name = call_hint if call_hint and call_hint != 'nan' else "Unknown Call"
+            call_name = call_hint if call_hint and str(call_hint).lower() != 'nan' else "Unknown Call"
 
-        # Construct final perfectly flat row
         row_data = {
             'Unique_Row_ID': idx,
             'Date': date_str,
@@ -568,7 +564,6 @@ st.divider()
 # TAB 1: QC DASHBOARD
 # =========================================================================
 if selected_tab == "📊 Performance Dashboard":
-    # UPDATE: Point this default link to your RAW DATA tab!
     DEFAULT_RAW_URL = "https://docs.google.com/spreadsheets/d/1-N0IJxjzrdM_mlmIn9QYMHj_PPMfOopP7CReYW5m5IQ/edit?gid=0#gid=0"
     DEFAULT_COACH_URL = "https://docs.google.com/spreadsheets/d/1-N0IJxjzrdM_mlmIn9QYMHj_PPMfOopP7CReYW5m5IQ/edit?gid=1002#gid=1002"
 
@@ -608,9 +603,8 @@ if selected_tab == "📊 Performance Dashboard":
             df = df.rename(columns={'Agent Name': 'Agent'})
             df['Score'] = pd.to_numeric(df['Score'], errors='coerce').fillna(0)
             
-            extracted_date = df['Date'].astype(str).str.extract(r'(\d{1,2}[-/]\d{1,2})')[0]
-            extracted_date = extracted_date.str.replace('-', '/')
-            df['Clean_Date'] = pd.to_datetime(extracted_date + "/2026", errors='coerce')
+            # Use cleanly parsed dates rather than unpredictable regex
+            df['Clean_Date'] = pd.to_datetime(df['Date'], errors='coerce')
             
             df['Section'] = df['Category'].apply(get_section_name)
             
@@ -1036,7 +1030,7 @@ if selected_tab == "📊 Performance Dashboard":
         st.info("👈 Please paste your Google Sheet Share Link(s) in the sidebar to load the dashboard.")
 
 # =========================================================================
-# AI SIDEBAR & DATA LOADING (PERSISTENT MEMORY & PARALLEL FETCHING)
+# AI SIDEBAR & DATA LOADING
 # =========================================================================
 else:
     st.sidebar.header("AI Transcript Vault")
@@ -1065,7 +1059,7 @@ else:
         transcripts_data_str = "\n\n".join([f"--- TRANSCRIPT FILE: {t['file_name']} ---\n{t['content']}" for t in transcripts_list])
 
     # =========================================================================
-    # TAB 2: AI CALL ASSISTANT (WITH MAP-REDUCE DEEP SEARCH!)
+    # TAB 2: AI CALL ASSISTANT
     # =========================================================================
     if selected_tab == "💬 AI Assistant":
         st.header("💬 Gemini Call Transcript Intelligence")
@@ -1094,25 +1088,13 @@ else:
                     try:
                         model = genai.GenerativeModel('gemini-3.1-flash-lite')
                         total_calls = len(transcripts_list)
-                        chunk_size = 25 # ~35,000 tokens (Safely under the 250k free tier limit)
+                        chunk_size = 25
                         
                         if total_calls <= chunk_size:
                             loader_placeholder.markdown("""
                             <div style="background-color: #0f172a; padding: 20px; border-radius: 12px; border: 2px dashed #8CC63F; text-align: center; margin-bottom: 15px;">
-                                <style>
-                                    @keyframes wobble { 0% { transform: translateX(-20px); } 100% { transform: translateX(20px); } }
-                                    @keyframes chomp-basic { 0%, 100% { border-right-color: transparent; } 50% { border-right-color: #8CC63F; } }
-                                    .loader-row { display: flex; justify-content: center; align-items: center; gap: 15px; animation: wobble 1.5s infinite alternate ease-in-out; margin-bottom: 15px; }
-                                    .pac-body { width: 0; height: 0; border: 20px solid #8CC63F; border-right: 20px solid transparent; border-radius: 50%; animation: chomp-basic 0.3s infinite; }
-                                </style>
-                                <div class="loader-row">
-                                    <span style="color: #8CC63F; font-size: 35px; font-weight: 900; font-family: 'Impact', sans-serif;">13</span>
-                                    <div class="pac-body"></div>
-                                    <span style="font-size: 25px;">🍪 🍪</span>
-                                    <span style="color: #3b82f6; font-size: 30px; font-weight: 900; font-family: 'Impact', sans-serif;">14 😱</span>
-                                </div>
                                 <div style="color: #cbd5e1; font-size: 16px; font-weight: 600; font-family: system-ui, sans-serif;">
-                                    Dept 13. is munching on 14 while Gemini thinks...
+                                    Gemini is thinking...
                                 </div>
                             </div>
                             """, unsafe_allow_html=True)
@@ -1211,7 +1193,7 @@ else:
                         st.error(f"Error communicating with Gemini API: {e}")
 
     # =========================================================================
-    # TAB 3: AI TAGGING & INSIGHTS (PERSISTENT ANALYSIS RESULTS & ROBUST JSON)
+    # TAB 3: AI TAGGING & INSIGHTS 
     # =========================================================================
     elif selected_tab == "🏷️ Tagging & Insights":
         st.header("🏷️ AI Call Tagging & Sentiment Analysis")
@@ -1232,20 +1214,8 @@ else:
                 loader_placeholder = st.empty()
                 loader_placeholder.markdown("""
                 <div style="background-color: #0f172a; padding: 20px; border-radius: 12px; border: 2px dashed #8CC63F; text-align: center; margin-bottom: 15px;">
-                    <style>
-                        @keyframes wobble { 0% { transform: translateX(-20px); } 100% { transform: translateX(20px); } }
-                        @keyframes chomp-basic { 0%, 100% { border-right-color: transparent; } 50% { border-right-color: #8CC63F; } }
-                        .loader-row { display: flex; justify-content: center; align-items: center; gap: 15px; animation: wobble 1.5s infinite alternate ease-in-out; margin-bottom: 15px; }
-                        .pac-body { width: 0; height: 0; border: 20px solid #8CC63F; border-right: 20px solid transparent; border-radius: 50%; animation: chomp-basic 0.3s infinite; }
-                    </style>
-                    <div class="loader-row">
-                        <span style="color: #8CC63F; font-size: 35px; font-weight: 900; font-family: 'Impact', sans-serif;">13</span>
-                        <div class="pac-body"></div>
-                        <span style="font-size: 25px;">🍪 🍪</span>
-                        <span style="color: #3b82f6; font-size: 30px; font-weight: 900; font-family: 'Impact', sans-serif;">14 😱</span>
-                    </div>
                     <div style="color: #cbd5e1; font-size: 16px; font-weight: 600; font-family: system-ui, sans-serif;">
-                        Dept 13. is munching on 14 while Gemini processes your call batches...
+                        Gemini processes your call batches...
                     </div>
                 </div>
                 """, unsafe_allow_html=True)
