@@ -327,6 +327,138 @@ SECTION_MAX_SCORES = {
     "Compliance": 25                           # 5 questions (COMP 1-5)
 }
 
+# -------------------------------------------------------------------------
+# NEW PYTHON AI PARSER (Replaces Google Sheets Formats)
+# -------------------------------------------------------------------------
+RUBRIC_IDS = [
+    "BG 1", "BG 2", "ARC 1", "ARC 2", "ARC 3", "ARC 4", "OE 1", "OE 2", "OE 3",
+    "PE 1", "PE 2", "PE 3", "PE 4", "PE 5", "QC 1", "QC 2", "QC 3", "QC 4", "QC 5",
+    "QC 6", "QC 7", "QC 8", "CL 1", "CL 2", "CL 3", "CL 4", "CC 1", "CC 2", "CC 3",
+    "CC 4", "CC 5", "COMP 1", "COMP 2", "COMP 3", "COMP 4", "COMP 5"
+]
+
+def extract_score_py(chunk):
+    # 1. Explicit
+    m = re.search(r'Score\s*[:\-]?\s*\*?\*?\s*([1-5]|0|N/?A)\b', chunk, re.IGNORECASE)
+    if m: return m.group(1).upper().replace('/', '')
+    # 2. Table cell | 4 |
+    m = re.search(r'\|\s*\*?\*?\s*([1-5]|0|N/?A)\s*\*?\*?\s*\|', chunk, re.IGNORECASE)
+    if m: return m.group(1).upper().replace('/', '')
+    # 3. Trailing pipe block | 4
+    m = re.search(r'\|\s*\*?\*?\s*([1-5]|0|N/?A)\s*\*?\*?\s*$', chunk, re.IGNORECASE)
+    if m: return m.group(1).upper().replace('/', '')
+    # 4. Bracketed [4]
+    m = re.search(r'[\(\[\*]\s*([1-5]|0|N/?A)\s*[\)\]\*]', chunk, re.IGNORECASE)
+    if m: return m.group(1).upper().replace('/', '')
+    # 5. Split by pipes
+    if '|' in chunk:
+        parts = chunk.split('|')
+        for p in parts:
+            clean_p = re.sub(r'[\*\s]', '', p).strip()
+            if re.match(r'^([1-5]|0|N/?A)$', clean_p, re.IGNORECASE):
+                return clean_p.upper().replace('/', '')
+    # 6. Last isolated number
+    m = re.search(r'\b([1-5]|0|N/?A)\b(?=[^\d]*$)', chunk, re.IGNORECASE)
+    if m: return m.group(1).upper().replace('/', '')
+    return None
+
+@st.cache_data(ttl=60)
+def parse_raw_to_master(raw_df_import):
+    rows = []
+    # Combine headers and values to ensure we don't miss the first row if there's no official header
+    all_data = [raw_df_import.columns.tolist()] + raw_df_import.values.tolist()
+
+    for idx, row in enumerate(all_data):
+        text = str(row[0]) if len(row) > 0 else ""
+        status = str(row[1]) if len(row) > 1 else ""
+        call_hint = str(row[2]) if len(row) > 2 else ""
+        agent_hint = str(row[3]) if len(row) > 3 else ""
+
+        if not text or text.lower() == 'nan': continue
+
+        # Verify it actually looks like an AI evaluation
+        looks_like_eval = any(x in text for x in ["Detailed Adherence Report", "Category |", "Top 3 Wins", "QC 1"])
+        if not looks_like_eval: continue
+
+        # Determine processing date
+        date_str = pd.Timestamp.today().strftime('%m/%d/%Y')
+        if "PROCESSED:" in status:
+            try: date_str = status.split("PROCESSED:")[1].strip().split(" ")[0]
+            except: pass
+
+        # Pre-clean formatting and URLs
+        clean_text = re.sub(r'\[([A-Za-z0-9\s]+)\]\([^)]+\)', r'\1', text)
+        clean_text = re.sub(r'\b(BG|ARC|OE|PE|QC|CL|CC|COMP)\b[\s\|]*https?:\/\/[^\|\s]*?cl\.corp\.google\.com\/(\d+)[^\|\s]*', r'\1 \2', clean_text, flags=re.IGNORECASE)
+
+        part4_pos = clean_text.lower().find('part 4: coaching action plan')
+        score_text = clean_text[:part4_pos] if part4_pos != -1 else clean_text
+
+        # Strip noisy numbers
+        score_text = re.sub(r'https?:\/\/\S+', '', score_text, flags=re.IGNORECASE)
+        score_text = re.sub(r'\b(?:page|pg\.?)\s*\d+\b', '', score_text, flags=re.IGNORECASE)
+        score_text = re.sub(r'\/\s*5\b', '', score_text)
+        score_text = re.sub(r'out\s*of\s*5', '', score_text, flags=re.IGNORECASE)
+
+        # Slice into chunks and extract scores
+        scores = {}
+        found_ids = []
+        for item in RUBRIC_IDS:
+            pattern = r'\b' + item.replace(' ', r'\s*[-_]?\s*') + r'\b'
+            for match in re.finditer(pattern, score_text, re.IGNORECASE):
+                found_ids.append({'id': item, 'index': match.start(), 'match_str': match.group(0)})
+
+        found_ids.sort(key=lambda x: x['index'])
+
+        for i, current in enumerate(found_ids):
+            next_index = found_ids[i+1]['index'] if i+1 < len(found_ids) else len(score_text)
+            chunk = score_text[current['index']:next_index]
+            chunk = chunk.replace(current['match_str'], '')
+            val = extract_score_py(chunk)
+            if val: scores[current['id']] = "" if val in ['NA', '0'] else int(val)
+
+        # Agent Name Sanitizer
+        agent_name = agent_hint
+        if not agent_name or agent_name == 'nan':
+            am = re.search(r'Agent(?:\s*Name)?\s*:\s*([^\n\r(|]+)', text, re.IGNORECASE)
+            if am and "information not provided" not in am.group(1).lower(): agent_name = am.group(1).strip()
+        if not agent_name or agent_name == 'nan': agent_name = "Unknown Agent"
+
+        agent_name = re.sub(r'\s*\[source:\s*\d+\]', '', agent_name, flags=re.IGNORECASE).strip()
+        ln = agent_name.lower()
+        if "carlos" in ln: agent_name = "Carlos Fernandes"
+        elif "jesus" in ln: agent_name = "Jesus Guzman"
+        elif "tom" == ln: agent_name = "Adriel"
+        elif "mitchell" in ln or "michel" in ln: agent_name = "Michel Sandoval"
+        elif "angela" in ln: agent_name = "Mariz"
+        elif "mark" in ln: agent_name = "Marcos"
+
+        # Call ID Sanitizer
+        call_name = ""
+        fn_line = re.search(r'File\s*Name\s*:[^\n\r]+', text, re.IGNORECASE)
+        if fn_line:
+            nums = re.findall(r'\d{4,15}', fn_line.group(0))
+            if nums: call_name = nums[-1]
+
+        if not call_name:
+            raw_ext = re.search(r'_(\d{4,15})\.(?:txt|mp3|wav|m4a)', text, re.IGNORECASE)
+            if raw_ext: call_name = raw_ext.group(1)
+        if not call_name:
+            call_name = call_hint if call_hint and call_hint != 'nan' else "Unknown Call"
+
+        # Construct final perfectly flat row
+        row_data = {
+            'Unique_Row_ID': idx,
+            'Date': date_str,
+            'Agent Name': agent_name,
+            'Call': call_name
+        }
+        for k in RUBRIC_IDS:
+            row_data[k] = scores.get(k, "")
+
+        rows.append(row_data)
+
+    return pd.DataFrame(rows)
+
 def get_section_name(category):
     cat_upper = str(category).upper()
     for prefix, section in section_map.items():
@@ -354,16 +486,12 @@ def generate_section_summary(data_df):
     if data_df.empty:
         return pd.DataFrame()
         
-    # FIX: Group by Unique_Row_ID to perfectly match the overall average math
     call_section_df = data_df.groupby(['Unique_Row_ID', 'Section'])['Score'].sum().reset_index()
     
     section_summary = call_section_df.groupby('Section')['Score'].mean().reset_index()
     section_summary = section_summary.rename(columns={'Score': 'Avg_Score'})
     
-    # Map the official standard max score based on question count
     section_summary['Max_Display'] = section_summary['Section'].map(SECTION_MAX_SCORES).fillna(10).astype(int)
-    
-    # Calculate percentage based on exact standard max score
     section_summary['Avg_Percentage'] = (section_summary['Avg_Score'] / section_summary['Max_Display']) * 100
     
     section_summary['Score (Raw)'] = section_summary['Avg_Score'].round(1).astype(str) + " / " + section_summary['Max_Display'].astype(str)
@@ -377,7 +505,6 @@ def generate_section_summary(data_df):
     return section_summary[['Score (Raw)', 'Percentage']]
 
 def create_section_bar_chart(summary_df, threshold):
-    """Creates a horizontal bar chart from the section summary dataframe."""
     if summary_df.empty:
         return None
         
@@ -392,7 +519,7 @@ def create_section_bar_chart(summary_df, threshold):
         text=df_chart['Percentage'],
         labels={'Pct_Num': 'Score (%)', 'Section': ''},
         range_x=[0, 100],
-        color_discrete_sequence=['#4682B4'] # Steel Blue
+        color_discrete_sequence=['#4682B4']
     )
     
     fig.add_vline(x=threshold, line_dash="dash", line_color="#dc2626", annotation_text=f"Target ({threshold}%)")
@@ -441,16 +568,21 @@ st.divider()
 # TAB 1: QC DASHBOARD
 # =========================================================================
 if selected_tab == "📊 Performance Dashboard":
-    DEFAULT_MASTER_URL = "https://docs.google.com/spreadsheets/d/1-N0IJxjzrdM_mlmIn9QYMHj_PPMfOopP7CReYW5m5IQ/edit?gid=1001#gid=1001"
+    # UPDATE: Point this default link to your RAW DATA tab!
+    DEFAULT_RAW_URL = "https://docs.google.com/spreadsheets/d/1-N0IJxjzrdM_mlmIn9QYMHj_PPMfOopP7CReYW5m5IQ/edit?gid=0#gid=0"
     DEFAULT_COACH_URL = "https://docs.google.com/spreadsheets/d/1-N0IJxjzrdM_mlmIn9QYMHj_PPMfOopP7CReYW5m5IQ/edit?gid=1002#gid=1002"
 
     st.sidebar.header("1. Connect Data")
-    sheet_url = st.sidebar.text_input("1. Paste 'Master Data' Tab Link:", value=DEFAULT_MASTER_URL)
+    sheet_url = st.sidebar.text_input("1. Paste 'Raw Data' Tab Link:", value=DEFAULT_RAW_URL)
     coach_url = st.sidebar.text_input("2. Paste 'Coaching Feedback' Tab Link:", value=DEFAULT_COACH_URL)
 
     if sheet_url:
         try:
-            raw_df = load_sheet_data(sheet_url)
+            # The Magic Interceptor: Grabs raw text and builds perfect flat data!
+            raw_df_import = load_sheet_data(sheet_url)
+            raw_df = parse_raw_to_master(raw_df_import)
+            
+            raw_df['Unique_Row_ID'] = raw_df.index 
             
             coach_df = pd.DataFrame()
             if coach_url:
@@ -458,13 +590,11 @@ if selected_tab == "📊 Performance Dashboard":
                     coach_df = load_sheet_data(coach_url)
                     st.sidebar.success("Both sheets connected successfully!")
                 except Exception:
-                    st.sidebar.warning("Master Data connected. Could not load Coaching Feedback tab.")
+                    st.sidebar.warning("Raw Data connected. Could not load Coaching Feedback tab.")
             else:
-                st.sidebar.warning("Master Data connected. Add Coaching link for 1-on-1s.")
+                st.sidebar.warning("Raw Data connected. Add Coaching link for 1-on-1s.")
                 
             st.sidebar.divider()
-            
-            raw_df['Unique_Row_ID'] = raw_df.index 
             
             fixed_columns = ['Unique_Row_ID', 'Date', 'Agent Name', 'Call']
             score_columns = [col for col in raw_df.columns if col not in fixed_columns and "total" not in col.lower()]
@@ -620,7 +750,7 @@ if selected_tab == "📊 Performance Dashboard":
                         col_config[col] = st.column_config.Column(help=norm_tooltips[norm_col])
 
                 # =========================================================================
-                # 1-ON-1 COACHING VIEW (WITH ACTION PLAN TRACKER!)
+                # 1-ON-1 COACHING VIEW
                 # =========================================================================
                 if sel_coaching_date != "Hide 1-on-1 View":
                     st.info("🖨️ **How to Export this Scorecard:** Press **Ctrl + P** (or **Cmd + P** on Mac) to open the print menu, then select **'Save as PDF'**.")
@@ -678,26 +808,25 @@ if selected_tab == "📊 Performance Dashboard":
                         st.session_state.wins_text = default_wins
                         st.session_state.improve_text = default_improve
 
-                    edit_mode = st.checkbox("✏️ Enable Edit Mode (Uncheck this before hitting Ctrl + P to lock in your changes for printing!)", value=False)
+                    edit_mode = st.checkbox("✏️ Enable Edit Mode", value=False)
                     
                     col_good, col_bad = st.columns(2)
                     
                     with col_good:
                         st.success("### 🌟 Top 3 Wins")
                         if edit_mode:
-                            st.session_state.wins_text = st.text_area("Edit Wins (Does not save to Sheets):", value=st.session_state.wins_text, height=350)
+                            st.session_state.wins_text = st.text_area("Edit Wins:", value=st.session_state.wins_text, height=350)
                         else:
                             st.markdown(st.session_state.wins_text)
                             
                     with col_bad:
                         st.error("### ⚠️ Top 3 Areas for Improvement")
                         if edit_mode:
-                            st.session_state.improve_text = st.text_area("Edit Improvements (Does not save to Sheets):", value=st.session_state.improve_text, height=350)
+                            st.session_state.improve_text = st.text_area("Edit Improvements:", value=st.session_state.improve_text, height=350)
                         else:
                             st.markdown(st.session_state.improve_text)
                             
                     st.divider()
-                    st.info("To return to the main dashboard charts, change the 'Select Coaching Date Range' dropdown in the sidebar back to 'Hide 1-on-1 View'.")
 
                 else:
                     if compare_mode:
@@ -848,14 +977,12 @@ if selected_tab == "📊 Performance Dashboard":
                                     
                                     st.markdown(f"### 🔍 Call Audit for ID: `{search_call_id}`")
                                     
-                                    # 1. Fetch & Match Metadata
                                     vault_transcripts = fetch_all_transcripts(FOLDER_ID)
                                     matched_t = next((t for t in vault_transcripts if search_call_id.lower() in t['file_name'].lower()), None)
                                     
                                     audio_vault_files = fetch_audio_files_metadata(AUDIO_FOLDER_ID)
                                     matched_a = next((a for a in audio_vault_files if search_call_id.lower() in a['name'].lower()), None)
                                     
-                                    # --- AUDIO SECTION (REQUIRES CLICK) ---
                                     st.markdown("#### 🎧 Call Audio Recording")
                                     if matched_a:
                                         st.caption(f"🔊 **Available File:** `{matched_a['name']}`")
@@ -878,7 +1005,6 @@ if selected_tab == "📊 Performance Dashboard":
                                         
                                     st.divider()
                                     
-                                    # --- TRANSCRIPT SECTION ---
                                     st.markdown("#### 📄 Call Transcript Text")
                                     if matched_t:
                                         st.caption(f"📄 **Matched Transcript File:** `{matched_t['file_name']}`")
