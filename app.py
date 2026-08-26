@@ -400,7 +400,7 @@ selected_tab = st.radio(
 st.divider()
 
 # =========================================================================
-# TAB 1: QC DASHBOARD (READS LONG FORMAT DIRECTLY)
+# TAB 1: QC DASHBOARD
 # =========================================================================
 if selected_tab == "📊 Performance Dashboard":
     DEFAULT_DATA_URL = "https://docs.google.com/spreadsheets/d/1-N0IJxjzrdM_mlmIn9QYMHj_PPMfOopP7CReYW5m5IQ/edit?gid=123456789#gid=123456789"
@@ -435,12 +435,25 @@ if selected_tab == "📊 Performance Dashboard":
                 df['Clean_Date'] = pd.to_datetime(extracted_date + "/2026", errors='coerce')
                 df['Section'] = df['Category'].apply(get_section_name)
                 
-                # --- TIE-BREAKER FOR DUPLICATE CALL NAMES ---
-                # Creates a unique index so calls sharing the exact same name don't merge mathematically
-                df['Call_Index'] = df.groupby(['Agent', 'Call', 'Date', 'Category']).cumcount()
-                df['Unique_Row_ID'] = df['Agent'].astype(str) + "_" + df['Call'].astype(str) + "_" + df['Date'].astype(str) + "_" + df['Call_Index'].astype(str)
-                df['Call'] = df.apply(lambda x: f"{x['Call']} (Split {x['Call_Index'] + 1})" if x['Call_Index'] > 0 else x['Call'], axis=1)
-                # --------------------------------------------
+                # --- SMART DUPLICATE HANDLER & TIE-BREAKER ---
+                # 1. Identify "Generic" fallback names vs "Real" unique IDs
+                df['Is_Generic'] = df['Call'].astype(str).str.lower().str.startswith('call ') | df['Call'].astype(str).str.lower().str.startswith('unknown')
+                
+                # 2. For REAL IDs, drop exact duplicates (keeps only the most recent evaluation of that ID)
+                real_df = df[~df['Is_Generic']].drop_duplicates(subset=['Agent', 'Call', 'Date', 'Category'], keep='last')
+                
+                # 3. For GENERIC calls, keep them all, but split them so they don't merge mathematically
+                gen_df = df[df['Is_Generic']].copy()
+                gen_df['Call_Index'] = gen_df.groupby(['Agent', 'Call', 'Date', 'Category']).cumcount()
+                gen_df['Call'] = gen_df.apply(lambda x: f"{x['Call']} (Split {x['Call_Index'] + 1})" if x['Call_Index'] > 0 else x['Call'], axis=1)
+                gen_df = gen_df.drop(columns=['Call_Index'])
+                
+                # 4. Recombine
+                df = pd.concat([real_df, gen_df], ignore_index=True).drop(columns=['Is_Generic'])
+                
+                # Create the unique row ID for the dashboard grouping
+                df['Unique_Row_ID'] = df['Agent'].astype(str) + "_" + df['Call'].astype(str) + "_" + df['Date'].astype(str)
+                # ----------------------------------------------
 
                 coach_df = pd.DataFrame()
                 if coach_url:
