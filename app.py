@@ -412,14 +412,12 @@ if selected_tab == "📊 Performance Dashboard":
 
     if sheet_url:
         try:
-            # Simply load the clean, structured data!
             raw_df = load_sheet_data(sheet_url)
             
             with st.sidebar.expander("🛠️ Debug Data View"):
                 st.write("What Streamlit sees from your link:")
                 st.dataframe(raw_df.head(3))
             
-            # Verify the required columns exist
             required_cols = ['Date', 'Agent Name', 'Call', 'Category', 'Score']
             missing_cols = [col for col in required_cols if col not in raw_df.columns]
             
@@ -431,18 +429,19 @@ if selected_tab == "📊 Performance Dashboard":
                 df = df.rename(columns={'Agent Name': 'Agent'})
                 df['Score'] = pd.to_numeric(df['Score'], errors='coerce').fillna(0)
                 
-                # --- NEW BULLETPROOF DATE PARSER ---
-                # Extracts the first date from strings like "8/17-8/21 Week"
+                # --- BULLETPROOF DATE PARSER ---
                 extracted_date = df['Date'].astype(str).str.extract(r'(\d{1,2}[-/]\d{1,2})')[0]
                 extracted_date = extracted_date.str.replace('-', '/')
                 df['Clean_Date'] = pd.to_datetime(extracted_date + "/2026", errors='coerce')
-                # -----------------------------------
-                
                 df['Section'] = df['Category'].apply(get_section_name)
                 
-                # Because the data is already melted (long format), we just assign a unique ID per call
-                df['Unique_Row_ID'] = df.groupby(['Agent', 'Call', 'Date']).ngroup()
-                
+                # --- TIE-BREAKER FOR DUPLICATE CALL NAMES ---
+                # Creates a unique index so calls sharing the exact same name don't merge mathematically
+                df['Call_Index'] = df.groupby(['Agent', 'Call', 'Date', 'Category']).cumcount()
+                df['Unique_Row_ID'] = df['Agent'].astype(str) + "_" + df['Call'].astype(str) + "_" + df['Date'].astype(str) + "_" + df['Call_Index'].astype(str)
+                df['Call'] = df.apply(lambda x: f"{x['Call']} (Split {x['Call_Index'] + 1})" if x['Call_Index'] > 0 else x['Call'], axis=1)
+                # --------------------------------------------
+
                 coach_df = pd.DataFrame()
                 if coach_url:
                     try:
@@ -455,7 +454,6 @@ if selected_tab == "📊 Performance Dashboard":
                     
                 st.sidebar.divider()
                 
-                # Group by call to get total scores
                 call_df = df.groupby(['Unique_Row_ID', 'Clean_Date', 'Date', 'Agent', 'Call'])['Score'].sum().reset_index()
                 call_df = call_df.rename(columns={'Score': 'Total Raw Score'})
                 call_df['Call Percentage'] = (call_df['Total Raw Score'] / 180) * 100
