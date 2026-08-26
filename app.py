@@ -98,7 +98,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # -------------------------------------------------------------------------
-# BALANCE OF NATURE LOGO HEADER
+# BALANCE OF NATURE LOGO HEADER 
 # -------------------------------------------------------------------------
 st.markdown("""
 <div style="text-align: center; margin-bottom: 25px; margin-top: -20px;">
@@ -117,7 +117,6 @@ FOLDER_ID = "19SEHIDCcIdggzSVzl1dhClmHTXXqrwK9"
 AUDIO_FOLDER_ID = "18wGQo88AkkRNSWcFCBMtCNZEQph12jW3"
 
 def get_drive_service():
-    """Authenticates with Google Drive using secrets.toml."""
     try:
         creds_dict = dict(st.secrets["google_service_account"])
         if "private_key" in creds_dict:
@@ -296,7 +295,7 @@ SECTION_MAX_SCORES = {
 }
 
 # -------------------------------------------------------------------------
-# NEW PYTHON AI PARSER (Replaces Google Sheets Formats)
+# PYTHON AI PARSER (Replaces Google Sheets Formats)
 # -------------------------------------------------------------------------
 RUBRIC_IDS = [
     "BG 1", "BG 2", "ARC 1", "ARC 2", "ARC 3", "ARC 4", "OE 1", "OE 2", "OE 3",
@@ -342,7 +341,6 @@ def parse_raw_to_master(raw_df_import):
     rows = []
     all_data = [raw_df_import.columns.tolist()] + raw_df_import.values.tolist()
 
-    # Broadened search words to ensure the script doesn't skip calls
     eval_keywords = [
         "Detailed Adherence Report", "Category |", "Top 3 Wins", "ID: BG", "ID: ARC", "ID: OE", 
         "ID: PE", "ID: QC", "ID: CC", "ID: CL", "ID: COMP", "cl.corp.google.com", "Score:", "Score -"
@@ -357,14 +355,12 @@ def parse_raw_to_master(raw_df_import):
         if not text or text.lower() == 'nan': continue
 
         looks_like_eval = any(x.lower() in text.lower() for x in eval_keywords)
-        # Failsafe: if we see multiple rubric IDs, it's definitely an evaluation
         if not looks_like_eval:
             id_count = len(re.findall(r'\b(?:BG|ARC|OE|PE|QC|CL|CC|COMP)\s*[-_]?\s*[1-8]\b', text, re.IGNORECASE))
             if id_count >= 5: looks_like_eval = True
             
         if not looks_like_eval: continue
 
-        # Date Parsing
         date_str = pd.Timestamp.today().strftime('%m/%d/%Y')
         if "PROCESSED:" in status.upper():
             try: 
@@ -373,7 +369,6 @@ def parse_raw_to_master(raw_df_import):
                     date_str = pd.to_datetime(raw_date.group(1)).strftime('%m/%d/%Y')
             except: pass
 
-        # Intercept fake URLs
         clean_text = re.sub(r'\[([A-Za-z0-9\s]+)\]\([^)]+\)', r'\1', text)
         clean_text = re.sub(r'\b(BG|ARC|OE|PE|QC|CL|CC|COMP)\b[\s\|]*https?:\/\/[^\|\s]*?cl\.corp\.google\.com\/(\d+)[^\|\s]*', r'\1 \2', clean_text, flags=re.IGNORECASE)
 
@@ -385,7 +380,6 @@ def parse_raw_to_master(raw_df_import):
         score_text = re.sub(r'\/\s*5\b', '', score_text)
         score_text = re.sub(r'out\s*of\s*5', '', score_text, flags=re.IGNORECASE)
 
-        # Slice into chunks
         scores = {}
         found_ids = []
         for item in RUBRIC_IDS:
@@ -402,7 +396,6 @@ def parse_raw_to_master(raw_df_import):
             val = extract_score_py(chunk)
             if val: scores[current['id']] = "" if val in ['NA', '0'] else int(val)
 
-        # Fallback Keywords (If ID was completely missing from the text)
         for k in RUBRIC_IDS:
             if k not in scores:
                 kw = CRITERIA_KEYWORDS.get(k, k.lower())
@@ -413,7 +406,6 @@ def parse_raw_to_master(raw_df_import):
                     if val:
                         scores[k] = "" if val in ['NA', '0'] else int(val)
 
-        # Agent Name Sanitizer
         agent_name = agent_hint
         if not agent_name or str(agent_name).lower() == 'nan':
             am = re.search(r'Agent(?:\s*Name)?\s*:\s*([^\n\r(|]+)', text, re.IGNORECASE)
@@ -429,7 +421,6 @@ def parse_raw_to_master(raw_df_import):
         elif "angela" in ln: agent_name = "Mariz"
         elif "mark" in ln: agent_name = "Marcos"
 
-        # Call ID Sanitizer
         call_name = ""
         fn_line = re.search(r'File\s*Name\s*:[^\n\r]+', text, re.IGNORECASE)
         if fn_line:
@@ -453,6 +444,10 @@ def parse_raw_to_master(raw_df_import):
 
         rows.append(row_data)
 
+    if not rows:
+        empty_cols = ['Unique_Row_ID', 'Date', 'Agent Name', 'Call'] + RUBRIC_IDS
+        return pd.DataFrame(columns=empty_cols)
+        
     return pd.DataFrame(rows)
 
 def get_section_name(category):
@@ -564,7 +559,7 @@ st.divider()
 # TAB 1: QC DASHBOARD
 # =========================================================================
 if selected_tab == "📊 Performance Dashboard":
-    DEFAULT_RAW_URL = "https://docs.google.com/spreadsheets/d/1-N0IJxjzrdM_mlmIn9QYMHj_PPMfOopP7CReYW5m5IQ/edit?gid=0#gid=0"
+    DEFAULT_RAW_URL = "https://docs.google.com/spreadsheets/d/1-N0IJxjzrdM_mlmIn9QYMHj_PPMfOopP7CReYW5m5IQ/edit?gid=123456789#gid=123456789"
     DEFAULT_COACH_URL = "https://docs.google.com/spreadsheets/d/1-N0IJxjzrdM_mlmIn9QYMHj_PPMfOopP7CReYW5m5IQ/edit?gid=1002#gid=1002"
 
     st.sidebar.header("1. Connect Data")
@@ -573,455 +568,456 @@ if selected_tab == "📊 Performance Dashboard":
 
     if sheet_url:
         try:
-            # The Magic Interceptor: Grabs raw text and builds perfect flat data!
             raw_df_import = load_sheet_data(sheet_url)
             raw_df = parse_raw_to_master(raw_df_import)
             
-            raw_df['Unique_Row_ID'] = raw_df.index 
-            
-            coach_df = pd.DataFrame()
-            if coach_url:
-                try:
-                    coach_df = load_sheet_data(coach_url)
-                    st.sidebar.success("Both sheets connected successfully!")
-                except Exception:
-                    st.sidebar.warning("Raw Data connected. Could not load Coaching Feedback tab.")
+            if raw_df.empty:
+                st.warning("⚠️ No valid call evaluations found in the connected sheet. Ensure you are linking to the 'Raw Data' tab, not the Master Data tab.")
             else:
-                st.sidebar.warning("Raw Data connected. Add Coaching link for 1-on-1s.")
+                raw_df['Unique_Row_ID'] = raw_df.index 
                 
-            st.sidebar.divider()
-            
-            fixed_columns = ['Unique_Row_ID', 'Date', 'Agent Name', 'Call']
-            score_columns = [col for col in raw_df.columns if col not in fixed_columns and "total" not in col.lower()]
-            
-            df = pd.melt(raw_df, 
-                         id_vars=fixed_columns, 
-                         value_vars=score_columns,
-                         var_name='Category', 
-                         value_name='Score')
-                         
-            df = df.rename(columns={'Agent Name': 'Agent'})
-            df['Score'] = pd.to_numeric(df['Score'], errors='coerce').fillna(0)
-            
-            # Use cleanly parsed dates rather than unpredictable regex
-            df['Clean_Date'] = pd.to_datetime(df['Date'], errors='coerce')
-            
-            df['Section'] = df['Category'].apply(get_section_name)
-            
-            call_df = df.groupby(['Unique_Row_ID', 'Clean_Date', 'Date', 'Agent', 'Call'])['Score'].sum().reset_index()
-            call_df = call_df.rename(columns={'Score': 'Total Raw Score'})
-            call_df['Call Percentage'] = (call_df['Total Raw Score'] / 180) * 100
-            
-            # FILTERS & COMPARISON MODE
-            st.sidebar.header("2. Dashboard Filters")
-            
-            min_date = df['Clean_Date'].min()
-            max_date = df['Clean_Date'].max()
-            
-            if pd.isna(min_date) or pd.isna(max_date):
-                st.sidebar.warning("Could not parse dates for filtering.")
-                start_date, end_date = None, None
-            else:
-                date_range = st.sidebar.date_input(
-                    "SELECT DATE RANGE",
-                    value=(min_date.date(), max_date.date()),
-                    min_value=min_date.date(),
-                    max_value=max_date.date()
-                )
-                if len(date_range) == 2:
-                    start_date, end_date = date_range
+                coach_df = pd.DataFrame()
+                if coach_url:
+                    try:
+                        coach_df = load_sheet_data(coach_url)
+                        st.sidebar.success("Both sheets connected successfully!")
+                    except Exception:
+                        st.sidebar.warning("Raw Data connected. Could not load Coaching Feedback tab.")
                 else:
-                    start_date, end_date = date_range[0], max_date.date()
-
-            compare_mode = st.sidebar.checkbox("⚖️ Enable Date Comparison Mode", value=False)
-            start_date_2, end_date_2 = None, None
-            
-            if compare_mode:
-                st.sidebar.markdown("**COMPARE AGAINST:**")
-                date_range_2 = st.sidebar.date_input(
-                    "SELECT SECOND DATE RANGE",
-                    value=(min_date.date(), max_date.date()),
-                    min_value=min_date.date(),
-                    max_value=max_date.date()
-                )
-                if len(date_range_2) == 2:
-                    start_date_2, end_date_2 = date_range_2
+                    st.sidebar.warning("Raw Data connected. Add Coaching link for 1-on-1s.")
+                    
+                st.sidebar.divider()
+                
+                fixed_columns = ['Unique_Row_ID', 'Date', 'Agent Name', 'Call']
+                score_columns = [col for col in raw_df.columns if col not in fixed_columns and "total" not in col.lower()]
+                
+                df = pd.melt(raw_df, 
+                             id_vars=fixed_columns, 
+                             value_vars=score_columns,
+                             var_name='Category', 
+                             value_name='Score')
+                             
+                df = df.rename(columns={'Agent Name': 'Agent'})
+                df['Score'] = pd.to_numeric(df['Score'], errors='coerce').fillna(0)
+                
+                df['Clean_Date'] = pd.to_datetime(df['Date'], errors='coerce')
+                
+                df['Section'] = df['Category'].apply(get_section_name)
+                
+                call_df = df.groupby(['Unique_Row_ID', 'Clean_Date', 'Date', 'Agent', 'Call'])['Score'].sum().reset_index()
+                call_df = call_df.rename(columns={'Score': 'Total Raw Score'})
+                call_df['Call Percentage'] = (call_df['Total Raw Score'] / 180) * 100
+                
+                # FILTERS & COMPARISON MODE
+                st.sidebar.header("2. Dashboard Filters")
+                
+                min_date = df['Clean_Date'].min()
+                max_date = df['Clean_Date'].max()
+                
+                if pd.isna(min_date) or pd.isna(max_date):
+                    st.sidebar.warning("Could not parse dates for filtering.")
+                    start_date, end_date = None, None
                 else:
-                    start_date_2, end_date_2 = date_range_2[0], max_date.date()
-                    
-            st.sidebar.divider()
-            
-            sel_agent = st.sidebar.selectbox("FILTER BY AGENT", ["All agents"] + list(df['Agent'].dropna().unique()))
-            
-            sel_coaching_date = "Hide 1-on-1 View"
-            agent_coach_data = pd.DataFrame()
-            
-            if sel_agent != "All agents" and not coach_df.empty:
-                if 'Agent Name' in coach_df.columns and 'Date Range' in coach_df.columns:
-                    first_name = str(sel_agent).split()[0].strip().lower()
-                    coach_df_clean = coach_df.copy()
-                    coach_df_clean['First_Name'] = coach_df_clean['Agent Name'].astype(str).apply(lambda x: x.split()[0].strip().lower() if pd.notna(x) else "")
-                    agent_coach_data = coach_df_clean[coach_df_clean['First_Name'] == first_name]
-                    
-                    if not agent_coach_data.empty:
-                        avail_dates = agent_coach_data['Date Range'].dropna().unique()
-                        sel_coaching_date = st.sidebar.selectbox("🔍 SELECT COACHING DATE RANGE (1-on-1 View)", ["Hide 1-on-1 View"] + list(avail_dates))
-
-            filtered_df = df.copy()
-            filtered_call_df = call_df.copy()
-            
-            if start_date and end_date:
-                mask = (filtered_df['Clean_Date'].dt.date >= start_date) & (filtered_df['Clean_Date'].dt.date <= end_date)
-                filtered_df = filtered_df.loc[mask]
-                
-                call_mask = (filtered_call_df['Clean_Date'].dt.date >= start_date) & (filtered_call_df['Clean_Date'].dt.date <= end_date)
-                filtered_call_df = filtered_call_df.loc[call_mask]
-            
-            filtered_df_2 = pd.DataFrame()
-            if compare_mode and start_date_2 and end_date_2:
-                mask2 = (df['Clean_Date'].dt.date >= start_date_2) & (df['Clean_Date'].dt.date <= end_date_2)
-                filtered_df_2 = df.loc[mask2].copy()
-
-            if sel_agent != "All agents":
-                filtered_df = filtered_df[filtered_df['Agent'] == sel_agent]
-                filtered_call_df = filtered_call_df[filtered_call_df['Agent'] == sel_agent]
-                if compare_mode and not filtered_df_2.empty:
-                    filtered_df_2 = filtered_df_2[filtered_df_2['Agent'] == sel_agent]
-
-            if filtered_call_df.empty:
-                st.warning("No data found for these filters.")
-            else:
-                col_empty, col_thresh = st.columns([4, 1])
-                with col_thresh:
-                    pass_threshold = st.number_input("PASS THRESHOLD (%)", value=80, step=1)
-
-                total_calls = len(filtered_call_df)
-                avg_call_score = filtered_call_df['Call Percentage'].mean()
-                highest_score = filtered_call_df['Call Percentage'].max()
-                lowest_score = filtered_call_df['Call Percentage'].min()
-                
-                passing_calls = len(filtered_call_df[filtered_call_df['Call Percentage'] >= pass_threshold])
-                pass_rate = (passing_calls / total_calls) * 100 if total_calls > 0 else 0
-
-                mid_point = start_date + (end_date - start_date) / 2
-                first_half = filtered_call_df[filtered_call_df['Clean_Date'].dt.date <= mid_point]
-                second_half = filtered_call_df[filtered_call_df['Clean_Date'].dt.date > mid_point]
-                
-                delta_avg = None
-                delta_pass = None
-                if not first_half.empty and not second_half.empty:
-                    fh_avg = first_half['Call Percentage'].mean()
-                    sh_avg = second_half['Call Percentage'].mean()
-                    delta_avg = sh_avg - fh_avg
-                    
-                    fh_pass = (len(first_half[first_half['Call Percentage'] >= pass_threshold]) / len(first_half)) * 100
-                    sh_pass = (len(second_half[second_half['Call Percentage'] >= pass_threshold]) / len(second_half)) * 100
-                    delta_pass = sh_pass - fh_pass
-
-                kpi1, kpi2, kpi3, kpi4, kpi5 = st.columns(5)
-                kpi1.metric("CALLS GRADED", total_calls)
-                
-                if delta_avg is not None:
-                    kpi2.metric("AVG CALL SCORE", f"{avg_call_score:.1f}%", f"{delta_avg:.1f}% vs first half")
-                else:
-                    kpi2.metric("AVG CALL SCORE", f"{avg_call_score:.1f}%")
-                    
-                kpi3.metric("HIGHEST CALL", f"{highest_score:.1f}%")
-                kpi4.metric("LOWEST CALL", f"{lowest_score:.1f}%")
-                
-                if delta_pass is not None:
-                    kpi5.metric(f"PASS RATE (>{pass_threshold}%)", f"{pass_rate:.0f}%", f"{delta_pass:.0f}% vs first half")
-                else:
-                    kpi5.metric(f"PASS RATE (>{pass_threshold}%)", f"{pass_rate:.0f}%")
-
-                st.divider()
-
-                norm_tooltips = {k.replace(" ", "").upper(): v for k, v in question_tooltips.items()}
-                col_config = {}
-                for col in df['Category'].unique():
-                    norm_col = str(col).replace(" ", "").upper()
-                    if norm_col in norm_tooltips:
-                        col_config[col] = st.column_config.Column(help=norm_tooltips[norm_col])
-
-                # =========================================================================
-                # 1-ON-1 COACHING VIEW
-                # =========================================================================
-                if sel_coaching_date != "Hide 1-on-1 View":
-                    st.info("🖨️ **How to Export this Scorecard:** Press **Ctrl + P** (or **Cmd + P** on Mac) to open the print menu, then select **'Save as PDF'**.")
-
-                    st.markdown(f"## 📝 COACHING FEEDBACK: {sel_coaching_date}")
-                    st.markdown(f"**Agent:** {sel_agent} | **Average Call Score during this period:** {avg_call_score:.1f}%")
-
-                    # ACTION PLAN TRACKER
-                    st.markdown("### 🎯 Automated Action Plan Tracker")
-                    st.markdown(f"Tracking {sel_agent}'s lowest scoring categories from **before** {start_date.strftime('%m/%d')} into the current period.")
-                    
-                    historical_df = df[(df['Agent'] == sel_agent) & (df['Clean_Date'].dt.date < start_date)]
-                    current_df = filtered_df[filtered_df['Agent'] == sel_agent]
-                    
-                    if not historical_df.empty and not current_df.empty:
-                        hist_avg = historical_df.groupby('Category')['Score'].mean().reset_index()
-                        lowest_hist = hist_avg.sort_values('Score').head(3)
-                        
-                        tracker_data = []
-                        for _, row in lowest_hist.iterrows():
-                            cat = row['Category']
-                            base_score = row['Score']
-                            
-                            curr_cat_df = current_df[current_df['Category'] == cat]
-                            curr_score = curr_cat_df['Score'].mean() if not curr_cat_df.empty else base_score
-                            
-                            if curr_score >= 4.0:
-                                status = "✅ Resolved"
-                            elif curr_score > base_score + 0.2:
-                                status = "🟡 In Progress"
-                            else:
-                                status = "🔴 Action Needed"
-                                
-                            tracker_data.append({
-                                "Focus Category": cat,
-                                "Baseline Score (Past)": f"{base_score:.1f} / 5.0",
-                                "Current Avg (New)": f"{curr_score:.1f} / 5.0",
-                                "Trend": f"{curr_score - base_score:+.1f}",
-                                "Status": status
-                            })
-                            
-                        tracker_df = pd.DataFrame(tracker_data)
-                        st.dataframe(tracker_df, use_container_width=True, hide_index=True)
+                    date_range = st.sidebar.date_input(
+                        "SELECT DATE RANGE",
+                        value=(min_date.date(), max_date.date()),
+                        min_value=min_date.date(),
+                        max_value=max_date.date()
+                    )
+                    if len(date_range) == 2:
+                        start_date, end_date = date_range
                     else:
-                        st.info("Not enough historical data to generate the Action Plan Tracker for this period.")
-
-                    # COACHING TEXT BOXES
-                    coach_row = agent_coach_data[agent_coach_data['Date Range'] == sel_coaching_date].iloc[0]
-                    default_wins = coach_row['Top 3 Wins'] if pd.notna(coach_row.get('Top 3 Wins')) else "No wins recorded for this period."
-                    default_improve = coach_row['Top 3 Areas for Improvement'] if pd.notna(coach_row.get('Top 3 Areas for Improvement')) else "No areas for improvement recorded for this period."
-                    
-                    state_key = f"{sel_agent}_{sel_coaching_date}"
-                    if 'current_coach_view' not in st.session_state or st.session_state.current_coach_view != state_key:
-                        st.session_state.current_coach_view = state_key
-                        st.session_state.wins_text = default_wins
-                        st.session_state.improve_text = default_improve
-
-                    edit_mode = st.checkbox("✏️ Enable Edit Mode", value=False)
-                    
-                    col_good, col_bad = st.columns(2)
-                    
-                    with col_good:
-                        st.success("### 🌟 Top 3 Wins")
-                        if edit_mode:
-                            st.session_state.wins_text = st.text_area("Edit Wins:", value=st.session_state.wins_text, height=350)
-                        else:
-                            st.markdown(st.session_state.wins_text)
-                            
-                    with col_bad:
-                        st.error("### ⚠️ Top 3 Areas for Improvement")
-                        if edit_mode:
-                            st.session_state.improve_text = st.text_area("Edit Improvements:", value=st.session_state.improve_text, height=350)
-                        else:
-                            st.markdown(st.session_state.improve_text)
-                            
-                    st.divider()
-
-                else:
-                    if compare_mode:
-                        col_comp_title, col_comp_toggle = st.columns([1, 1])
-                        with col_comp_title:
-                            st.markdown("**📑 SECTION PERFORMANCE COMPARISON**")
-                        with col_comp_toggle:
-                            sec_view_comp = st.radio("Display:", ["📊 Chart", "📑 Table"], horizontal=True, label_visibility="collapsed", key="comp_sec_view")
-                            
-                        col_sec1, col_sec2 = st.columns(2)
+                        start_date, end_date = date_range[0], max_date.date()
+    
+                compare_mode = st.sidebar.checkbox("⚖️ Enable Date Comparison Mode", value=False)
+                start_date_2, end_date_2 = None, None
+                
+                if compare_mode:
+                    st.sidebar.markdown("**COMPARE AGAINST:**")
+                    date_range_2 = st.sidebar.date_input(
+                        "SELECT SECOND DATE RANGE",
+                        value=(min_date.date(), max_date.date()),
+                        min_value=min_date.date(),
+                        max_value=max_date.date()
+                    )
+                    if len(date_range_2) == 2:
+                        start_date_2, end_date_2 = date_range_2
+                    else:
+                        start_date_2, end_date_2 = date_range_2[0], max_date.date()
                         
-                        with col_sec1:
-                            st.markdown(f"**Period 1 ({start_date.strftime('%m/%d')} to {end_date.strftime('%m/%d')})**")
-                            sum_df1 = generate_section_summary(filtered_df)
-                            if sec_view_comp == "📑 Table":
-                                st.dataframe(sum_df1, use_container_width=True, height=350)
-                            else:
-                                fig1 = create_section_bar_chart(sum_df1, pass_threshold)
-                                if fig1: st.plotly_chart(fig1, use_container_width=True, key="chart_comp_1")
+                st.sidebar.divider()
+                
+                sel_agent = st.sidebar.selectbox("FILTER BY AGENT", ["All agents"] + list(df['Agent'].dropna().unique()))
+                
+                sel_coaching_date = "Hide 1-on-1 View"
+                agent_coach_data = pd.DataFrame()
+                
+                if sel_agent != "All agents" and not coach_df.empty:
+                    if 'Agent Name' in coach_df.columns and 'Date Range' in coach_df.columns:
+                        first_name = str(sel_agent).split()[0].strip().lower()
+                        coach_df_clean = coach_df.copy()
+                        coach_df_clean['First_Name'] = coach_df_clean['Agent Name'].astype(str).apply(lambda x: x.split()[0].strip().lower() if pd.notna(x) else "")
+                        agent_coach_data = coach_df_clean[coach_df_clean['First_Name'] == first_name]
+                        
+                        if not agent_coach_data.empty:
+                            avail_dates = agent_coach_data['Date Range'].dropna().unique()
+                            sel_coaching_date = st.sidebar.selectbox("🔍 SELECT COACHING DATE RANGE (1-on-1 View)", ["Hide 1-on-1 View"] + list(avail_dates))
+    
+                filtered_df = df.copy()
+                filtered_call_df = call_df.copy()
+                
+                if start_date and end_date:
+                    mask = (filtered_df['Clean_Date'].dt.date >= start_date) & (filtered_df['Clean_Date'].dt.date <= end_date)
+                    filtered_df = filtered_df.loc[mask]
+                    
+                    call_mask = (filtered_call_df['Clean_Date'].dt.date >= start_date) & (filtered_call_df['Clean_Date'].dt.date <= end_date)
+                    filtered_call_df = filtered_call_df.loc[call_mask]
+                
+                filtered_df_2 = pd.DataFrame()
+                if compare_mode and start_date_2 and end_date_2:
+                    mask2 = (df['Clean_Date'].dt.date >= start_date_2) & (df['Clean_Date'].dt.date <= end_date_2)
+                    filtered_df_2 = df.loc[mask2].copy()
+    
+                if sel_agent != "All agents":
+                    filtered_df = filtered_df[filtered_df['Agent'] == sel_agent]
+                    filtered_call_df = filtered_call_df[filtered_call_df['Agent'] == sel_agent]
+                    if compare_mode and not filtered_df_2.empty:
+                        filtered_df_2 = filtered_df_2[filtered_df_2['Agent'] == sel_agent]
+    
+                if filtered_call_df.empty:
+                    st.warning("No data found for these filters.")
+                else:
+                    col_empty, col_thresh = st.columns([4, 1])
+                    with col_thresh:
+                        pass_threshold = st.number_input("PASS THRESHOLD (%)", value=80, step=1)
+    
+                    total_calls = len(filtered_call_df)
+                    avg_call_score = filtered_call_df['Call Percentage'].mean()
+                    highest_score = filtered_call_df['Call Percentage'].max()
+                    lowest_score = filtered_call_df['Call Percentage'].min()
+                    
+                    passing_calls = len(filtered_call_df[filtered_call_df['Call Percentage'] >= pass_threshold])
+                    pass_rate = (passing_calls / total_calls) * 100 if total_calls > 0 else 0
+    
+                    mid_point = start_date + (end_date - start_date) / 2
+                    first_half = filtered_call_df[filtered_call_df['Clean_Date'].dt.date <= mid_point]
+                    second_half = filtered_call_df[filtered_call_df['Clean_Date'].dt.date > mid_point]
+                    
+                    delta_avg = None
+                    delta_pass = None
+                    if not first_half.empty and not second_half.empty:
+                        fh_avg = first_half['Call Percentage'].mean()
+                        sh_avg = second_half['Call Percentage'].mean()
+                        delta_avg = sh_avg - fh_avg
+                        
+                        fh_pass = (len(first_half[first_half['Call Percentage'] >= pass_threshold]) / len(first_half)) * 100
+                        sh_pass = (len(second_half[second_half['Call Percentage'] >= pass_threshold]) / len(second_half)) * 100
+                        delta_pass = sh_pass - fh_pass
+    
+                    kpi1, kpi2, kpi3, kpi4, kpi5 = st.columns(5)
+                    kpi1.metric("CALLS GRADED", total_calls)
+                    
+                    if delta_avg is not None:
+                        kpi2.metric("AVG CALL SCORE", f"{avg_call_score:.1f}%", f"{delta_avg:.1f}% vs first half")
+                    else:
+                        kpi2.metric("AVG CALL SCORE", f"{avg_call_score:.1f}%")
+                        
+                    kpi3.metric("HIGHEST CALL", f"{highest_score:.1f}%")
+                    kpi4.metric("LOWEST CALL", f"{lowest_score:.1f}%")
+                    
+                    if delta_pass is not None:
+                        kpi5.metric(f"PASS RATE (>{pass_threshold}%)", f"{pass_rate:.0f}%", f"{delta_pass:.0f}% vs first half")
+                    else:
+                        kpi5.metric(f"PASS RATE (>{pass_threshold}%)", f"{pass_rate:.0f}%")
+    
+                    st.divider()
+    
+                    norm_tooltips = {k.replace(" ", "").upper(): v for k, v in question_tooltips.items()}
+                    col_config = {}
+                    for col in df['Category'].unique():
+                        norm_col = str(col).replace(" ", "").upper()
+                        if norm_col in norm_tooltips:
+                            col_config[col] = st.column_config.Column(help=norm_tooltips[norm_col])
+    
+                    # =========================================================================
+                    # 1-ON-1 COACHING VIEW
+                    # =========================================================================
+                    if sel_coaching_date != "Hide 1-on-1 View":
+                        st.info("🖨️ **How to Export this Scorecard:** Press **Ctrl + P** (or **Cmd + P** on Mac) to open the print menu, then select **'Save as PDF'**.")
+    
+                        st.markdown(f"## 📝 COACHING FEEDBACK: {sel_coaching_date}")
+                        st.markdown(f"**Agent:** {sel_agent} | **Average Call Score during this period:** {avg_call_score:.1f}%")
+    
+                        # ACTION PLAN TRACKER
+                        st.markdown("### 🎯 Automated Action Plan Tracker")
+                        st.markdown(f"Tracking {sel_agent}'s lowest scoring categories from **before** {start_date.strftime('%m/%d')} into the current period.")
+                        
+                        historical_df = df[(df['Agent'] == sel_agent) & (df['Clean_Date'].dt.date < start_date)]
+                        current_df = filtered_df[filtered_df['Agent'] == sel_agent]
+                        
+                        if not historical_df.empty and not current_df.empty:
+                            hist_avg = historical_df.groupby('Category')['Score'].mean().reset_index()
+                            lowest_hist = hist_avg.sort_values('Score').head(3)
                             
-                        with col_sec2:
-                            st.markdown(f"**Period 2 ({start_date_2.strftime('%m/%d')} to {end_date_2.strftime('%m/%d')})**")
-                            if filtered_df_2.empty:
-                                st.warning("No data for this date range.")
-                            else:
-                                sum_df2 = generate_section_summary(filtered_df_2)
-                                if sec_view_comp == "📑 Table":
-                                    st.dataframe(sum_df2, use_container_width=True, height=350)
+                            tracker_data = []
+                            for _, row in lowest_hist.iterrows():
+                                cat = row['Category']
+                                base_score = row['Score']
+                                
+                                curr_cat_df = current_df[current_df['Category'] == cat]
+                                curr_score = curr_cat_df['Score'].mean() if not curr_cat_df.empty else base_score
+                                
+                                if curr_score >= 4.0:
+                                    status = "✅ Resolved"
+                                elif curr_score > base_score + 0.2:
+                                    status = "🟡 In Progress"
                                 else:
-                                    fig2 = create_section_bar_chart(sum_df2, pass_threshold)
-                                    if fig2: st.plotly_chart(fig2, use_container_width=True, key="chart_comp_2")
+                                    status = "🔴 Action Needed"
+                                    
+                                tracker_data.append({
+                                    "Focus Category": cat,
+                                    "Baseline Score (Past)": f"{base_score:.1f} / 5.0",
+                                    "Current Avg (New)": f"{curr_score:.1f} / 5.0",
+                                    "Trend": f"{curr_score - base_score:+.1f}",
+                                    "Status": status
+                                })
                                 
-                        st.divider()
-
-                        st.markdown("**((o)) METER BANK COMPARISON**")
-                        st.markdown("*Legend: 🔴 Critical (1-2) | 🟡 Average (3) | 🟢 Excellent (4-5)*")
-                        
-                        col_mb1, col_mb2 = st.columns(2)
-                        with col_mb1:
-                            st.markdown(f"**Period 1 ({start_date.strftime('%m/%d')} to {end_date.strftime('%m/%d')})**")
-                            st.dataframe(generate_meter_bank(filtered_df, sel_agent), use_container_width=True, height=350, column_config=col_config)
-                            
-                        with col_mb2:
-                            st.markdown(f"**Period 2 ({start_date_2.strftime('%m/%d')} to {end_date_2.strftime('%m/%d')})**")
-                            if filtered_df_2.empty:
-                                st.warning("No data for this date range.")
-                            else:
-                                st.dataframe(generate_meter_bank(filtered_df_2, sel_agent), use_container_width=True, height=350, column_config=col_config)
-
-                    else:
-                        col_trend, col_sections = st.columns([2, 1])
-                        
-                        with col_trend:
-                            if sel_agent == "All agents":
-                                st.markdown("**📈 OVERALL AVERAGE SCORE TREND**")
-                            else:
-                                st.markdown(f"**📈 {sel_agent.upper()}'S SCORE TREND**")
-                                
-                            trend_df = filtered_call_df.groupby('Clean_Date')['Call Percentage'].mean()
-                            st.line_chart(trend_df, height=350, color="#4682B4")
-                        
-                        with col_sections:
-                            col_sec_title, col_sec_toggle = st.columns([1, 1])
-                            with col_sec_title:
-                                st.markdown("**📑 SECTION PERFORMANCE**")
-                            with col_sec_toggle:
-                                sec_view_std = st.radio("Display:", ["📊 Chart", "📑 Table"], horizontal=True, label_visibility="collapsed", key="std_sec_view")
-                                
-                            summary_df = generate_section_summary(filtered_df)
-                            
-                            if sec_view_std == "📑 Table":
-                                st.dataframe(summary_df, use_container_width=True, height=330)
-                            else:
-                                fig = create_section_bar_chart(summary_df, pass_threshold)
-                                if fig:
-                                    st.plotly_chart(fig, use_container_width=True, key="chart_std")
-                        
-                        st.divider()
-                        
-                        st.markdown("**((o)) METER BANK — CLICK A CELL TO FOCUS COACHING PRIORITIES**")
-                        st.markdown("*Legend: 🔴 Critical (1-2) | 🟡 Average (3) | 🟢 Excellent (4-5)*")
-                        st.dataframe(generate_meter_bank(filtered_df, sel_agent), use_container_width=True, height=350, column_config=col_config)
-
-                    st.divider()
-
-                    col_board, col_coach = st.columns([2, 1])
-
-                    with col_board:
-                        if sel_agent == "All agents":
-                            st.markdown("**AGENT LEADERBOARD (PERIOD 1)**")
+                            tracker_df = pd.DataFrame(tracker_data)
+                            st.dataframe(tracker_df, use_container_width=True, hide_index=True)
                         else:
-                            st.markdown(f"**{sel_agent.upper()}'S OVERALL STATS (PERIOD 1)**")
-                            
-                        leaderboard = filtered_call_df.groupby('Agent').agg(
-                            CALLS_GRADED=('Call', 'count'),
-                            AVG_CALL_SCORE=('Call Percentage', 'mean')
-                        )
+                            st.info("Not enough historical data to generate the Action Plan Tracker for this period.")
+    
+                        # COACHING TEXT BOXES
+                        coach_row = agent_coach_data[agent_coach_data['Date Range'] == sel_coaching_date].iloc[0]
+                        default_wins = coach_row['Top 3 Wins'] if pd.notna(coach_row.get('Top 3 Wins')) else "No wins recorded for this period."
+                        default_improve = coach_row['Top 3 Areas for Improvement'] if pd.notna(coach_row.get('Top 3 Areas for Improvement')) else "No areas for improvement recorded for this period."
                         
-                        pass_counts = filtered_call_df[filtered_call_df['Call Percentage'] >= pass_threshold].groupby('Agent').size()
-                        leaderboard['PASS RATE %'] = (pass_counts / leaderboard['CALLS_GRADED']).fillna(0) * 100
+                        state_key = f"{sel_agent}_{sel_coaching_date}"
+                        if 'current_coach_view' not in st.session_state or st.session_state.current_coach_view != state_key:
+                            st.session_state.current_coach_view = state_key
+                            st.session_state.wins_text = default_wins
+                            st.session_state.improve_text = default_improve
+    
+                        edit_mode = st.checkbox("✏️ Enable Edit Mode", value=False)
                         
-                        fh_agent_scores = first_half.groupby('Agent')['Call Percentage'].mean()
-                        sh_agent_scores = second_half.groupby('Agent')['Call Percentage'].mean()
+                        col_good, col_bad = st.columns(2)
                         
-                        agent_deltas = sh_agent_scores - fh_agent_scores
-                        leaderboard['Trend (vs First Half)'] = leaderboard.index.map(agent_deltas)
-                        
-                        def format_trend(x):
-                            if pd.isna(x):
-                                return "Not enough data"
-                            elif x > 0:
-                                return f"⬆️ +{x:.1f}%"
-                            elif x < 0:
-                                return f"⬇️ {x:.1f}%"
+                        with col_good:
+                            st.success("### 🌟 Top 3 Wins")
+                            if edit_mode:
+                                st.session_state.wins_text = st.text_area("Edit Wins:", value=st.session_state.wins_text, height=350)
                             else:
-                                return "➖ 0.0%"
+                                st.markdown(st.session_state.wins_text)
                                 
-                        leaderboard['Trend (vs First Half)'] = leaderboard['Trend (vs First Half)'].apply(format_trend)
-                        leaderboard['AVG_CALL_SCORE'] = leaderboard['AVG_CALL_SCORE'].round(1).astype(str) + '%'
-                        leaderboard['PASS RATE %'] = leaderboard['PASS RATE %'].round(0).astype(str) + '%'
-                        leaderboard = leaderboard.sort_values(by='AVG_CALL_SCORE', ascending=False)
-                        
-                        st.dataframe(leaderboard, use_container_width=True)
-
-                        if sel_agent != "All agents":
-                            st.markdown("**INDIVIDUAL CALL BREAKDOWN (PERIOD 1)**")
-                            call_breakdown = filtered_call_df[['Date', 'Call', 'Total Raw Score', 'Call Percentage']].copy()
-                            call_breakdown['Status'] = call_breakdown['Call Percentage'].apply(
-                                lambda x: "✅ Pass" if x >= pass_threshold else "❌ Fail"
+                        with col_bad:
+                            st.error("### ⚠️ Top 3 Areas for Improvement")
+                            if edit_mode:
+                                st.session_state.improve_text = st.text_area("Edit Improvements:", value=st.session_state.improve_text, height=350)
+                            else:
+                                st.markdown(st.session_state.improve_text)
+                                
+                        st.divider()
+    
+                    else:
+                        if compare_mode:
+                            col_comp_title, col_comp_toggle = st.columns([1, 1])
+                            with col_comp_title:
+                                st.markdown("**📑 SECTION PERFORMANCE COMPARISON**")
+                            with col_comp_toggle:
+                                sec_view_comp = st.radio("Display:", ["📊 Chart", "📑 Table"], horizontal=True, label_visibility="collapsed", key="comp_sec_view")
+                                
+                            col_sec1, col_sec2 = st.columns(2)
+                            
+                            with col_sec1:
+                                st.markdown(f"**Period 1 ({start_date.strftime('%m/%d')} to {end_date.strftime('%m/%d')})**")
+                                sum_df1 = generate_section_summary(filtered_df)
+                                if sec_view_comp == "📑 Table":
+                                    st.dataframe(sum_df1, use_container_width=True, height=350)
+                                else:
+                                    fig1 = create_section_bar_chart(sum_df1, pass_threshold)
+                                    if fig1: st.plotly_chart(fig1, use_container_width=True, key="chart_comp_1")
+                                
+                            with col_sec2:
+                                st.markdown(f"**Period 2 ({start_date_2.strftime('%m/%d')} to {end_date_2.strftime('%m/%d')})**")
+                                if filtered_df_2.empty:
+                                    st.warning("No data for this date range.")
+                                else:
+                                    sum_df2 = generate_section_summary(filtered_df_2)
+                                    if sec_view_comp == "📑 Table":
+                                        st.dataframe(sum_df2, use_container_width=True, height=350)
+                                    else:
+                                        fig2 = create_section_bar_chart(sum_df2, pass_threshold)
+                                        if fig2: st.plotly_chart(fig2, use_container_width=True, key="chart_comp_2")
+                                    
+                            st.divider()
+    
+                            st.markdown("**((o)) METER BANK COMPARISON**")
+                            st.markdown("*Legend: 🔴 Critical (1-2) | 🟡 Average (3) | 🟢 Excellent (4-5)*")
+                            
+                            col_mb1, col_mb2 = st.columns(2)
+                            with col_mb1:
+                                st.markdown(f"**Period 1 ({start_date.strftime('%m/%d')} to {end_date.strftime('%m/%d')})**")
+                                st.dataframe(generate_meter_bank(filtered_df, sel_agent), use_container_width=True, height=350, column_config=col_config)
+                                
+                            with col_mb2:
+                                st.markdown(f"**Period 2 ({start_date_2.strftime('%m/%d')} to {end_date_2.strftime('%m/%d')})**")
+                                if filtered_df_2.empty:
+                                    st.warning("No data for this date range.")
+                                else:
+                                    st.dataframe(generate_meter_bank(filtered_df_2, sel_agent), use_container_width=True, height=350, column_config=col_config)
+    
+                        else:
+                            col_trend, col_sections = st.columns([2, 1])
+                            
+                            with col_trend:
+                                if sel_agent == "All agents":
+                                    st.markdown("**📈 OVERALL AVERAGE SCORE TREND**")
+                                else:
+                                    st.markdown(f"**📈 {sel_agent.upper()}'S SCORE TREND**")
+                                    
+                                trend_df = filtered_call_df.groupby('Clean_Date')['Call Percentage'].mean()
+                                st.line_chart(trend_df, height=350, color="#4682B4")
+                            
+                            with col_sections:
+                                col_sec_title, col_sec_toggle = st.columns([1, 1])
+                                with col_sec_title:
+                                    st.markdown("**📑 SECTION PERFORMANCE**")
+                                with col_sec_toggle:
+                                    sec_view_std = st.radio("Display:", ["📊 Chart", "📑 Table"], horizontal=True, label_visibility="collapsed", key="std_sec_view")
+                                    
+                                summary_df = generate_section_summary(filtered_df)
+                                
+                                if sec_view_std == "📑 Table":
+                                    st.dataframe(summary_df, use_container_width=True, height=330)
+                                else:
+                                    fig = create_section_bar_chart(summary_df, pass_threshold)
+                                    if fig:
+                                        st.plotly_chart(fig, use_container_width=True, key="chart_std")
+                            
+                            st.divider()
+                            
+                            st.markdown("**((o)) METER BANK — CLICK A CELL TO FOCUS COACHING PRIORITIES**")
+                            st.markdown("*Legend: 🔴 Critical (1-2) | 🟡 Average (3) | 🟢 Excellent (4-5)*")
+                            st.dataframe(generate_meter_bank(filtered_df, sel_agent), use_container_width=True, height=350, column_config=col_config)
+    
+                        st.divider()
+    
+                        col_board, col_coach = st.columns([2, 1])
+    
+                        with col_board:
+                            if sel_agent == "All agents":
+                                st.markdown("**AGENT LEADERBOARD (PERIOD 1)**")
+                            else:
+                                st.markdown(f"**{sel_agent.upper()}'S OVERALL STATS (PERIOD 1)**")
+                                
+                            leaderboard = filtered_call_df.groupby('Agent').agg(
+                                CALLS_GRADED=('Call', 'count'),
+                                AVG_CALL_SCORE=('Call Percentage', 'mean')
                             )
-                            call_breakdown['Call Percentage'] = call_breakdown['Call Percentage'].round(1).astype(str) + '%'
-                            call_breakdown = call_breakdown.sort_values(by='Date', ascending=False).set_index('Call')
                             
-                            st.dataframe(call_breakdown, use_container_width=True)
-
-                            # INTERACTIVE TRANSCRIPT & AUDIO VIEWER (ON-DEMAND)
-                            with st.expander("👁️ Inspect Full Call Transcript & Audio Recording"):
-                                selected_call_name = st.selectbox(
-                                    "Select a call from the table above:", 
-                                    options=call_breakdown.index.unique(), 
-                                    key="ts_viewer_select"
+                            pass_counts = filtered_call_df[filtered_call_df['Call Percentage'] >= pass_threshold].groupby('Agent').size()
+                            leaderboard['PASS RATE %'] = (pass_counts / leaderboard['CALLS_GRADED']).fillna(0) * 100
+                            
+                            fh_agent_scores = first_half.groupby('Agent')['Call Percentage'].mean()
+                            sh_agent_scores = second_half.groupby('Agent')['Call Percentage'].mean()
+                            
+                            agent_deltas = sh_agent_scores - fh_agent_scores
+                            leaderboard['Trend (vs First Half)'] = leaderboard.index.map(agent_deltas)
+                            
+                            def format_trend(x):
+                                if pd.isna(x):
+                                    return "Not enough data"
+                                elif x > 0:
+                                    return f"⬆️ +{x:.1f}%"
+                                elif x < 0:
+                                    return f"⬇️ {x:.1f}%"
+                                else:
+                                    return "➖ 0.0%"
+                                    
+                            leaderboard['Trend (vs First Half)'] = leaderboard['Trend (vs First Half)'].apply(format_trend)
+                            leaderboard['AVG_CALL_SCORE'] = leaderboard['AVG_CALL_SCORE'].round(1).astype(str) + '%'
+                            leaderboard['PASS RATE %'] = leaderboard['PASS RATE %'].round(0).astype(str) + '%'
+                            leaderboard = leaderboard.sort_values(by='AVG_CALL_SCORE', ascending=False)
+                            
+                            st.dataframe(leaderboard, use_container_width=True)
+    
+                            if sel_agent != "All agents":
+                                st.markdown("**INDIVIDUAL CALL BREAKDOWN (PERIOD 1)**")
+                                call_breakdown = filtered_call_df[['Date', 'Call', 'Total Raw Score', 'Call Percentage']].copy()
+                                call_breakdown['Status'] = call_breakdown['Call Percentage'].apply(
+                                    lambda x: "✅ Pass" if x >= pass_threshold else "❌ Fail"
                                 )
+                                call_breakdown['Call Percentage'] = call_breakdown['Call Percentage'].round(1).astype(str) + '%'
+                                call_breakdown = call_breakdown.sort_values(by='Date', ascending=False).set_index('Call')
                                 
-                                if selected_call_name:
-                                    raw_call_str = str(selected_call_name).strip()
-                                    extracted_ids = re.findall(r'\d{6,8}', raw_call_str)
-                                    search_call_id = extracted_ids[0] if extracted_ids else raw_call_str.lower()
+                                st.dataframe(call_breakdown, use_container_width=True)
+    
+                                # INTERACTIVE TRANSCRIPT & AUDIO VIEWER (ON-DEMAND)
+                                with st.expander("👁️ Inspect Full Call Transcript & Audio Recording"):
+                                    selected_call_name = st.selectbox(
+                                        "Select a call from the table above:", 
+                                        options=call_breakdown.index.unique(), 
+                                        key="ts_viewer_select"
+                                    )
                                     
-                                    st.markdown(f"### 🔍 Call Audit for ID: `{search_call_id}`")
-                                    
-                                    vault_transcripts = fetch_all_transcripts(FOLDER_ID)
-                                    matched_t = next((t for t in vault_transcripts if search_call_id.lower() in t['file_name'].lower()), None)
-                                    
-                                    audio_vault_files = fetch_audio_files_metadata(AUDIO_FOLDER_ID)
-                                    matched_a = next((a for a in audio_vault_files if search_call_id.lower() in a['name'].lower()), None)
-                                    
-                                    st.markdown("#### 🎧 Call Audio Recording")
-                                    if matched_a:
-                                        st.caption(f"🔊 **Available File:** `{matched_a['name']}`")
-                                        if st.button("▶️ Load & Play Audio", key=f"btn_audio_{search_call_id}"):
-                                            with st.spinner("Fetching audio stream from Google Drive..."):
-                                                audio_bytes = download_audio_bytes(matched_a['id'])
-                                                if audio_bytes:
-                                                    st.audio(audio_bytes, format="audio/wav")
-                                                    st.download_button(
-                                                        label="📥 Download .WAV File",
-                                                        data=audio_bytes,
-                                                        file_name=matched_a['name'],
-                                                        mime="audio/wav",
-                                                        key=f"dl_audio_{search_call_id}"
-                                                    )
-                                                else:
-                                                    st.error("Failed to load audio stream from Google Drive.")
-                                    else:
-                                        st.warning(f"⚠️ No matching audio file found in Drive containing Call ID `{search_call_id}`.")
+                                    if selected_call_name:
+                                        raw_call_str = str(selected_call_name).strip()
+                                        extracted_ids = re.findall(r'\d{6,8}', raw_call_str)
+                                        search_call_id = extracted_ids[0] if extracted_ids else raw_call_str.lower()
                                         
-                                    st.divider()
-                                    
-                                    st.markdown("#### 📄 Call Transcript Text")
-                                    if matched_t:
-                                        st.caption(f"📄 **Matched Transcript File:** `{matched_t['file_name']}`")
-                                        st.text_area("Raw Transcript Text:", value=matched_t['content'], height=350, disabled=True)
-                                    else:
-                                        st.warning(f"⚠️ No matching transcript text found in Drive containing Call ID `{search_call_id}`.")
-
-                        csv_data = leaderboard.to_csv().encode('utf-8')
-                        st.download_button(
-                            label="📥 Download Summary CSV",
-                            data=csv_data,
-                            file_name="qc_summary_export.csv",
-                            mime="text/csv"
-                        )
-
-                    with col_coach:
-                        st.markdown("**COACHING PRIORITIES (LOWEST SCORING - PERIOD 1)**")
-                        lowest_scores = filtered_df.groupby('Category')['Score'].mean().reset_index()
-                        lowest_scores = lowest_scores.sort_values(by='Score', ascending=True).head(5)
-                        
-                        for index, row in lowest_scores.iterrows():
-                            st.error(f"**{row['Category']}** \n Avg Score: {row['Score']:.2f} / 5.0")
+                                        st.markdown(f"### 🔍 Call Audit for ID: `{search_call_id}`")
+                                        
+                                        vault_transcripts = fetch_all_transcripts(FOLDER_ID)
+                                        matched_t = next((t for t in vault_transcripts if search_call_id.lower() in t['file_name'].lower()), None)
+                                        
+                                        audio_vault_files = fetch_audio_files_metadata(AUDIO_FOLDER_ID)
+                                        matched_a = next((a for a in audio_vault_files if search_call_id.lower() in a['name'].lower()), None)
+                                        
+                                        st.markdown("#### 🎧 Call Audio Recording")
+                                        if matched_a:
+                                            st.caption(f"🔊 **Available File:** `{matched_a['name']}`")
+                                            if st.button("▶️ Load & Play Audio", key=f"btn_audio_{search_call_id}"):
+                                                with st.spinner("Fetching audio stream from Google Drive..."):
+                                                    audio_bytes = download_audio_bytes(matched_a['id'])
+                                                    if audio_bytes:
+                                                        st.audio(audio_bytes, format="audio/wav")
+                                                        st.download_button(
+                                                            label="📥 Download .WAV File",
+                                                            data=audio_bytes,
+                                                            file_name=matched_a['name'],
+                                                            mime="audio/wav",
+                                                            key=f"dl_audio_{search_call_id}"
+                                                        )
+                                                    else:
+                                                        st.error("Failed to load audio stream from Google Drive.")
+                                        else:
+                                            st.warning(f"⚠️ No matching audio file found in Drive containing Call ID `{search_call_id}`.")
+                                            
+                                        st.divider()
+                                        
+                                        st.markdown("#### 📄 Call Transcript Text")
+                                        if matched_t:
+                                            st.caption(f"📄 **Matched Transcript File:** `{matched_t['file_name']}`")
+                                            st.text_area("Raw Transcript Text:", value=matched_t['content'], height=350, disabled=True)
+                                        else:
+                                            st.warning(f"⚠️ No matching transcript text found in Drive containing Call ID `{search_call_id}`.")
+    
+                            csv_data = leaderboard.to_csv().encode('utf-8')
+                            st.download_button(
+                                label="📥 Download Summary CSV",
+                                data=csv_data,
+                                file_name="qc_summary_export.csv",
+                                mime="text/csv"
+                            )
+    
+                        with col_coach:
+                            st.markdown("**COACHING PRIORITIES (LOWEST SCORING - PERIOD 1)**")
+                            lowest_scores = filtered_df.groupby('Category')['Score'].mean().reset_index()
+                            lowest_scores = lowest_scores.sort_values(by='Score', ascending=True).head(5)
                             
+                            for index, row in lowest_scores.iterrows():
+                                st.error(f"**{row['Category']}** \n Avg Score: {row['Score']:.2f} / 5.0")
+                                
         except Exception as e:
             st.error(f"⚠️ Unable to access Google Sheet data. Details: {e}")
             st.info("Please verify both sheets have **'Anyone with the link can view'** permissions enabled.")
