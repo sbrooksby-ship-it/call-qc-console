@@ -294,153 +294,6 @@ SECTION_MAX_SCORES = {
     "Call Control": 25, "Compliance": 25
 }
 
-# -------------------------------------------------------------------------
-# NEW PYTHON AI PARSER (Replaces Google Sheets Formats)
-# -------------------------------------------------------------------------
-RUBRIC_IDS = [
-    "BG 1", "BG 2", "ARC 1", "ARC 2", "ARC 3", "ARC 4", "OE 1", "OE 2", "OE 3",
-    "PE 1", "PE 2", "PE 3", "PE 4", "PE 5", "QC 1", "QC 2", "QC 3", "QC 4", "QC 5",
-    "QC 6", "QC 7", "QC 8", "CL 1", "CL 2", "CL 3", "CL 4", "CC 1", "CC 2", "CC 3",
-    "CC 4", "CC 5", "COMP 1", "COMP 2", "COMP 3", "COMP 4", "COMP 5"
-]
-
-CRITERIA_KEYWORDS = {
-    "BG 1": "first 30", "BG 2": "greeting", "ARC 1": "early arc", "ARC 2": "emotion",
-    "ARC 3": "elevate tone", "ARC 4": "product trust", "OE 1": "advocate|interest", "OE 2": "responsibility",
-    "OE 3": "evidence of effort", "PE 1": "specific info", "PE 2": "discovery", "PE 3": "success",
-    "PE 4": "educational", "PE 5": "next step", "QC 1": "natural", "QC 2": "acknowledge",
-    "QC 3": "clear", "QC 4": "listening", "QC 5": "empowering", "QC 6": "confidence",
-    "QC 7": "assumed", "QC 8": "appropriate tone", "CL 1": "summarize", "CL 2": "next step",
-    "CL 3": "additional assistance", "CL 4": "warm", "CC 1": "guid",
-    "CC 2": "primary concern", "CC 3": "talk time", "CC 4": "call flow", "CC 5": "vfp",
-    "COMP 1": "verified account", "COMP 2": "verified email", "COMP 3": "survey",
-    "COMP 4": "medical claim|treating", "COMP 5": "complaint|adverse"
-}
-
-def extract_score_py(chunk):
-    m = re.search(r'Score\s*[:\-]?\s*\*?\*?\s*([1-5]|0|N/?A)\b', chunk, re.IGNORECASE)
-    if m: return m.group(1).upper().replace('/', '')
-    m = re.search(r'\|\s*\*?\*?\s*([1-5]|0|N/?A)\s*\*?\*?\s*\|', chunk, re.IGNORECASE)
-    if m: return m.group(1).upper().replace('/', '')
-    m = re.search(r'\|\s*\*?\*?\s*([1-5]|0|N/?A)\s*\*?\*?\s*$', chunk, re.IGNORECASE)
-    if m: return m.group(1).upper().replace('/', '')
-    m = re.search(r'[\(\[\*]\s*([1-5]|0|N/?A)\s*[\)\]\*]', chunk, re.IGNORECASE)
-    if m: return m.group(1).upper().replace('/', '')
-    if '|' in chunk:
-        parts = chunk.split('|')
-        for p in parts:
-            clean_p = re.sub(r'[\*\s]', '', p).strip()
-            if re.match(r'^([1-5]|0|N/?A)$', clean_p, re.IGNORECASE):
-                return clean_p.upper().replace('/', '')
-    m = re.search(r'\b([1-5]|0|N/?A)\b(?=[^\d]*$)', chunk, re.IGNORECASE)
-    if m: return m.group(1).upper().replace('/', '')
-    return None
-
-@st.cache_data(ttl=60)
-def parse_raw_to_master(raw_df_import):
-    rows = []
-    # Combine headers and values to ensure we don't miss the first row if there's no official header
-    all_data = [raw_df_import.columns.tolist()] + raw_df_import.values.tolist()
-
-    for idx, row in enumerate(all_data):
-        text = str(row[0]) if len(row) > 0 else ""
-        status = str(row[1]) if len(row) > 1 else ""
-        call_hint = str(row[2]) if len(row) > 2 else ""
-        agent_hint = str(row[3]) if len(row) > 3 else ""
-
-        # EXTREMELY FORGIVING CHECK: If it's shorter than 150 chars, it's just a header or blank line. Skip it.
-        if not text or str(text).lower() == 'nan' or len(str(text)) < 150: 
-            continue
-
-        date_str = pd.Timestamp.today().strftime('%m/%d/%Y')
-        if "PROCESSED:" in status.upper():
-            try: 
-                raw_date = re.search(r'PROCESSED:\s*(\d{4}-\d{2}-\d{2})', status, re.IGNORECASE)
-                if raw_date:
-                    date_str = pd.to_datetime(raw_date.group(1)).strftime('%m/%d/%Y')
-            except: pass
-
-        clean_text = re.sub(r'\[([A-Za-z0-9\s]+)\]\([^)]+\)', r'\1', text)
-        clean_text = re.sub(r'\b(BG|ARC|OE|PE|QC|CL|CC|COMP)\b[\s\|]*https?:\/\/[^\|\s]*?cl\.corp\.google\.com\/(\d+)[^\|\s]*', r'\1 \2', clean_text, flags=re.IGNORECASE)
-
-        part4_pos = clean_text.lower().find('part 4: coaching action plan')
-        score_text = clean_text[:part4_pos] if part4_pos != -1 else clean_text
-
-        score_text = re.sub(r'https?:\/\/\S+', '', score_text, flags=re.IGNORECASE)
-        score_text = re.sub(r'\b(?:page|pg\.?)\s*\d+\b', '', score_text, flags=re.IGNORECASE)
-        score_text = re.sub(r'\/\s*5\b', '', score_text)
-        score_text = re.sub(r'out\s*of\s*5', '', score_text, flags=re.IGNORECASE)
-
-        scores = {}
-        found_ids = []
-        for item in RUBRIC_IDS:
-            pattern = r'\b' + item.replace(' ', r'\s*[-_]?\s*') + r'\b'
-            for match in re.finditer(pattern, score_text, re.IGNORECASE):
-                found_ids.append({'id': item, 'index': match.start(), 'match_str': match.group(0)})
-
-        found_ids.sort(key=lambda x: x['index'])
-
-        for i, current in enumerate(found_ids):
-            next_index = found_ids[i+1]['index'] if i+1 < len(found_ids) else len(score_text)
-            chunk = score_text[current['index']:next_index]
-            chunk = chunk.replace(current['match_str'], '')
-            val = extract_score_py(chunk)
-            if val: scores[current['id']] = "" if val in ['NA', '0'] else int(val)
-
-        for k in RUBRIC_IDS:
-            if k not in scores:
-                kw = CRITERIA_KEYWORDS.get(k, k.lower())
-                match = re.search(kw, score_text, re.IGNORECASE)
-                if match:
-                    chunk = score_text[match.start():match.start()+150]
-                    val = extract_score_py(chunk)
-                    if val:
-                        scores[k] = "" if val in ['NA', '0'] else int(val)
-
-        agent_name = agent_hint
-        if not agent_name or str(agent_name).lower() == 'nan':
-            am = re.search(r'Agent(?:\s*Name)?\s*:\s*([^\n\r(|]+)', text, re.IGNORECASE)
-            if am and "information not provided" not in am.group(1).lower(): agent_name = am.group(1).strip()
-        if not agent_name or str(agent_name).lower() == 'nan': agent_name = "Unknown Agent"
-
-        agent_name = re.sub(r'\s*\[source:\s*\d+\]', '', agent_name, flags=re.IGNORECASE).strip()
-        ln = agent_name.lower()
-        if "carlos" in ln: agent_name = "Carlos Fernandes"
-        elif "jesus" in ln: agent_name = "Jesus Guzman"
-        elif "tom" == ln: agent_name = "Adriel"
-        elif "mitchell" in ln or "michel" in ln: agent_name = "Michel Sandoval"
-        elif "angela" in ln: agent_name = "Mariz"
-        elif "mark" in ln: agent_name = "Marcos"
-
-        call_name = ""
-        fn_line = re.search(r'File\s*Name\s*:[^\n\r]+', text, re.IGNORECASE)
-        if fn_line:
-            nums = re.findall(r'\d{4,15}', fn_line.group(0))
-            if nums: call_name = nums[-1]
-
-        if not call_name:
-            raw_ext = re.search(r'_(\d{4,15})\.(?:txt|mp3|wav|m4a)', text, re.IGNORECASE)
-            if raw_ext: call_name = raw_ext.group(1)
-        if not call_name:
-            call_name = call_hint if call_hint and str(call_hint).lower() != 'nan' else "Unknown Call"
-
-        row_data = {
-            'Unique_Row_ID': idx,
-            'Date': date_str,
-            'Agent Name': agent_name,
-            'Call': call_name
-        }
-        for k in RUBRIC_IDS:
-            row_data[k] = scores.get(k, "")
-
-        rows.append(row_data)
-
-    if not rows:
-        empty_cols = ['Unique_Row_ID', 'Date', 'Agent Name', 'Call'] + RUBRIC_IDS
-        return pd.DataFrame(columns=empty_cols)
-        
-    return pd.DataFrame(rows)
-
 def get_section_name(category):
     cat_upper = str(category).upper()
     for prefix, section in section_map.items():
@@ -547,30 +400,41 @@ selected_tab = st.radio(
 st.divider()
 
 # =========================================================================
-# TAB 1: QC DASHBOARD
+# TAB 1: QC DASHBOARD (READS LONG FORMAT DIRECTLY)
 # =========================================================================
 if selected_tab == "📊 Performance Dashboard":
-    DEFAULT_RAW_URL = "https://docs.google.com/spreadsheets/d/1-N0IJxjzrdM_mlmIn9QYMHj_PPMfOopP7CReYW5m5IQ/edit?gid=123456789#gid=123456789"
+    DEFAULT_DATA_URL = "https://docs.google.com/spreadsheets/d/1-N0IJxjzrdM_mlmIn9QYMHj_PPMfOopP7CReYW5m5IQ/edit?gid=123456789#gid=123456789"
     DEFAULT_COACH_URL = "https://docs.google.com/spreadsheets/d/1-N0IJxjzrdM_mlmIn9QYMHj_PPMfOopP7CReYW5m5IQ/edit?gid=1002#gid=1002"
 
     st.sidebar.header("1. Connect Data")
-    sheet_url = st.sidebar.text_input("1. Paste 'Raw Data' Tab Link:", value=DEFAULT_RAW_URL)
+    sheet_url = st.sidebar.text_input("1. Paste Tab Link (like the screenshot):", value=DEFAULT_DATA_URL)
     coach_url = st.sidebar.text_input("2. Paste 'Coaching Feedback' Tab Link:", value=DEFAULT_COACH_URL)
 
     if sheet_url:
         try:
-            raw_df_import = load_sheet_data(sheet_url)
+            # Simply load the clean, structured data!
+            raw_df = load_sheet_data(sheet_url)
             
             with st.sidebar.expander("🛠️ Debug Data View"):
                 st.write("What Streamlit sees from your link:")
-                st.dataframe(raw_df_import.head(3))
-
-            raw_df = parse_raw_to_master(raw_df_import)
+                st.dataframe(raw_df.head(3))
             
-            if raw_df.empty:
-                st.warning("⚠️ No valid call evaluations found in the connected sheet. Ensure you are linking to the 'Raw Data' tab, not the Master Data tab.")
+            # Verify the required columns exist
+            required_cols = ['Date', 'Agent Name', 'Call', 'Category', 'Score']
+            missing_cols = [col for col in required_cols if col not in raw_df.columns]
+            
+            if missing_cols:
+                st.error(f"⚠️ Connected sheet is missing expected columns: {', '.join(missing_cols)}")
+                st.info("Make sure you pasted the link to the tab that looks like the screenshot you provided!")
             else:
-                raw_df['Unique_Row_ID'] = raw_df.index 
+                df = raw_df.copy()
+                df = df.rename(columns={'Agent Name': 'Agent'})
+                df['Score'] = pd.to_numeric(df['Score'], errors='coerce').fillna(0)
+                df['Clean_Date'] = pd.to_datetime(df['Date'], errors='coerce')
+                df['Section'] = df['Category'].apply(get_section_name)
+                
+                # Because the data is already melted (long format), we just assign a unique ID per call
+                df['Unique_Row_ID'] = df.groupby(['Agent', 'Call', 'Date']).ngroup()
                 
                 coach_df = pd.DataFrame()
                 if coach_url:
@@ -578,28 +442,13 @@ if selected_tab == "📊 Performance Dashboard":
                         coach_df = load_sheet_data(coach_url)
                         st.sidebar.success("Both sheets connected successfully!")
                     except Exception:
-                        st.sidebar.warning("Raw Data connected. Could not load Coaching Feedback tab.")
+                        st.sidebar.warning("Data connected. Could not load Coaching Feedback tab.")
                 else:
-                    st.sidebar.warning("Raw Data connected. Add Coaching link for 1-on-1s.")
+                    st.sidebar.warning("Data connected. Add Coaching link for 1-on-1s.")
                     
                 st.sidebar.divider()
                 
-                fixed_columns = ['Unique_Row_ID', 'Date', 'Agent Name', 'Call']
-                score_columns = [col for col in raw_df.columns if col not in fixed_columns and "total" not in col.lower()]
-                
-                df = pd.melt(raw_df, 
-                             id_vars=fixed_columns, 
-                             value_vars=score_columns,
-                             var_name='Category', 
-                             value_name='Score')
-                             
-                df = df.rename(columns={'Agent Name': 'Agent'})
-                df['Score'] = pd.to_numeric(df['Score'], errors='coerce').fillna(0)
-                
-                df['Clean_Date'] = pd.to_datetime(df['Date'], errors='coerce')
-                
-                df['Section'] = df['Category'].apply(get_section_name)
-                
+                # Group by call to get total scores
                 call_df = df.groupby(['Unique_Row_ID', 'Clean_Date', 'Date', 'Agent', 'Call'])['Score'].sum().reset_index()
                 call_df = call_df.rename(columns={'Score': 'Total Raw Score'})
                 call_df['Call Percentage'] = (call_df['Total Raw Score'] / 180) * 100
