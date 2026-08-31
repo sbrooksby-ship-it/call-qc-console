@@ -374,7 +374,9 @@ def generate_meter_bank(data_df, agent_filter):
     if agent_filter in ["All agents", "Sales", "Care"]:
         pivot_df = data_df.pivot_table(index='Agent', columns='Category', values='Score', aggfunc='mean')
     else:
-        pivot_df = data_df.pivot_table(index='Call', columns='Category', values='Score', aggfunc='mean')
+        temp_df = data_df.copy()
+        temp_df['Call_Label'] = temp_df['Call'].astype(str) + " (" + temp_df['Clean_Call_Type'].astype(str) + ")"
+        pivot_df = temp_df.pivot_table(index='Call_Label', columns='Category', values='Score', aggfunc='mean')
     
     prefix_order = ["BG", "ARC", "OE", "PE", "QC", "CL", "CC", "COMP"]
     ordered_cols = []
