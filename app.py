@@ -371,7 +371,7 @@ def create_section_bar_chart(summary_df, threshold):
 def generate_meter_bank(data_df, agent_filter):
     if data_df.empty:
         return pd.DataFrame().style
-    if agent_filter == "All agents":
+    if agent_filter in ["All agents", "Sales", "Care"]:
         pivot_df = data_df.pivot_table(index='Agent', columns='Category', values='Score', aggfunc='mean')
     else:
         pivot_df = data_df.pivot_table(index='Call', columns='Category', values='Score', aggfunc='mean')
@@ -429,6 +429,21 @@ if selected_tab == "📊 Performance Dashboard":
                 df = df.rename(columns={'Agent Name': 'Agent'})
                 df['Score'] = pd.to_numeric(df['Score'], errors='coerce').fillna(0)
                 
+                # --- CALL TYPE DETECTOR ENGINE ---
+                def detect_call_type(row):
+                    if 'Call Type' in row.index and pd.notna(row['Call Type']):
+                        ct = str(row['Call Type']).strip()
+                        if ct in ['Sales', 'Care']:
+                            return ct
+                    call_str = str(row.get('Call', '')).lower()
+                    if 'sales' in call_str:
+                        return 'Sales'
+                    elif 'care' in call_str:
+                        return 'Care'
+                    return 'Uncategorized'
+
+                df['Clean_Call_Type'] = df.apply(detect_call_type, axis=1)
+
                 # --- BULLETPROOF DATE PARSER ---
                 extracted_date = df['Date'].astype(str).str.extract(r'(\d{1,2}[-/]\d{1,2})')[0]
                 extracted_date = extracted_date.str.replace('-', '/')
@@ -436,24 +451,18 @@ if selected_tab == "📊 Performance Dashboard":
                 df['Section'] = df['Category'].apply(get_section_name)
                 
                 # --- SMART DUPLICATE HANDLER & TIE-BREAKER ---
-                # 1. Identify "Generic" fallback names vs "Real" unique IDs
                 df['Is_Generic'] = df['Call'].astype(str).str.lower().str.startswith('call ') | df['Call'].astype(str).str.lower().str.startswith('unknown')
                 
-                # 2. For REAL IDs, drop exact duplicates (keeps only the most recent evaluation of that ID)
                 real_df = df[~df['Is_Generic']].drop_duplicates(subset=['Agent', 'Call', 'Date', 'Category'], keep='last')
                 
-                # 3. For GENERIC calls, keep them all, but split them so they don't merge mathematically
                 gen_df = df[df['Is_Generic']].copy()
                 gen_df['Call_Index'] = gen_df.groupby(['Agent', 'Call', 'Date', 'Category']).cumcount()
                 gen_df['Call'] = gen_df.apply(lambda x: f"{x['Call']} (Split {x['Call_Index'] + 1})" if x['Call_Index'] > 0 else x['Call'], axis=1)
                 gen_df = gen_df.drop(columns=['Call_Index'])
                 
-                # 4. Recombine
                 df = pd.concat([real_df, gen_df], ignore_index=True).drop(columns=['Is_Generic'])
                 
-                # Create the unique row ID for the dashboard grouping
                 df['Unique_Row_ID'] = df['Agent'].astype(str) + "_" + df['Call'].astype(str) + "_" + df['Date'].astype(str)
-                # ----------------------------------------------
 
                 coach_df = pd.DataFrame()
                 if coach_url:
@@ -467,7 +476,7 @@ if selected_tab == "📊 Performance Dashboard":
                     
                 st.sidebar.divider()
                 
-                call_df = df.groupby(['Unique_Row_ID', 'Clean_Date', 'Date', 'Agent', 'Call'])['Score'].sum().reset_index()
+                call_df = df.groupby(['Unique_Row_ID', 'Clean_Date', 'Date', 'Agent', 'Call', 'Clean_Call_Type'])['Score'].sum().reset_index()
                 call_df = call_df.rename(columns={'Score': 'Total Raw Score'})
                 call_df['Call Percentage'] = (call_df['Total Raw Score'] / 180) * 100
                 
@@ -510,12 +519,15 @@ if selected_tab == "📊 Performance Dashboard":
                         
                 st.sidebar.divider()
                 
-                sel_agent = st.sidebar.selectbox("FILTER BY AGENT", ["All agents"] + list(df['Agent'].dropna().unique()))
+                # --- AGENT & CALL TYPE SELECTOR (All Agents -> Sales -> Care -> Alphabetical Agents) ---
+                sorted_agents = sorted([str(a) for a in df['Agent'].dropna().unique() if str(a).strip() != ''])
+                filter_options = ["All agents", "Sales", "Care"] + sorted_agents
+                sel_agent = st.sidebar.selectbox("FILTER BY AGENT / DEPARTMENT", filter_options)
                 
                 sel_coaching_date = "Hide 1-on-1 View"
                 agent_coach_data = pd.DataFrame()
                 
-                if sel_agent != "All agents" and not coach_df.empty:
+                if sel_agent not in ["All agents", "Sales", "Care"] and not coach_df.empty:
                     if 'Agent Name' in coach_df.columns and 'Date Range' in coach_df.columns:
                         first_name = str(sel_agent).split()[0].strip().lower()
                         coach_df_clean = coach_df.copy()
@@ -541,7 +553,18 @@ if selected_tab == "📊 Performance Dashboard":
                     mask2 = (df['Clean_Date'].dt.date >= start_date_2) & (df['Clean_Date'].dt.date <= end_date_2)
                     filtered_df_2 = df.loc[mask2].copy()
     
-                if sel_agent != "All agents":
+                # --- APPLY FILTER SELECTION ---
+                if sel_agent == "Sales":
+                    filtered_df = filtered_df[filtered_df['Clean_Call_Type'] == 'Sales']
+                    filtered_call_df = filtered_call_df[filtered_call_df['Clean_Call_Type'] == 'Sales']
+                    if compare_mode and not filtered_df_2.empty:
+                        filtered_df_2 = filtered_df_2[filtered_df_2['Clean_Call_Type'] == 'Sales']
+                elif sel_agent == "Care":
+                    filtered_df = filtered_df[filtered_df['Clean_Call_Type'] == 'Care']
+                    filtered_call_df = filtered_call_df[filtered_call_df['Clean_Call_Type'] == 'Care']
+                    if compare_mode and not filtered_df_2.empty:
+                        filtered_df_2 = filtered_df_2[filtered_df_2['Clean_Call_Type'] == 'Care']
+                elif sel_agent != "All agents":
                     filtered_df = filtered_df[filtered_df['Agent'] == sel_agent]
                     filtered_call_df = filtered_call_df[filtered_call_df['Agent'] == sel_agent]
                     if compare_mode and not filtered_df_2.empty:
@@ -735,6 +758,8 @@ if selected_tab == "📊 Performance Dashboard":
                             with col_trend:
                                 if sel_agent == "All agents":
                                     st.markdown("**📈 OVERALL AVERAGE SCORE TREND**")
+                                elif sel_agent in ["Sales", "Care"]:
+                                    st.markdown(f"**📈 {sel_agent.upper()} DEPARTMENT SCORE TREND**")
                                 else:
                                     st.markdown(f"**📈 {sel_agent.upper()}'S SCORE TREND**")
                                     
@@ -770,6 +795,8 @@ if selected_tab == "📊 Performance Dashboard":
                         with col_board:
                             if sel_agent == "All agents":
                                 st.markdown("**AGENT LEADERBOARD (PERIOD 1)**")
+                            elif sel_agent in ["Sales", "Care"]:
+                                st.markdown(f"**AGENT LEADERBOARD ({sel_agent.upper()} CALLS - PERIOD 1)**")
                             else:
                                 st.markdown(f"**{sel_agent.upper()}'S OVERALL STATS (PERIOD 1)**")
                                 
@@ -804,7 +831,7 @@ if selected_tab == "📊 Performance Dashboard":
                             
                             st.dataframe(leaderboard, use_container_width=True)
     
-                            if sel_agent != "All agents":
+                            if sel_agent not in ["All agents", "Sales", "Care"]:
                                 st.markdown("**INDIVIDUAL CALL BREAKDOWN (PERIOD 1)**")
                                 call_breakdown = filtered_call_df[['Date', 'Call', 'Total Raw Score', 'Call Percentage']].copy()
                                 call_breakdown['Status'] = call_breakdown['Call Percentage'].apply(
