@@ -835,9 +835,10 @@ if selected_tab == "📊 Performance Dashboard":
                             
                             st.dataframe(leaderboard, use_container_width=True)
     
-                            if sel_agent not in ["All agents", "Sales", "Care"]:
+                           if sel_agent not in ["All agents", "Sales", "Care"]:
                                 st.markdown("**INDIVIDUAL CALL BREAKDOWN (PERIOD 1)**")
-                                call_breakdown = filtered_call_df[['Date', 'Call', 'Total Raw Score', 'Call Percentage']].copy()
+                                call_breakdown = filtered_call_df[['Date', 'Call', 'Clean_Call_Type', 'Total Raw Score', 'Call Percentage']].copy()
+                                call_breakdown = call_breakdown.rename(columns={'Clean_Call_Type': 'Call Type'})
                                 call_breakdown['Status'] = call_breakdown['Call Percentage'].apply(
                                     lambda x: "✅ Pass" if x >= pass_threshold else "❌ Fail"
                                 )
