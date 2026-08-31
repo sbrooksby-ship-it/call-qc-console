@@ -423,24 +423,20 @@ if selected_tab == "📊 Performance Dashboard":
             
             if missing_cols:
                 st.error(f"⚠️ Connected sheet is missing expected columns: {', '.join(missing_cols)}")
-                st.info("Make sure you pasted the link to the tab that looks like the screenshot you provided!")
+                st.info("Make sure your sheet contains the required headers: Date, Agent Name, Call, Category, Score (and optionally Call Type).")
             else:
                 df = raw_df.copy()
                 df = df.rename(columns={'Agent Name': 'Agent'})
                 df['Score'] = pd.to_numeric(df['Score'], errors='coerce').fillna(0)
                 
-                # --- CALL TYPE DETECTOR ENGINE ---
+                # --- DETECT CALL TYPE LOGIC ---
                 def detect_call_type(row):
                     if 'Call Type' in row.index and pd.notna(row['Call Type']):
                         ct = str(row['Call Type']).strip()
                         if ct in ['Sales', 'Care']:
                             return ct
                     call_str = str(row.get('Call', '')).lower()
-                    if 'sales' in call_str:
-                        return 'Sales'
-                    elif 'care' in call_str:
-                        return 'Care'
-                    return 'Uncategorized'
+                    return 'Sales' if 'sales' in call_str else 'Care'
 
                 df['Clean_Call_Type'] = df.apply(detect_call_type, axis=1)
 
@@ -519,7 +515,7 @@ if selected_tab == "📊 Performance Dashboard":
                         
                 st.sidebar.divider()
                 
-                # --- AGENT & CALL TYPE SELECTOR (All Agents -> Sales -> Care -> Alphabetical Agents) ---
+                # --- AGENT & CALL TYPE SELECTOR (All agents -> Sales -> Care -> Alphabetical Agents) ---
                 sorted_agents = sorted([str(a) for a in df['Agent'].dropna().unique() if str(a).strip() != ''])
                 filter_options = ["All agents", "Sales", "Care"] + sorted_agents
                 sel_agent = st.sidebar.selectbox("FILTER BY AGENT / DEPARTMENT", filter_options)
