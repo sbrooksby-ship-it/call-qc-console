@@ -449,22 +449,15 @@ if selected_tab == "📊 Performance Dashboard":
                 df['Section'] = df['Category'].apply(get_section_name)
                 
                 # --- ORIGINAL TIE-BREAKER & DUPLICATE HANDLER ---
-                # 1. Identify "Generic" fallback names vs "Real" unique IDs
                 df['Is_Generic'] = df['Call'].astype(str).str.lower().str.startswith('call ') | df['Call'].astype(str).str.lower().str.startswith('unknown')
-                
-                # 2. For REAL IDs, drop exact duplicates (keeps only the most recent evaluation of that ID)
                 real_df = df[~df['Is_Generic']].drop_duplicates(subset=['Agent', 'Call', 'Date', 'Category'], keep='last')
                 
-                # 3. For GENERIC calls, keep them all, but split them so they don't merge mathematically
                 gen_df = df[df['Is_Generic']].copy()
                 gen_df['Call_Index'] = gen_df.groupby(['Agent', 'Call', 'Date', 'Category']).cumcount()
                 gen_df['Call'] = gen_df.apply(lambda x: f"{x['Call']} (Split {x['Call_Index'] + 1})" if x['Call_Index'] > 0 else x['Call'], axis=1)
                 gen_df = gen_df.drop(columns=['Call_Index'])
                 
-                # 4. Recombine
                 df = pd.concat([real_df, gen_df], ignore_index=True).drop(columns=['Is_Generic'])
-                
-                # Create the unique row ID for the dashboard grouping
                 df['Unique_Row_ID'] = df['Agent'].astype(str) + "_" + df['Call'].astype(str) + "_" + df['Date'].astype(str)
                 # ----------------------------------------------
 
@@ -523,7 +516,7 @@ if selected_tab == "📊 Performance Dashboard":
                         
                 st.sidebar.divider()
                 
-                # --- AGENT & DEPARTMENT SELECTOR (All agents -> Sales -> Care -> Alphabetical Agents) ---
+                # --- AGENT & DEPARTMENT SELECTOR ---
                 sorted_agents = sorted([str(a) for a in df['Agent'].dropna().unique() if str(a).strip() != ''])
                 filter_options = ["All agents", "Sales", "Care"] + sorted_agents
                 sel_agent = st.sidebar.selectbox("FILTER BY AGENT / DEPARTMENT", filter_options)
@@ -573,6 +566,21 @@ if selected_tab == "📊 Performance Dashboard":
                     filtered_call_df = filtered_call_df[filtered_call_df['Agent'] == sel_agent]
                     if compare_mode and not filtered_df_2.empty:
                         filtered_df_2 = filtered_df_2[filtered_df_2['Agent'] == sel_agent]
+
+                    # --- INDIVIDUAL AGENT SUB-TABS (MAIN VIEW) ---
+                    st.markdown(f"### 👤 Performance Profile: {sel_agent.upper()}")
+                    agent_call_type_filter = st.radio(
+                        "Agent Call Type View:", 
+                        ["Combined", "Sales", "Care"], 
+                        horizontal=True, 
+                        label_visibility="collapsed"
+                    )
+                    
+                    if agent_call_type_filter != "Combined":
+                        filtered_df = filtered_df[filtered_df['Clean_Call_Type'] == agent_call_type_filter]
+                        filtered_call_df = filtered_call_df[filtered_call_df['Clean_Call_Type'] == agent_call_type_filter]
+                        if compare_mode and not filtered_df_2.empty:
+                            filtered_df_2 = filtered_df_2[filtered_df_2['Clean_Call_Type'] == agent_call_type_filter]
     
                 if filtered_call_df.empty:
                     st.warning("No data found for these filters.")
@@ -1084,7 +1092,7 @@ else:
                         st.error(f"Error communicating with Gemini API: {e}")
 
     # =========================================================================
-    # TAB 3: AI TAGGING & INSIGHTS 
+    # TAB 3: AI TAGGING & Insights 
     # =========================================================================
     elif selected_tab == "🏷️ Tagging & Insights":
         st.header("🏷️ AI Call Tagging & Sentiment Analysis")
