@@ -831,7 +831,7 @@ else:
     elif selected_tab == "🧠 LLM Knowledge Wiki (Compiler)":
         
         # -------------------------------------------------------------------------
-        # DIRECT PDF / DOCUMENT WIKI UPLOADER
+        # SAFE PDF / DOCUMENT WIKI UPLOADER
         # -------------------------------------------------------------------------
         with st.expander("📄 Upload PDF / Scoring Guide Directly to Wiki"):
             pdf_file = st.file_uploader("Choose a PDF file:", type=["pdf"])
@@ -839,24 +839,38 @@ else:
             
             if pdf_file and st.button("🚀 Push PDF to Supabase Wiki"):
                 try:
-                    with st.spinner("Extracting text and generating vector embeddings..."):
+                    with st.spinner("Extracting PDF text and generating vector embedding..."):
                         reader = pypdf.PdfReader(pdf_file)
-                        pdf_text = "\n\n".join([f"--- Page {idx+1} ---\n" + page.extract_text() for idx, page in enumerate(reader.pages) if page.extract_text()])
+                        pdf_pages = []
+                        for idx, page in enumerate(reader.pages):
+                            page_text = page.extract_text()
+                            if page_text and page_text.strip():
+                                pdf_pages.append(f"--- Page {idx+1} ---\n" + page_text.strip())
                         
-                        # Generate vector embedding for RAG search
-                        embedding = genai.embed_content(
-                            model="models/gemini-embedding-001",
-                            content=pdf_text,
-                            output_dimensionality=768
-                        )["embedding"]
+                        full_pdf_text = "\n\n".join(pdf_pages)
                         
-                        # Push to Supabase wiki_pages
+                        # Generate vector embedding for 768-dim RAG search using a safe token sample
+                        embedding = None
+                        try:
+                            embed_sample = full_pdf_text[:3500]  # Safe token length window
+                            embedding = genai.embed_content(
+                                model="models/gemini-embedding-001",
+                                content=embed_sample,
+                                output_dimensionality=768
+                            )["embedding"]
+                        except Exception as embed_err:
+                            st.warning(f"⚠️ Vector embedding failed ({embed_err}). Saving text directly without embedding.")
+
+                        # Push full PDF text to Supabase wiki_pages
                         supabase = get_supabase_client()
-                        res = supabase.table("wiki_pages").upsert({
+                        record = {
                             "title": doc_title.strip(),
-                            "content": pdf_text,
-                            "embedding": embedding
-                        }, on_conflict="title").execute()
+                            "content": full_pdf_text
+                        }
+                        if embedding:
+                            record["embedding"] = embedding
+                            
+                        res = supabase.table("wiki_pages").upsert(record, on_conflict="title").execute()
                         
                         st.success(f"✅ Successfully added '{doc_title}' to Supabase `wiki_pages`!")
                         st.cache_data.clear()
