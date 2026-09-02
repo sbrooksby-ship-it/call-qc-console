@@ -713,10 +713,7 @@ else:
                     </div>
                     """, unsafe_allow_html=True)
                     
-                    # 1. Embed the user's question
                     query_embedding = genai.embed_content(model="models/text-embedding-004", content=user_prompt)["embedding"]
-                    
-                    # 2. Query Supabase for top 5 matching pages
                     supabase = get_supabase_client()
                     match_res = supabase.rpc("match_wiki_pages", {"query_embedding": query_embedding, "match_threshold": 0.1, "match_count": 5}).execute()
                     
@@ -726,7 +723,6 @@ else:
                         st.write(full_response)
                         st.session_state.chat_history.append({"role": "assistant", "content": full_response})
                     else:
-                        # 3. Feed the retrieved context to Gemini
                         context_str = "\n\n".join([f"--- WIKI PAGE: {row['title']} ---\n{row['content']}" for row in match_res.data])
                         
                         full_prompt = f"""
@@ -758,7 +754,7 @@ else:
         st.header("🧠 Compile LLM Knowledge Graph")
         st.markdown("""
         This engine reads your raw transcripts from Google Drive, groups them by entity (Agents, Products, Objections), 
-        synthesizes them into compounding **Wiki Pages**, and permanently stores the vector embeddings in Supabase.
+        synthesizes them into compounding **Wiki Pages**, and permanently stores the vector embeddings and links in Supabase.
         """)
         
         transcripts_list = fetch_all_transcripts(active_target_id)
@@ -793,6 +789,7 @@ else:
                         Required Keys:
                         "title": (The name of the wiki page entity)
                         "content": (A robust, professional Markdown summary of everything you learned about this entity in this batch of transcripts)
+                        "related_topics": (A list of strings containing exact titles of other pages this page strongly connects to)
                         
                         Transcripts:
                         {chunk_str}
@@ -809,23 +806,42 @@ else:
                         for page in pages_data:
                             title = page.get("title", "Unknown Page").strip()
                             new_content = page.get("content", "").strip()
+                            related_titles = page.get("related_topics", [])
                             
-                            # 1. Check if page already exists in Supabase to compound the knowledge
-                            existing_res = supabase.table("wiki_pages").select("content").eq("title", title).execute()
+                            # 1. Check if page already exists to compound knowledge
+                            existing_res = supabase.table("wiki_pages").select("id, content").eq("title", title).execute()
+                            
                             if existing_res.data:
                                 combined_content = existing_res.data[0]["content"] + "\n\n### New Insights:\n" + new_content
                             else:
                                 combined_content = new_content
                                 
-                            # 2. Generate the 768-d Vector Embedding
+                            # 2. Generate 768-d Vector Embedding
                             embedding = genai.embed_content(model="models/text-embedding-004", content=combined_content)["embedding"]
                             
-                            # 3. Upsert back to Supabase
-                            supabase.table("wiki_pages").upsert({
+                            # 3. Upsert to wiki_pages and capture the source ID
+                            upsert_res = supabase.table("wiki_pages").upsert({
                                 "title": title,
                                 "content": combined_content,
                                 "embedding": embedding
                             }, on_conflict="title").execute()
+                            
+                            if upsert_res.data:
+                                source_id = upsert_res.data[0]["id"]
+                                
+                                # 4. Link related topics in page_links table
+                                for rel_title in related_titles:
+                                    target_res = supabase.table("wiki_pages").select("id").eq("title", rel_title.strip()).execute()
+                                    if target_res.data:
+                                        target_id = target_res.data[0]["id"]
+                                        
+                                        # Only insert if they are different pages
+                                        if source_id != target_id:
+                                            supabase.table("page_links").insert({
+                                                "source_page_id": source_id,
+                                                "target_page_id": target_id,
+                                                "relationship_context": "Linked via transcript batch analysis"
+                                            }).execute()
                         
                         progress_bar.progress(min(1.0, (i + chunk_size) / total_calls))
                         if i + chunk_size < total_calls:
