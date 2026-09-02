@@ -388,14 +388,14 @@ if selected_tab == "📊 Performance Dashboard":
 
             df['Score'] = pd.to_numeric(df['Score'], errors='coerce').fillna(0)
 
-            # 1. Parse dates robustly to ignore varying hours/minutes/seconds
-            df['Parsed_DateTime'] = pd.to_datetime(df['Date'], errors='coerce')
-            df['Date_String'] = df['Parsed_DateTime'].dt.strftime('%Y-%m-%d')
-            df['Clean_Date'] = pd.to_datetime(df['Date_String'], errors='coerce')
+            # 1. RESTORED: Use your working regex to extract the first date from your "date_range"
+            extracted_date = df['Date'].astype(str).str.extract(r'(\d{1,2}[-/]\d{1,2})')[0]
+            extracted_date = extracted_date.str.replace('-', '/')
+            df['Clean_Date'] = pd.to_datetime(extracted_date + "/2026", errors='coerce')
 
-            # 2. Build a true Unique ID using only the Date, Agent, and Call
+            # 2. Build the Unique ID using Clean_Date (so timestamps don't fracture the calls)
             df['Unique_Row_ID'] = (
-                df['Date_String'].astype(str) + '||' +
+                df['Clean_Date'].astype(str) + '||' +
                 df['Agent'].astype(str).str.strip() + '||' +
                 df['Call'].astype(str).str.strip()
             )
@@ -412,7 +412,7 @@ if selected_tab == "📊 Performance Dashboard":
 
             df['Clean_Call_Type'] = df.apply(detect_call_type, axis=1)
 
-            # 3. CRITICAL: Group by Clean_Date ONLY. Remove raw 'Date' to stop fracturing!
+            # 3. CRITICAL: Group by Clean_Date ONLY. Leave out the raw 'Date' so calls stay merged.
             call_df = df.groupby(['Unique_Row_ID', 'Clean_Date', 'Agent', 'Call', 'Clean_Call_Type'])['Score'].sum().reset_index()
             call_df = call_df.rename(columns={'Score': 'Total Raw Score'})
             call_df['Call Percentage'] = (call_df['Total Raw Score'] / 180) * 100
