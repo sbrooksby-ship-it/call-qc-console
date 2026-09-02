@@ -775,7 +775,7 @@ else:
                     supabase = get_supabase_client()
                     model = genai.GenerativeModel('gemini-3.1-flash-lite')
                     total_calls = len(transcripts_list)
-                    chunk_size = 35 
+                    chunk_size = 25  # <-- Reduced to stay under 250k input token/min free tier quota
                     
                     for i in range(0, total_calls, chunk_size):
                         chunk = transcripts_list[i:i + chunk_size]
@@ -852,7 +852,7 @@ else:
                         
                         progress_bar.progress(min(1.0, (i + chunk_size) / total_calls))
                         if i + chunk_size < total_calls:
-                            time.sleep(3)
+                            time.sleep(4)  # <-- Added extra second delay to help clear token rate limit buckets
                     
                     status_text.empty()
                     progress_bar.empty()
