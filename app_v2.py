@@ -5,6 +5,7 @@ import json
 import plotly.express as px
 import time
 import re
+import pypdf
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
@@ -828,6 +829,40 @@ else:
     # TAB 3: LLM WIKI COMPILER (WRITES TO SUPABASE)
     # =========================================================================
     elif selected_tab == "🧠 LLM Knowledge Wiki (Compiler)":
+        
+        # -------------------------------------------------------------------------
+        # DIRECT PDF / DOCUMENT WIKI UPLOADER
+        # -------------------------------------------------------------------------
+        with st.expander("📄 Upload PDF / Scoring Guide Directly to Wiki"):
+            pdf_file = st.file_uploader("Choose a PDF file:", type=["pdf"])
+            doc_title = st.text_input("Document Title in Wiki:", value="QA Scoring Guide & Rubric Rules")
+            
+            if pdf_file and st.button("🚀 Push PDF to Supabase Wiki"):
+                try:
+                    with st.spinner("Extracting text and generating vector embeddings..."):
+                        reader = pypdf.PdfReader(pdf_file)
+                        pdf_text = "\n\n".join([f"--- Page {idx+1} ---\n" + page.extract_text() for idx, page in enumerate(reader.pages) if page.extract_text()])
+                        
+                        # Generate vector embedding for RAG search
+                        embedding = genai.embed_content(
+                            model="models/gemini-embedding-001",
+                            content=pdf_text,
+                            output_dimensionality=768
+                        )["embedding"]
+                        
+                        # Push to Supabase wiki_pages
+                        supabase = get_supabase_client()
+                        res = supabase.table("wiki_pages").upsert({
+                            "title": doc_title.strip(),
+                            "content": pdf_text,
+                            "embedding": embedding
+                        }, on_conflict="title").execute()
+                        
+                        st.success(f"✅ Successfully added '{doc_title}' to Supabase `wiki_pages`!")
+                        st.cache_data.clear()
+                except Exception as err:
+                    st.error(f"Failed to process PDF: {err}")
+
         st.header("🧠 Compile LLM Knowledge Graph")
         st.markdown("""
         This engine reads your raw transcripts from Google Drive, groups them by entity (Agents, Products, Objections), 
