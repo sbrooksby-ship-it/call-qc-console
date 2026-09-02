@@ -386,17 +386,19 @@ if selected_tab == "📊 Performance Dashboard":
             st.sidebar.success(f"Connected to Supabase — {len(df):,} score rows loaded.")
             st.sidebar.divider()
 
+            # 1. Clean the date FIRST to strip out hours/minutes/seconds
+            extracted_date = df['Date'].astype(str).str.extract(r'(\d{1,2}[-/]\d{1,2})')[0]
+            extracted_date = extracted_date.str.replace('-', '/')
+            df['Clean_Date'] = pd.to_datetime(extracted_date + "/2026", errors='coerce')
+
+            # 2. Use the Clean_Date to group the 36 questions into 1 call
             df['Unique_Row_ID'] = (
-                df['Date'].astype(str) + '||' +
+                df['Clean_Date'].astype(str) + '||' +
                 df['Agent'].astype(str) + '||' +
                 df['Call'].astype(str)
             )
 
             df['Score'] = pd.to_numeric(df['Score'], errors='coerce').fillna(0)
-
-            extracted_date = df['Date'].astype(str).str.extract(r'(\d{1,2}[-/]\d{1,2})')[0]
-            extracted_date = extracted_date.str.replace('-', '/')
-            df['Clean_Date'] = pd.to_datetime(extracted_date + "/2026", errors='coerce')
             df['Section'] = df['Category'].apply(get_section_name)
 
             def detect_call_type(row):
@@ -795,7 +797,7 @@ else:
                     supabase = get_supabase_client()
                     model = genai.GenerativeModel('gemini-3.1-flash-lite')
                     total_calls = len(transcripts_list)
-                    chunk_size = 35 
+                    chunk_size = 25 
                     
                     for i in range(0, total_calls, chunk_size):
                         chunk = transcripts_list[i:i + chunk_size]
