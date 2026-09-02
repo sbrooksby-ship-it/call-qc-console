@@ -388,16 +388,20 @@ if selected_tab == "📊 Performance Dashboard":
 
             df['Score'] = pd.to_numeric(df['Score'], errors='coerce').fillna(0)
 
-            # 1. RESTORED: Use your working regex to extract the first date from your "date_range"
+            # 1. Clean strings strictly to avoid fracturing
+            df['Agent'] = df['Agent'].astype(str).str.strip()
+            df['Call'] = df['Call'].astype(str).str.strip()
+
+            # 2. Extract first valid MM/DD date from the date string
             extracted_date = df['Date'].astype(str).str.extract(r'(\d{1,2}[-/]\d{1,2})')[0]
             extracted_date = extracted_date.str.replace('-', '/')
             df['Clean_Date'] = pd.to_datetime(extracted_date + "/2026", errors='coerce')
 
-            # 2. Build the Unique ID using Clean_Date (so timestamps don't fracture the calls)
+            # 3. Create the bulletproof Unique Key for grouping all 36 questions
             df['Unique_Row_ID'] = (
-                df['Clean_Date'].astype(str) + '||' +
-                df['Agent'].astype(str).str.strip() + '||' +
-                df['Call'].astype(str).str.strip()
+                df['Clean_Date'].dt.strftime('%Y-%m-%d').fillna('UnknownDate') + '||' +
+                df['Agent'].str.lower() + '||' +
+                df['Call'].str.lower()
             )
 
             df['Section'] = df['Category'].apply(get_section_name)
@@ -412,9 +416,20 @@ if selected_tab == "📊 Performance Dashboard":
 
             df['Clean_Call_Type'] = df.apply(detect_call_type, axis=1)
 
-            # 3. CRITICAL: Group by Clean_Date ONLY. Leave out the raw 'Date' so calls stay merged.
-            call_df = df.groupby(['Unique_Row_ID', 'Clean_Date', 'Agent', 'Call', 'Clean_Call_Type'])['Score'].sum().reset_index()
-            call_df = call_df.rename(columns={'Score': 'Total Raw Score'})
+            # 4. Group purely by Unique_Row_ID to sum all questions per call
+            call_df = df.groupby('Unique_Row_ID').agg({
+                'Clean_Date': 'first',
+                'Agent': 'first',
+                'Call': 'first',
+                'Clean_Call_Type': 'first',
+                'Score': ['sum', 'count']
+            }).reset_index()
+
+            call_df.columns = ['Unique_Row_ID', 'Clean_Date', 'Agent', 'Call', 'Clean_Call_Type', 'Total Raw Score', 'Question_Count']
+
+            # Filter out partial/corrupted entries (only score groups with multiple questions)
+            call_df = call_df[call_df['Question_Count'] > 5].copy()
+
             call_df['Call Percentage'] = (call_df['Total Raw Score'] / 180) * 100
 
             st.sidebar.header("2. Dashboard Filters")
@@ -648,254 +663,4 @@ if selected_tab == "📊 Performance Dashboard":
                                     st.markdown("#### 🎧 Call Audio Recording")
                                     if matched_a:
                                         st.caption(f"🔊 **Available File:** `{matched_a['name']}`")
-                                        if st.button("▶️ Load & Play Audio", key=f"btn_audio_{search_call_id}"):
-                                            with st.spinner("Fetching audio stream from Google Drive..."):
-                                                audio_bytes = download_audio_bytes(matched_a['id'])
-                                                if audio_bytes:
-                                                    st.audio(audio_bytes, format="audio/wav")
-                                                    st.download_button(label="📥 Download .WAV File", data=audio_bytes, file_name=matched_a['name'], mime="audio/wav")
-                                    else: st.warning(f"⚠️ No matching audio file found in Drive containing Call ID `{search_call_id}`.")
-                                        
-                                    st.divider()
-                                    st.markdown("#### 📄 Call Transcript Text")
-                                    if matched_t: st.text_area("Raw Transcript Text:", value=matched_t['content'], height=350, disabled=True)
-                                    else: st.warning(f"⚠️ No matching transcript text found in Drive containing Call ID `{search_call_id}`.")
-
-                        st.download_button(label="📥 Download Summary CSV", data=leaderboard.to_csv().encode('utf-8'), file_name="qc_summary_export.csv", mime="text/csv")
-
-                    with col_coach:
-                        st.markdown("**COACHING PRIORITIES (LOWEST SCORING - PERIOD 1)**")
-                        for index, row in filtered_df.groupby('Category')['Score'].mean().reset_index().sort_values(by='Score', ascending=True).head(5).iterrows():
-                            st.error(f"**{row['Category']}** \n Avg Score: {row['Score']:.2f} / 5.0")
-                            
-    except Exception as e:
-        st.error(f"⚠️ Unable to load data from Supabase. Details: {e}")
-        st.info("Please verify SUPABASE_URL and SUPABASE_KEY are set correctly in secrets.toml.")
-
-
-# =========================================================================
-# AI SIDEBAR & DATA LOADING 
-# =========================================================================
-else:
-    st.sidebar.header("AI Transcript Vault")
-    subfolders = get_drive_subfolders(FOLDER_ID)
-    selected_ai_folder = st.sidebar.selectbox("Select Week to Analyze:", [f"📅 {name}" for name in sorted(subfolders.keys(), reverse=True)] + ["📁 All Transcripts (All Weeks)"])
-
-    if st.sidebar.button("🔄 Sync Drive Cache"):
-        st.cache_data.clear()
-        st.sidebar.success("Drive cache cleared!")
-
-    active_target_id = FOLDER_ID if selected_ai_folder == "📁 All Transcripts (All Weeks)" else subfolders.get(selected_ai_folder.replace("📅 ", ""), FOLDER_ID)
-
-    # =========================================================================
-    # TAB 2: AI ASSISTANT (RAG GRAPH VIA SUPABASE VECTOR SEARCH)
-    # =========================================================================
-    if selected_tab == "💬 AI Assistant (RAG Graph)":
-        st.header("💬 Gemini Graph RAG Assistant")
-        st.markdown("Ask questions across your entire Supabase LLM Wiki. Gemini will instantly search the vector database for the most relevant pages and synthesize an answer.")
-        
-        if "chat_history" not in st.session_state:
-            st.session_state.chat_history = []
-            
-        for message in st.session_state.chat_history:
-            with st.chat_message(message["role"]):
-                st.markdown(message["content"])
-                
-        if user_prompt := st.chat_input("Ask a question (e.g., 'What are Adriel's top strengths?' or 'Why are people canceling?'):"):
-            st.session_state.chat_history.append({"role": "user", "content": user_prompt})
-            with st.chat_message("user"):
-                st.markdown(user_prompt)
-                
-            with st.chat_message("assistant"):
-                loader_placeholder = st.empty()
-                try:
-                    loader_placeholder.markdown("""
-                    <div style="background-color: #0f172a; padding: 20px; border-radius: 12px; border: 2px dashed #8CC63F; text-align: center; margin-bottom: 15px;">
-                        <div style="color: #cbd5e1; font-size: 16px; font-weight: 600; font-family: system-ui, sans-serif;">
-                            🧠 Reading context & searching Supabase Vector DB...
-                        </div>
-                    </div>
-                    """, unsafe_allow_html=True)
-                    
-                    model = genai.GenerativeModel('gemini-3.1-flash-lite')
-
-                    # --- CONVERSATIONAL QUERY REWRITER ---
-                    search_query = user_prompt
-                    if len(st.session_state.chat_history) > 2:
-                        recent_history = "\n".join([f"{m['role']}: {m['content']}" for m in st.session_state.chat_history[-5:-1]])
-                        rewrite_prompt = f"""
-                        Given the following chat history and follow-up question, rewrite the follow-up question into a single standalone search query. 
-                        Replace pronouns like "he", "she", "they", or "it" with the specific agent or topic name mentioned earlier in history.
-                        Do NOT answer the question, only output the rewritten standalone query.
-
-                        Chat History:
-                        {recent_history}
-
-                        Follow-up Question: {user_prompt}
-                        Standalone Search Query:
-                        """
-                        rewrite_res = model.generate_content(rewrite_prompt)
-                        if rewrite_res.text.strip():
-                            search_query = rewrite_res.text.strip()
-
-                    query_embedding = genai.embed_content(
-                        model="models/gemini-embedding-001", 
-                        content=search_query,
-                        output_dimensionality=768
-                    )["embedding"]
-                    
-                    supabase = get_supabase_client()
-                    match_res = supabase.rpc("match_wiki_pages", {"query_embedding": query_embedding, "match_threshold": 0.1, "match_count": 5}).execute()
-                    
-                    if not match_res.data:
-                        loader_placeholder.empty()
-                        full_response = "I couldn't find any relevant insights in the Wiki. Try compiling more transcripts first!"
-                        st.write(full_response)
-                        st.session_state.chat_history.append({"role": "assistant", "content": full_response})
-                    else:
-                        context_str = "\n\n".join([f"--- WIKI PAGE: {row['title']} ---\n{row['content']}" for row in match_res.data])
-                        
-                        full_prompt = f"""
-                        You are an expert QA and Customer Service Analyst for Balance of Nature.
-                        Answer the manager's question accurately using ONLY the pre-compiled Wiki Pages below.
-                        
-                        WIKI KNOWLEDGE BASE:
-                        {context_str}
-                        
-                        MANAGER'S QUESTION:
-                        {user_prompt}
-                        """
-                        
-                        response = model.generate_content(full_prompt, stream=True)
-                        loader_placeholder.empty()
-                        
-                        full_response = st.write_stream(c.text for c in response)
-                        st.session_state.chat_history.append({"role": "assistant", "content": full_response})
-
-                except Exception as e:
-                    loader_placeholder.empty()
-                    st.error(f"Error querying Graph RAG database: {e}")
-
-    # =========================================================================
-    # TAB 3: LLM WIKI COMPILER (WRITES TO SUPABASE)
-    # =========================================================================
-    elif selected_tab == "🧠 LLM Knowledge Wiki (Compiler)":
-        st.header("🧠 Compile LLM Knowledge Graph")
-        st.markdown("""
-        This engine reads your raw transcripts from Google Drive, groups them by entity (Agents, Products, Objections), 
-        synthesizes them into compounding **Wiki Pages**, and permanently stores the vector embeddings and links in Supabase.
-        """)
-        
-        transcripts_list = fetch_all_transcripts(active_target_id)
-        if not transcripts_list:
-            st.warning("Please select a valid folder with transcripts in the sidebar.")
-        else:
-            st.success(f"📁 {len(transcripts_list)} Transcripts found in the target folder.")
-            if st.button("🚀 Run Compiler (Build Wiki Pages)"):
-                status_text = st.empty()
-                progress_bar = st.progress(0)
-                
-                try:
-                    supabase = get_supabase_client()
-                    model = genai.GenerativeModel('gemini-3.1-flash-lite')
-                    total_calls = len(transcripts_list)
-                    chunk_size = 25 
-                    
-                    for i in range(0, total_calls, chunk_size):
-                        chunk = transcripts_list[i:i + chunk_size]
-                        chunk_str = "\n\n".join([f"--- File: {c['file_name']} ---\n{c['content']}" for c in chunk])
-                        
-                        current_batch = (i // chunk_size) + 1
-                        total_batches = (total_calls + chunk_size - 1) // chunk_size
-                        status_text.markdown(f"**⏳ Processing batch {current_batch} of {total_batches}...** *(Analyzing calls {i+1} to {min(i+chunk_size, total_calls)})*")
-                        
-                        prompt = f"""
-                        You are a strict Data Extraction API building a Knowledge Wiki. Read these transcripts and group the insights into "Pages".
-                        You MUST return a valid JSON array of objects. 
-                        
-                        Each object must represent a standalone Wiki Page to create or update. Use titles like "Agent Adriel", "Fiber & Spice Product Insights", or "Top Cancellation Reasons".
-                        
-                        Required Keys:
-                        "title": (The name of the wiki page entity)
-                        "content": (A robust, professional Markdown summary of everything you learned about this entity in this batch of transcripts)
-                        "related_topics": (A list of strings containing exact titles of other pages this page strongly connects to)
-                        
-                        Transcripts:
-                        {chunk_str}
-                        """
-                        
-                        response = model.generate_content(prompt, generation_config={"response_mime_type": "application/json"})
-                        raw_text = response.text.strip()
-                        start_idx = raw_text.find('[')
-                        end_idx = raw_text.rfind(']')
-                        clean_text = raw_text[start_idx:end_idx + 1] if start_idx != -1 and end_idx != -1 else raw_text
-                            
-                        pages_data = json.loads(clean_text)
-                        
-                        for page in pages_data:
-                            title = page.get("title", "Unknown Page").strip()
-                            new_content = page.get("content", "").strip()
-                            related_titles = page.get("related_topics", [])
-                            
-                            existing_res = supabase.table("wiki_pages").select("id, content").eq("title", title).execute()
-                            
-                            if existing_res.data:
-                                combined_content = existing_res.data[0]["content"] + "\n\n### New Insights:\n" + new_content
-                            else:
-                                combined_content = new_content
-                                
-                            embedding = genai.embed_content(
-                                model="models/gemini-embedding-001", 
-                                content=combined_content,
-                                output_dimensionality=768
-                            )["embedding"]
-                            
-                            upsert_res = supabase.table("wiki_pages").upsert({
-                                "title": title,
-                                "content": combined_content,
-                                "embedding": embedding
-                            }, on_conflict="title").execute()
-                            
-                            if upsert_res.data:
-                                source_id = upsert_res.data[0]["id"]
-                                
-                                for rel_title in related_titles:
-                                    target_res = supabase.table("wiki_pages").select("id").eq("title", rel_title.strip()).execute()
-                                    if target_res.data:
-                                        target_id = target_res.data[0]["id"]
-                                        
-                                        if source_id != target_id:
-                                            link_check = supabase.table("page_links").select("id").eq("source_page_id", source_id).eq("target_page_id", target_id).execute()
-                                            
-                                            if not link_check.data:
-                                                supabase.table("page_links").insert({
-                                                    "source_page_id": source_id,
-                                                    "target_page_id": target_id,
-                                                    "relationship_context": "Linked via transcript batch analysis"
-                                                }).execute()
-                        
-                        progress_bar.progress(min(1.0, (i + chunk_size) / total_calls))
-                        if i + chunk_size < total_calls:
-                            time.sleep(4)
-                    
-                    status_text.empty()
-                    progress_bar.empty()
-                    st.success("✅ Knowledge Wiki Compiled Successfully!")
-                    st.balloons()
-                    
-                except Exception as e:
-                    status_text.empty()
-                    progress_bar.empty()
-                    st.error(f"Failed to compile Wiki. Details: {e}")
-            
-            st.divider()
-            st.markdown("### 📚 Current Wiki Database")
-            try:
-                supabase = get_supabase_client()
-                wiki_res = supabase.table("wiki_pages").select("title, last_updated").order("last_updated", desc=True).execute()
-                if wiki_res.data:
-                    st.dataframe(pd.DataFrame(wiki_res.data), use_container_width=True)
-                else:
-                    st.info("No pages found in the Wiki yet. Run the compiler!")
-            except Exception as e:
-                st.error("Could not fetch Wiki pages from Supabase.")
+                                        if st.button("▶️ Load & Play Audio
