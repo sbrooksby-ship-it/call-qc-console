@@ -713,7 +713,13 @@ else:
                     </div>
                     """, unsafe_allow_html=True)
                     
-                    query_embedding = genai.embed_content(model="models/text-embedding-004", content=user_prompt)["embedding"]
+                    # Uses the correct model and limits dimensions to 768 to match the Supabase table
+                    query_embedding = genai.embed_content(
+                        model="models/gemini-embedding-001", 
+                        content=user_prompt,
+                        output_dimensionality=768
+                    )["embedding"]
+                    
                     supabase = get_supabase_client()
                     match_res = supabase.rpc("match_wiki_pages", {"query_embedding": query_embedding, "match_threshold": 0.1, "match_count": 5}).execute()
                     
@@ -808,7 +814,6 @@ else:
                             new_content = page.get("content", "").strip()
                             related_titles = page.get("related_topics", [])
                             
-                            # 1. Check if page already exists to compound knowledge
                             existing_res = supabase.table("wiki_pages").select("id, content").eq("title", title).execute()
                             
                             if existing_res.data:
@@ -816,10 +821,13 @@ else:
                             else:
                                 combined_content = new_content
                                 
-                            # 2. Generate 768-d Vector Embedding
-                            embedding = genai.embed_content(model="models/text-embedding-004", content=combined_content)["embedding"]
+                            # Uses the correct model and limits dimensions to 768
+                            embedding = genai.embed_content(
+                                model="models/gemini-embedding-001", 
+                                content=combined_content,
+                                output_dimensionality=768
+                            )["embedding"]
                             
-                            # 3. Upsert to wiki_pages and capture the source ID
                             upsert_res = supabase.table("wiki_pages").upsert({
                                 "title": title,
                                 "content": combined_content,
@@ -829,13 +837,10 @@ else:
                             if upsert_res.data:
                                 source_id = upsert_res.data[0]["id"]
                                 
-                                # 4. Link related topics in page_links table
                                 for rel_title in related_titles:
                                     target_res = supabase.table("wiki_pages").select("id").eq("title", rel_title.strip()).execute()
                                     if target_res.data:
                                         target_id = target_res.data[0]["id"]
-                                        
-                                        # Only insert if they are different pages
                                         if source_id != target_id:
                                             supabase.table("page_links").insert({
                                                 "source_page_id": source_id,
