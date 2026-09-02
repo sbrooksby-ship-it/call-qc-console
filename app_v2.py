@@ -791,10 +791,6 @@ else:
                         
                     full_prompt = f"""
                     You are an expert QA and Customer Service Intelligence Analyst for Balance of Nature.
-                    Answer the manager's question accurately by cross-referencing:
-                    1. Our official Wiki Procedures and SOPs
-                    2. Quantitative QA Call Scores
-                    3. Qualitative Coaching Feedback
 
                     OFFICIAL WIKI PROCEDURES (SOPs):
                     {wiki_context_str}
@@ -809,10 +805,13 @@ else:
                     {user_prompt}
 
                     INSTRUCTIONS:
-                    - Identify which procedure applies in the Wiki and map it to corresponding QA Criteria IDs.
-                    - Cross-reference procedural expectations against actual score averages and coaching feedback.
-                    - State exact score averages (out of 5.0) and percentages where applicable.
-                    - Provide actionable, constructive coaching and process improvement recommendations.
+                    1. First, determine the intent of the manager's question.
+                    2. IF the question is purely informational or procedural (e.g., product benefits, daily dosage, general SOP policies):
+                       - Answer directly using ONLY the Official Wiki Procedures.
+                       - DO NOT include QA metrics, category averages, or coaching recommendations unless specifically requested.
+                    3. IF the question asks about agent performance, compliance, scores, or coaching gaps (e.g., "How well are agents handling Fiber & Spice?"):
+                       - Cross-reference the Wiki procedure with our QA Call Scores and Coaching Feedback.
+                       - Include relevant Criteria IDs, exact score averages (out of 5.0), and actionable coaching recommendations.
                     """
                     
                     response = model.generate_content(full_prompt, stream=True)
