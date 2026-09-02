@@ -708,14 +708,35 @@ else:
                     loader_placeholder.markdown("""
                     <div style="background-color: #0f172a; padding: 20px; border-radius: 12px; border: 2px dashed #8CC63F; text-align: center; margin-bottom: 15px;">
                         <div style="color: #cbd5e1; font-size: 16px; font-weight: 600; font-family: system-ui, sans-serif;">
-                            🧠 Searching Supabase Vector DB for relevant Wiki Pages...
+                            🧠 Reading context & searching Supabase Vector DB...
                         </div>
                     </div>
                     """, unsafe_allow_html=True)
                     
+                    model = genai.GenerativeModel('gemini-3.1-flash-lite')
+
+                    # --- CONVERSATIONAL QUERY REWRITER ---
+                    search_query = user_prompt
+                    if len(st.session_state.chat_history) > 2:
+                        recent_history = "\n".join([f"{m['role']}: {m['content']}" for m in st.session_state.chat_history[-5:-1]])
+                        rewrite_prompt = f"""
+                        Given the following chat history and follow-up question, rewrite the follow-up question into a single standalone search query. 
+                        Replace pronouns like "he", "she", "they", or "it" with the specific agent or topic name mentioned earlier in history.
+                        Do NOT answer the question, only output the rewritten standalone query.
+
+                        Chat History:
+                        {recent_history}
+
+                        Follow-up Question: {user_prompt}
+                        Standalone Search Query:
+                        """
+                        rewrite_res = model.generate_content(rewrite_prompt)
+                        if rewrite_res.text.strip():
+                            search_query = rewrite_res.text.strip()
+
                     query_embedding = genai.embed_content(
                         model="models/gemini-embedding-001", 
-                        content=user_prompt,
+                        content=search_query,
                         output_dimensionality=768
                     )["embedding"]
                     
@@ -741,7 +762,6 @@ else:
                         {user_prompt}
                         """
                         
-                        model = genai.GenerativeModel('gemini-3.1-flash-lite')
                         response = model.generate_content(full_prompt, stream=True)
                         loader_placeholder.empty()
                         
@@ -775,7 +795,7 @@ else:
                     supabase = get_supabase_client()
                     model = genai.GenerativeModel('gemini-3.1-flash-lite')
                     total_calls = len(transcripts_list)
-                    chunk_size = 25  # <-- Reduced to stay under 250k input token/min free tier quota
+                    chunk_size = 35 
                     
                     for i in range(0, total_calls, chunk_size):
                         chunk = transcripts_list[i:i + chunk_size]
@@ -852,7 +872,7 @@ else:
                         
                         progress_bar.progress(min(1.0, (i + chunk_size) / total_calls))
                         if i + chunk_size < total_calls:
-                            time.sleep(4)  # <-- Added extra second delay to help clear token rate limit buckets
+                            time.sleep(4)
                     
                     status_text.empty()
                     progress_bar.empty()
