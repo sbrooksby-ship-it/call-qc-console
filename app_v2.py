@@ -703,11 +703,11 @@ else:
     active_target_id = FOLDER_ID if selected_ai_folder == "📁 All Transcripts (All Weeks)" else subfolders.get(selected_ai_folder.replace("📅 ", ""), FOLDER_ID)
 
     # =========================================================================
-    # TAB 2: AI ASSISTANT (RAG GRAPH VIA SUPABASE VECTOR SEARCH)
+    # TAB 2: AI ASSISTANT (RAG GRAPH VIA SUPABASE VECTOR SEARCH + LIVE SCORES)
     # =========================================================================
     if selected_tab == "💬 AI Assistant (RAG Graph)":
-        st.header("💬 Gemini Graph RAG Assistant")
-        st.markdown("Ask questions across your entire Supabase LLM Wiki. Gemini will instantly search the vector database for the most relevant pages and synthesize an answer.")
+        st.header("💬 Gemini Graph RAG & Compliance Intelligence")
+        st.markdown("Ask questions across your entire **Supabase LLM Wiki**, **Live QA Call Scores**, and **Coaching Feedback**.")
         
         if "chat_history" not in st.session_state:
             st.session_state.chat_history = []
@@ -716,7 +716,7 @@ else:
             with st.chat_message(message["role"]):
                 st.markdown(message["content"])
                 
-        if user_prompt := st.chat_input("Ask a question (e.g., 'What are Adriel's top strengths?' or 'Why are people canceling?'):"):
+        if user_prompt := st.chat_input("Ask a question (e.g., 'How well are agents following the product discovery procedure?' or 'Why are people canceling?'):"):
             st.session_state.chat_history.append({"role": "user", "content": user_prompt})
             with st.chat_message("user"):
                 st.markdown(user_prompt)
@@ -727,7 +727,7 @@ else:
                     loader_placeholder.markdown("""
                     <div style="background-color: #0f172a; padding: 20px; border-radius: 12px; border: 2px dashed #8CC63F; text-align: center; margin-bottom: 15px;">
                         <div style="color: #cbd5e1; font-size: 16px; font-weight: 600; font-family: system-ui, sans-serif;">
-                            🧠 Reading context & searching Supabase Vector DB...
+                            🧠 Reading Wiki SOPs, pulling Supabase QA Scores, & searching Vector DB...
                         </div>
                     </div>
                     """, unsafe_allow_html=True)
@@ -753,6 +753,7 @@ else:
                         if rewrite_res.text.strip():
                             search_query = rewrite_res.text.strip()
 
+                    # 1. Vector Search across Wiki Pages
                     query_embedding = genai.embed_content(
                         model="models/gemini-embedding-001", 
                         content=search_query,
@@ -762,30 +763,62 @@ else:
                     supabase = get_supabase_client()
                     match_res = supabase.rpc("match_wiki_pages", {"query_embedding": query_embedding, "match_threshold": 0.1, "match_count": 5}).execute()
                     
+                    # 2. CONNECTOR: Fetch Quantitative QA Scores & Coaching Summaries from Supabase
+                    try:
+                        scores_df = load_call_scores()
+                        if not scores_df.empty:
+                            cat_summary = scores_df.groupby(['Category'])['Score'].agg(['mean', 'count']).reset_index()
+                            cat_summary['mean'] = cat_summary['mean'].round(2)
+                            cat_context = cat_summary.to_string(index=False)
+                        else:
+                            cat_context = "No quantitative score records found."
+
+                        coach_df = load_coaching_feedback()
+                        if not coach_df.empty:
+                            coach_context = coach_df[['Agent Name', 'Date Range', 'Top 3 Wins', 'Top 3 Areas for Improvement']].tail(20).to_string(index=False)
+                        else:
+                            coach_context = "No coaching feedback records found."
+                    except Exception as err:
+                        cat_context = f"Could not load score metrics: {err}"
+                        coach_context = "Could not load coaching records."
+
+                    # 3. Combine Wiki + Quantitative Scores + Coaching Feedback into Gemini Context
                     if not match_res.data:
-                        loader_placeholder.empty()
-                        full_response = "I couldn't find any relevant insights in the Wiki. Try compiling more transcripts first!"
-                        st.write(full_response)
-                        st.session_state.chat_history.append({"role": "assistant", "content": full_response})
+                        wiki_context_str = "No specific Wiki pages matched the vector search query."
                     else:
-                        context_str = "\n\n".join([f"--- WIKI PAGE: {row['title']} ---\n{row['content']}" for row in match_res.data])
+                        wiki_context_str = "\n\n".join([f"--- WIKI PAGE: {row['title']} ---\n{row['content']}" for row in match_res.data])
                         
-                        full_prompt = f"""
-                        You are an expert QA and Customer Service Analyst for Balance of Nature.
-                        Answer the manager's question accurately using ONLY the pre-compiled Wiki Pages below.
-                        
-                        WIKI KNOWLEDGE BASE:
-                        {context_str}
-                        
-                        MANAGER'S QUESTION:
-                        {user_prompt}
-                        """
-                        
-                        response = model.generate_content(full_prompt, stream=True)
-                        loader_placeholder.empty()
-                        
-                        full_response = st.write_stream(c.text for c in response)
-                        st.session_state.chat_history.append({"role": "assistant", "content": full_response})
+                    full_prompt = f"""
+                    You are an expert QA and Customer Service Intelligence Analyst for Balance of Nature.
+                    Answer the manager's question accurately by cross-referencing:
+                    1. Our official Wiki Procedures and SOPs
+                    2. Quantitative QA Call Scores
+                    3. Qualitative Coaching Feedback
+
+                    OFFICIAL WIKI PROCEDURES (SOPs):
+                    {wiki_context_str}
+
+                    QUANTITATIVE QA SCORES SUMMARY (CATEGORY AVERAGES OUT OF 5.0):
+                    {cat_context}
+
+                    QUALITATIVE COACHING FEEDBACK HIGHLIGHTS:
+                    {coach_context}
+
+                    MANAGER'S QUESTION:
+                    {user_prompt}
+
+                    INSTRUCTIONS:
+                    - Identify which procedure applies in the Wiki and map it to corresponding QA Criteria IDs.
+                    - Cross-reference procedural expectations against actual score averages and coaching feedback.
+                    - State exact score averages (out of 5.0) and percentages where applicable.
+                    - Provide actionable, constructive coaching and process improvement recommendations.
+                    """
+                    
+                    response = model.generate_content(full_prompt, stream=True)
+                    loader_placeholder.empty()
+                    
+                    full_response = st.write_stream(c.text for c in response)
+                    st.session_state.chat_history.append({"role": "assistant", "content": full_response})
 
                 except Exception as e:
                     loader_placeholder.empty()
