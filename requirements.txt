@@ -7,3 +7,4 @@ google-auth
 google-generativeai
 plotly
 supabase
+pypdf
