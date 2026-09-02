@@ -713,7 +713,6 @@ else:
                     </div>
                     """, unsafe_allow_html=True)
                     
-                    # Uses the correct model and limits dimensions to 768 to match the Supabase table
                     query_embedding = genai.embed_content(
                         model="models/gemini-embedding-001", 
                         content=user_prompt,
@@ -776,7 +775,7 @@ else:
                     supabase = get_supabase_client()
                     model = genai.GenerativeModel('gemini-3.1-flash-lite')
                     total_calls = len(transcripts_list)
-                    chunk_size = 45 
+                    chunk_size = 35 
                     
                     for i in range(0, total_calls, chunk_size):
                         chunk = transcripts_list[i:i + chunk_size]
@@ -821,7 +820,6 @@ else:
                             else:
                                 combined_content = new_content
                                 
-                            # Uses the correct model and limits dimensions to 768
                             embedding = genai.embed_content(
                                 model="models/gemini-embedding-001", 
                                 content=combined_content,
@@ -841,12 +839,16 @@ else:
                                     target_res = supabase.table("wiki_pages").select("id").eq("title", rel_title.strip()).execute()
                                     if target_res.data:
                                         target_id = target_res.data[0]["id"]
+                                        
                                         if source_id != target_id:
-                                            supabase.table("page_links").insert({
-                                                "source_page_id": source_id,
-                                                "target_page_id": target_id,
-                                                "relationship_context": "Linked via transcript batch analysis"
-                                            }).execute()
+                                            link_check = supabase.table("page_links").select("id").eq("source_page_id", source_id).eq("target_page_id", target_id).execute()
+                                            
+                                            if not link_check.data:
+                                                supabase.table("page_links").insert({
+                                                    "source_page_id": source_id,
+                                                    "target_page_id": target_id,
+                                                    "relationship_context": "Linked via transcript batch analysis"
+                                                }).execute()
                         
                         progress_bar.progress(min(1.0, (i + chunk_size) / total_calls))
                         if i + chunk_size < total_calls:
