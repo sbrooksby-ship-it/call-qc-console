@@ -77,21 +77,34 @@ st.markdown("""
     
     /* Print Styles */
     @media print {
-        section[data-testid="stSidebar"] { display: none !important; }
-        header[data-testid="stHeader"] { display: none !important; }
-        div[data-testid="stAlert"] { display: none !important; } 
-        div[data-testid="stCheckbox"] { display: none !important; } 
+        section[data-testid="stSidebar"],
+        header[data-testid="stHeader"],
+        div[data-testid="stAlert"],
+        div[data-testid="stCheckbox"] {
+            display: none !important; 
+        }
         
         @page {
             size: letter;
             margin: 10mm;
         }
-        [data-testid="stAppViewContainer"] {
-            zoom: 0.80 !important;
-            width: 100% !important;
+        
+        /* Force Streamlit to expand fully so it triggers new pages */
+        html, body, .stApp, [data-testid="stAppViewContainer"], .main {
+            height: auto !important;
+            overflow: visible !important;
+            position: relative !important;
         }
+
+        /* Allow columns to break naturally across pages */
         div[data-testid="column"] {
-            break-inside: avoid !important;
+            break-inside: auto !important;
+        }
+        
+        /* Expand text areas if the user prints while in Edit Mode */
+        textarea {
+            height: auto !important;
+            overflow: visible !important;
         }
     }
 </style>
