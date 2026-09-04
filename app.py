@@ -86,7 +86,11 @@ st.markdown("""
         div[data-testid="stMetric"],
         hr,
         .hide-on-print,
-        details {
+        details,
+        .sr-only,
+        .visually-hidden,
+        [class*="sr-only"],
+        [class*="visually-hidden"] {
             display: none !important; 
         }
         
