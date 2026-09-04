@@ -77,7 +77,7 @@ st.markdown("""
     
     /* Print Styles */
     @media print {
-        /* 1. Hide UI controls, metrics, dividers, specific text, and Streamlit's raw data details */
+        /* 1. Hide UI controls, metrics, dividers, and Streamlit artifacts */
         section[data-testid="stSidebar"],
         header[data-testid="stHeader"],
         div[data-testid="stCheckbox"],
@@ -97,40 +97,39 @@ st.markdown("""
             margin: 0.5in;
         }
         
-        /* 2. Force Streamlit to expand fully so it triggers new pages */
+        /* 2. Force Natural Height and Static Positioning to avoid overlap */
         html, body, .stApp, [data-testid="stAppViewContainer"], .main {
             height: auto !important;
             overflow: visible !important;
-            position: relative !important;
+            position: static !important;
         }
 
-        /* 3. FIX THE OVERLAPPING: Keep flexbox but force vertical stacking */
+        /* 3. Keep side-by-side columns but let them expand downward */
         div[data-testid="stHorizontalBlock"] {
             display: flex !important;
-            flex-direction: column !important; /* Stack vertically to respect height */
+            flex-direction: row !important;
+            align-items: flex-start !important;
             width: 100% !important;
             height: auto !important;
+            position: static !important;
         }
         div[data-testid="column"] {
-            width: 100% !important;
-            min-width: 100% !important;
-            max-width: 100% !important;
-            flex: 1 1 auto !important;
+            flex: 1 1 0% !important;
+            width: auto !important;
             display: block !important;
             height: auto !important;
-            page-break-inside: auto !important;
-            margin-bottom: 30px !important;
+            position: static !important;
         }
         
-        /* 4. Ensure Text Areas and Markdown expand dynamically without fixed heights */
+        /* 4. Ensure Text Areas and Markdown expand dynamically */
         textarea, .stMarkdown, div[data-testid="stMarkdownContainer"], p {
             height: auto !important;
             max-height: none !important;
             overflow: visible !important;
-            page-break-inside: auto !important;
+            white-space: pre-wrap !important;
         }
 
-        /* 5. Force background colors to print so st.success and st.error look good */
+        /* 5. Force background colors to print for st.success / st.error boxes */
         * {
             -webkit-print-color-adjust: exact !important;
             print-color-adjust: exact !important;
