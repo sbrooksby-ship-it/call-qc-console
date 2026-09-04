@@ -77,7 +77,7 @@ st.markdown("""
     
     /* Print Styles */
     @media print {
-        /* Hide UI controls, metrics, dividers, specific text, and Streamlit's raw data details */
+        /* 1. Hide UI controls, metrics, dividers, specific text, and Streamlit's raw data details */
         section[data-testid="stSidebar"],
         header[data-testid="stHeader"],
         div[data-testid="stCheckbox"],
@@ -88,9 +88,7 @@ st.markdown("""
         .hide-on-print,
         details,
         .sr-only,
-        .visually-hidden,
-        [class*="sr-only"],
-        [class*="visually-hidden"] {
+        .visually-hidden {
             display: none !important; 
         }
         
@@ -99,31 +97,43 @@ st.markdown("""
             margin: 0.5in;
         }
         
-        /* Force Streamlit to expand fully so it triggers new pages */
+        /* 2. Force Streamlit to expand fully so it triggers new pages */
         html, body, .stApp, [data-testid="stAppViewContainer"], .main {
             height: auto !important;
             overflow: visible !important;
             position: relative !important;
         }
 
-        /* Stack columns vertically on paper to allow natural page breaks */
+        /* 3. FIX THE OVERLAPPING: Keep flexbox but force vertical stacking */
         div[data-testid="stHorizontalBlock"] {
-            display: block !important;
+            display: flex !important;
+            flex-direction: column !important; /* Stack vertically to respect height */
             width: 100% !important;
+            height: auto !important;
         }
         div[data-testid="column"] {
-            display: block !important;
             width: 100% !important;
-            break-inside: auto !important;
+            min-width: 100% !important;
+            max-width: 100% !important;
+            flex: 1 1 auto !important;
+            display: block !important;
+            height: auto !important;
             page-break-inside: auto !important;
-            margin-bottom: 20px !important;
+            margin-bottom: 30px !important;
         }
         
-        /* Ensure Text Areas and Markdown expand dynamically */
-        textarea, .stMarkdown {
+        /* 4. Ensure Text Areas and Markdown expand dynamically without fixed heights */
+        textarea, .stMarkdown, div[data-testid="stMarkdownContainer"], p {
             height: auto !important;
+            max-height: none !important;
             overflow: visible !important;
             page-break-inside: auto !important;
+        }
+
+        /* 5. Force background colors to print so st.success and st.error look good */
+        * {
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
         }
     }
 </style>
