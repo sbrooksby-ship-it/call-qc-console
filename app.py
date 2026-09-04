@@ -77,16 +77,19 @@ st.markdown("""
     
     /* Print Styles */
     @media print {
+        /* Hide everything we don't want on the printed page */
         section[data-testid="stSidebar"],
         header[data-testid="stHeader"],
         div[data-testid="stAlert"],
-        div[data-testid="stCheckbox"] {
+        div[data-testid="stCheckbox"],
+        div[data-testid="stRadio"],
+        .no-print {
             display: none !important; 
         }
         
         @page {
             size: letter;
-            margin: 10mm;
+            margin: 0.5in;
         }
         
         /* Force Streamlit to expand fully so it triggers new pages */
@@ -96,15 +99,24 @@ st.markdown("""
             position: relative !important;
         }
 
-        /* Allow columns to break naturally across pages */
+        /* BREAK THE FLEXBOX: Force columns to stack vertically on paper to allow page breaks */
+        div[data-testid="stHorizontalBlock"] {
+            display: block !important;
+            width: 100% !important;
+        }
         div[data-testid="column"] {
+            display: block !important;
+            width: 100% !important;
             break-inside: auto !important;
+            page-break-inside: auto !important;
+            margin-bottom: 20px !important;
         }
         
-        /* Expand text areas if the user prints while in Edit Mode */
-        textarea {
+        /* Ensure Text Areas and Markdown expand dynamically and break across pages */
+        textarea, .stMarkdown {
             height: auto !important;
             overflow: visible !important;
+            page-break-inside: auto !important;
         }
     }
 </style>
@@ -114,7 +126,7 @@ st.markdown("""
 # BALANCE OF NATURE LOGO HEADER 
 # -------------------------------------------------------------------------
 st.markdown("""
-<div style="text-align: center; margin-bottom: 25px; margin-top: -20px;">
+<div class="no-print" style="text-align: center; margin-bottom: 25px; margin-top: -20px;">
     <h1 style="font-size: 3.5rem; margin-bottom: 0; font-family: 'Arial Black', Impact, sans-serif; letter-spacing: 2px;">
         <span style="color: #111111;">BALANCE OF N</span><span style="color: #8CC63F;">A</span><span style="color: #111111;">TURE</span>
     </h1>
@@ -632,22 +644,22 @@ if selected_tab == "📊 Performance Dashboard":
                         sh_pass = (len(second_half[second_half['Call Percentage'] >= pass_threshold]) / len(second_half)) * 100
                         delta_pass = sh_pass - fh_pass
     
+                    # Hide extra KPIs during print, keep Highest/Lowest
+                    st.markdown("<div class='no-print'>", unsafe_allow_html=True)
                     kpi1, kpi2, kpi3, kpi4, kpi5 = st.columns(5)
                     kpi1.metric("CALLS GRADED", total_calls)
-                    
                     if delta_avg is not None:
                         kpi2.metric("AVG CALL SCORE", f"{avg_call_score:.1f}%", f"{delta_avg:.1f}% vs first half")
                     else:
                         kpi2.metric("AVG CALL SCORE", f"{avg_call_score:.1f}%")
-                        
                     kpi3.metric("HIGHEST CALL", f"{highest_score:.1f}%")
                     kpi4.metric("LOWEST CALL", f"{lowest_score:.1f}%")
-                    
                     if delta_pass is not None:
                         kpi5.metric(f"PASS RATE (>{pass_threshold}%)", f"{pass_rate:.0f}%", f"{delta_pass:.0f}% vs first half")
                     else:
                         kpi5.metric(f"PASS RATE (>{pass_threshold}%)", f"{pass_rate:.0f}%")
-    
+                    st.markdown("</div>", unsafe_allow_html=True)
+                    
                     st.divider()
     
                     norm_tooltips = {k.replace(" ", "").upper(): v for k, v in question_tooltips.items()}
@@ -664,7 +676,7 @@ if selected_tab == "📊 Performance Dashboard":
                         st.info("🖨️ **How to Export this Scorecard:** Press **Ctrl + P** (or **Cmd + P** on Mac) to open the print menu, then select **'Save as PDF'**.")
     
                         st.markdown(f"## 📝 COACHING FEEDBACK: {sel_coaching_date}")
-                        st.markdown(f"**Agent:** {sel_agent} | **Average Call Score during this period:** {avg_call_score:.1f}%")
+                        st.markdown(f"**Agent:** {sel_agent} | **Average Call Score during this period:** {avg_call_score:.1f}% | **Highest:** {highest_score:.1f}% | **Lowest:** {lowest_score:.1f}%")
     
                         # ACTION PLAN TRACKER
                         st.markdown("### 🎯 Automated Action Plan Tracker")
