@@ -80,7 +80,6 @@ st.markdown("""
         /* Hide UI controls, metrics, dividers, specific text, and Streamlit's raw data details */
         section[data-testid="stSidebar"],
         header[data-testid="stHeader"],
-        div[data-testid="stAlert"],
         div[data-testid="stCheckbox"],
         div[data-testid="stRadio"],
         div[data-testid="stNumberInput"],
@@ -103,22 +102,24 @@ st.markdown("""
             position: relative !important;
         }
 
-        /* Keep columns side-by-side but allow page breaks inside them */
+        /* Stack columns vertically on paper to allow natural page breaks */
         div[data-testid="stHorizontalBlock"] {
-            display: flex !important;
-            flex-direction: row !important;
+            display: block !important;
             width: 100% !important;
         }
         div[data-testid="column"] {
-            flex: 1 1 0% !important;
             display: block !important;
+            width: 100% !important;
             break-inside: auto !important;
+            page-break-inside: auto !important;
+            margin-bottom: 20px !important;
         }
         
         /* Ensure Text Areas and Markdown expand dynamically */
-        textarea {
+        textarea, .stMarkdown {
             height: auto !important;
             overflow: visible !important;
+            page-break-inside: auto !important;
         }
     }
 </style>
@@ -715,7 +716,8 @@ if selected_tab == "📊 Performance Dashboard":
                                 })
                                 
                             tracker_df = pd.DataFrame(tracker_data)
-                            st.dataframe(tracker_df, use_container_width=True, hide_index=True)
+                            # Using st.table instead of st.dataframe so it prints reliably
+                            st.table(tracker_df.set_index('Focus Category'))
                         else:
                             st.info("Not enough historical data to generate the Action Plan Tracker for this period.")
     
@@ -1364,5 +1366,7 @@ else:
                     label="📥 Download AI Tagging Data to CSV",
                     data=csv_export,
                     file_name=f"AI_Tagging_Export_{selected_ai_folder}.csv",
+                    mime="text/csv"
+                )
                     mime="text/csv"
                 )
