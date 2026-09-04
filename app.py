@@ -77,7 +77,7 @@ st.markdown("""
     
     /* Print Styles */
     @media print {
-        /* 1. Hide UI controls, metrics, dividers, and Streamlit artifacts */
+        /* 1. Hide UI controls, metrics, dividers, specific text, and Streamlit's raw data details */
         section[data-testid="stSidebar"],
         header[data-testid="stHeader"],
         div[data-testid="stCheckbox"],
@@ -97,28 +97,40 @@ st.markdown("""
             margin: 0.5in;
         }
         
-        /* 2. Force Natural Height and Static Positioning to avoid overlap */
-        html, body, .stApp, [data-testid="stAppViewContainer"], .main {
+        /* 2. Force Streamlit to expand fully so it triggers new pages */
+        html, body, .stApp, [data-testid="stAppViewContainer"], .main, .block-container {
             height: auto !important;
+            max-height: none !important;
             overflow: visible !important;
             position: static !important;
         }
 
-        /* 3. Keep side-by-side columns but let them expand downward */
+        /* 3. THE FIX: Abandon Flexbox, use old-school Floats for side-by-side page breaking */
         div[data-testid="stHorizontalBlock"] {
-            display: flex !important;
-            flex-direction: row !important;
-            align-items: flex-start !important;
+            display: block !important;
             width: 100% !important;
             height: auto !important;
-            position: static !important;
         }
+        
+        /* Clearfix so the parent container knows how tall the floated columns are */
+        div[data-testid="stHorizontalBlock"]::after {
+            content: "";
+            display: table;
+            clear: both;
+        }
+
         div[data-testid="column"] {
-            flex: 1 1 0% !important;
-            width: auto !important;
             display: block !important;
+            float: left !important;
+            width: 48% !important;
+            margin-right: 4% !important;
             height: auto !important;
-            position: static !important;
+            page-break-inside: auto !important;
+            break-inside: auto !important;
+        }
+        
+        div[data-testid="column"]:last-child {
+            margin-right: 0 !important;
         }
         
         /* 4. Ensure Text Areas and Markdown expand dynamically */
@@ -127,6 +139,8 @@ st.markdown("""
             max-height: none !important;
             overflow: visible !important;
             white-space: pre-wrap !important;
+            page-break-inside: auto !important;
+            break-inside: auto !important;
         }
 
         /* 5. Force background colors to print for st.success / st.error boxes */
@@ -1007,7 +1021,7 @@ else:
         transcripts_data_str = "\n\n".join([f"--- TRANSCRIPT FILE: {t['file_name']} ---\n{t['content']}" for t in transcripts_list])
 
     # =========================================================================
-    # TAB 2: AI CALL ASSISTANT
+    # TAB 2: AI Call ASSISTANT
     # =========================================================================
     if selected_tab == "💬 AI Assistant":
         st.header("💬 Gemini Call Transcript Intelligence")
