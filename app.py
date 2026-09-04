@@ -77,7 +77,7 @@ st.markdown("""
     
     /* Print Styles */
     @media print {
-        /* Hide UI controls, metrics, dividers, and specific text */
+        /* Hide UI controls, metrics, dividers, specific text, and Streamlit's raw data details */
         section[data-testid="stSidebar"],
         header[data-testid="stHeader"],
         div[data-testid="stAlert"],
@@ -86,7 +86,8 @@ st.markdown("""
         div[data-testid="stNumberInput"],
         div[data-testid="stMetric"],
         hr,
-        .hide-on-print {
+        .hide-on-print,
+        details {
             display: none !important; 
         }
         
