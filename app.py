@@ -77,76 +77,34 @@ st.markdown("""
     
     /* Print Styles */
     @media print {
-        /* 1. Hide UI controls, metrics, dividers, specific text, and Streamlit's raw data details */
         section[data-testid="stSidebar"],
         header[data-testid="stHeader"],
-        div[data-testid="stCheckbox"],
-        div[data-testid="stRadio"],
-        div[data-testid="stNumberInput"],
-        div[data-testid="stMetric"],
-        hr,
-        .hide-on-print,
-        details,
-        .sr-only,
-        .visually-hidden {
+        div[data-testid="stAlert"],
+        div[data-testid="stCheckbox"] {
             display: none !important; 
         }
         
         @page {
             size: letter;
-            margin: 0.5in;
+            margin: 10mm;
         }
         
-        /* 2. Force Streamlit to expand fully so it triggers new pages */
-        html, body, .stApp, [data-testid="stAppViewContainer"], .main, .block-container {
+        /* Force Streamlit to expand fully so it triggers new pages */
+        html, body, .stApp, [data-testid="stAppViewContainer"], .main {
             height: auto !important;
-            max-height: none !important;
             overflow: visible !important;
-            position: static !important;
+            position: relative !important;
         }
 
-        /* 3. THE FIX: Abandon Flexbox, use old-school Floats for side-by-side page breaking */
-        div[data-testid="stHorizontalBlock"] {
-            display: block !important;
-            width: 100% !important;
-            height: auto !important;
-        }
-        
-        /* Clearfix so the parent container knows how tall the floated columns are */
-        div[data-testid="stHorizontalBlock"]::after {
-            content: "";
-            display: table;
-            clear: both;
-        }
-
+        /* Allow columns to break naturally across pages */
         div[data-testid="column"] {
-            display: block !important;
-            float: left !important;
-            width: 48% !important;
-            margin-right: 4% !important;
-            height: auto !important;
-            page-break-inside: auto !important;
             break-inside: auto !important;
         }
         
-        div[data-testid="column"]:last-child {
-            margin-right: 0 !important;
-        }
-        
-        /* 4. Ensure Text Areas and Markdown expand dynamically */
-        textarea, .stMarkdown, div[data-testid="stMarkdownContainer"], p {
+        /* Expand text areas if the user prints while in Edit Mode */
+        textarea {
             height: auto !important;
-            max-height: none !important;
             overflow: visible !important;
-            white-space: pre-wrap !important;
-            page-break-inside: auto !important;
-            break-inside: auto !important;
-        }
-
-        /* 5. Force background colors to print for st.success / st.error boxes */
-        * {
-            -webkit-print-color-adjust: exact !important;
-            print-color-adjust: exact !important;
         }
     }
 </style>
@@ -156,7 +114,7 @@ st.markdown("""
 # BALANCE OF NATURE LOGO HEADER 
 # -------------------------------------------------------------------------
 st.markdown("""
-<div class="hide-on-print" style="text-align: center; margin-bottom: 25px; margin-top: -20px;">
+<div style="text-align: center; margin-bottom: 25px; margin-top: -20px;">
     <h1 style="font-size: 3.5rem; margin-bottom: 0; font-family: 'Arial Black', Impact, sans-serif; letter-spacing: 2px;">
         <span style="color: #111111;">BALANCE OF N</span><span style="color: #8CC63F;">A</span><span style="color: #111111;">TURE</span>
     </h1>
@@ -630,9 +588,7 @@ if selected_tab == "📊 Performance Dashboard":
                         filtered_df_2 = filtered_df_2[filtered_df_2['Agent'] == sel_agent]
 
                     # --- INDIVIDUAL AGENT SUB-TABS (MAIN VIEW) ---
-                    # Using a specific CSS class so we can reliably hide this specific title during print
-                    st.markdown(f"<h3 class='hide-on-print'>👤 Performance Profile: {sel_agent.upper()}</h3>", unsafe_allow_html=True)
-                    
+                    st.markdown(f"### 👤 Performance Profile: {sel_agent.upper()}")
                     agent_call_type_filter = st.radio(
                         "Agent Call Type View:", 
                         ["Combined", "Sales", "Care"], 
@@ -676,20 +632,22 @@ if selected_tab == "📊 Performance Dashboard":
                         sh_pass = (len(second_half[second_half['Call Percentage'] >= pass_threshold]) / len(second_half)) * 100
                         delta_pass = sh_pass - fh_pass
     
-                    # These st.metric components will automatically be hidden during print by CSS
                     kpi1, kpi2, kpi3, kpi4, kpi5 = st.columns(5)
                     kpi1.metric("CALLS GRADED", total_calls)
+                    
                     if delta_avg is not None:
                         kpi2.metric("AVG CALL SCORE", f"{avg_call_score:.1f}%", f"{delta_avg:.1f}% vs first half")
                     else:
                         kpi2.metric("AVG CALL SCORE", f"{avg_call_score:.1f}%")
+                        
                     kpi3.metric("HIGHEST CALL", f"{highest_score:.1f}%")
                     kpi4.metric("LOWEST CALL", f"{lowest_score:.1f}%")
+                    
                     if delta_pass is not None:
                         kpi5.metric(f"PASS RATE (>{pass_threshold}%)", f"{pass_rate:.0f}%", f"{delta_pass:.0f}% vs first half")
                     else:
                         kpi5.metric(f"PASS RATE (>{pass_threshold}%)", f"{pass_rate:.0f}%")
-                    
+    
                     st.divider()
     
                     norm_tooltips = {k.replace(" ", "").upper(): v for k, v in question_tooltips.items()}
@@ -706,7 +664,7 @@ if selected_tab == "📊 Performance Dashboard":
                         st.info("🖨️ **How to Export this Scorecard:** Press **Ctrl + P** (or **Cmd + P** on Mac) to open the print menu, then select **'Save as PDF'**.")
     
                         st.markdown(f"## 📝 COACHING FEEDBACK: {sel_coaching_date}")
-                        st.markdown(f"**Agent:** {sel_agent} | **Average Call Score:** {avg_call_score:.1f}% | **Highest Score:** {highest_score:.1f}% | **Lowest Score:** {lowest_score:.1f}%")
+                        st.markdown(f"**Agent:** {sel_agent} | **Average Call Score during this period:** {avg_call_score:.1f}%")
     
                         # ACTION PLAN TRACKER
                         st.markdown("### 🎯 Automated Action Plan Tracker")
@@ -743,8 +701,7 @@ if selected_tab == "📊 Performance Dashboard":
                                 })
                                 
                             tracker_df = pd.DataFrame(tracker_data)
-                            # Using st.table instead of st.dataframe so it prints reliably
-                            st.table(tracker_df.set_index('Focus Category'))
+                            st.dataframe(tracker_df, use_container_width=True, hide_index=True)
                         else:
                             st.info("Not enough historical data to generate the Action Plan Tracker for this period.")
     
@@ -1021,7 +978,7 @@ else:
         transcripts_data_str = "\n\n".join([f"--- TRANSCRIPT FILE: {t['file_name']} ---\n{t['content']}" for t in transcripts_list])
 
     # =========================================================================
-    # TAB 2: AI Call ASSISTANT
+    # TAB 2: AI CALL ASSISTANT
     # =========================================================================
     if selected_tab == "💬 AI Assistant":
         st.header("💬 Gemini Call Transcript Intelligence")
