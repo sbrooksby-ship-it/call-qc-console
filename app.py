@@ -644,7 +644,7 @@ if selected_tab == "📊 Performance Dashboard":
                         sh_pass = (len(second_half[second_half['Call Percentage'] >= pass_threshold]) / len(second_half)) * 100
                         delta_pass = sh_pass - fh_pass
     
-                    # Hide extra KPIs during print, keep Highest/Lowest
+                    # Hide the visual top metrics during print since they are in the coaching feedback
                     st.markdown("<div class='no-print'>", unsafe_allow_html=True)
                     kpi1, kpi2, kpi3, kpi4, kpi5 = st.columns(5)
                     kpi1.metric("CALLS GRADED", total_calls)
@@ -676,7 +676,7 @@ if selected_tab == "📊 Performance Dashboard":
                         st.info("🖨️ **How to Export this Scorecard:** Press **Ctrl + P** (or **Cmd + P** on Mac) to open the print menu, then select **'Save as PDF'**.")
     
                         st.markdown(f"## 📝 COACHING FEEDBACK: {sel_coaching_date}")
-                        st.markdown(f"**Agent:** {sel_agent} | **Average Call Score during this period:** {avg_call_score:.1f}% | **Highest:** {highest_score:.1f}% | **Lowest:** {lowest_score:.1f}%")
+                        st.markdown(f"**Agent:** {sel_agent} | **Average Call Score:** {avg_call_score:.1f}% | **Highest Score:** {highest_score:.1f}% | **Lowest Score:** {lowest_score:.1f}%")
     
                         # ACTION PLAN TRACKER
                         st.markdown("### 🎯 Automated Action Plan Tracker")
