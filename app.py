@@ -1368,5 +1368,3 @@ else:
                     file_name=f"AI_Tagging_Export_{selected_ai_folder}.csv",
                     mime="text/csv"
                 )
-                    mime="text/csv"
-                )
