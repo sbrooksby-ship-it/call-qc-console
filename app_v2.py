@@ -70,8 +70,8 @@ st.markdown("""
     @media print {
         section[data-testid="stSidebar"] { display: none !important; }
         header[data-testid="stHeader"] { display: none !important; }
-        div[data-testid="stAlert"] { display: none !important; } 
-        div[data-testid="stCheckbox"] { display: none !important; } 
+        div[data-testid="stAlert"] { display: none !important; }
+        div[data-testid="stCheckbox"] { display: none !important; }
         @page { size: letter; margin: 10mm; }
         [data-testid="stAppViewContainer"] { zoom: 0.80 !important; width: 100% !important; }
         div[data-testid="column"] { break-inside: avoid !important; }
@@ -254,6 +254,23 @@ def load_coaching_feedback():
     })
     return df
 
+@st.cache_data(ttl=300)
+def load_adverse_summary():
+    """N-checked adverse events rollup for the RAG tab (Gap 2)."""
+    try:
+        supabase = get_supabase_client()
+        rows = supabase.table("adverse_events").select(
+            "event_classification,product").limit(2000).execute().data or []
+        if not rows:
+            return "No N-checked adverse events recorded."
+        adf = pd.DataFrame(rows)
+        by_class = adf['event_classification'].value_counts().to_string()
+        by_prod = adf['product'].value_counts().head(10).to_string()
+        return (f"N-checked adverse events total: {len(adf)}\n"
+                f"By classification:\n{by_class}\nTop products:\n{by_prod}")
+    except Exception as e:
+        return f"Could not load adverse events: {e}"
+
 # -------------------------------------------------------------------------
 # DICTIONARY & SCORECARD FUNCTIONS
 # -------------------------------------------------------------------------
@@ -355,7 +372,7 @@ def generate_meter_bank(data_df, agent_filter):
     return pivot_df.style.background_gradient(cmap='RdYlGn', vmin=1, vmax=5).format("{:.1f}")
 
 # -------------------------------------------------------------------------
-# TOP NAVIGATION 
+# TOP NAVIGATION
 # -------------------------------------------------------------------------
 selected_tab = st.radio(
     "Navigation",
@@ -452,15 +469,15 @@ if selected_tab == "📊 Performance Dashboard":
                 st.sidebar.markdown("**COMPARE AGAINST:**")
                 date_range_2 = st.sidebar.date_input("SELECT SECOND DATE RANGE", value=(min_date.date(), max_date.date()), min_value=min_date.date(), max_value=max_date.date())
                 start_date_2, end_date_2 = date_range_2 if len(date_range_2) == 2 else (date_range_2[0], max_date.date())
-                
+
             st.sidebar.divider()
-            
+
             sorted_agents = sorted([str(a) for a in df['Agent'].dropna().unique() if str(a).strip() != ''])
             sel_agent = st.sidebar.selectbox("FILTER BY AGENT", ["All agents", "Sales", "Care"] + sorted_agents)
-            
+
             sel_coaching_date = "Hide 1-on-1 View"
             agent_coach_data = pd.DataFrame()
-            
+
             if sel_agent not in ["All agents", "Sales", "Care"] and not coach_df.empty:
                 if 'Agent Name' in coach_df.columns and 'Date Range' in coach_df.columns:
                     first_name = str(sel_agent).split()[0].strip().lower()
@@ -473,11 +490,11 @@ if selected_tab == "📊 Performance Dashboard":
 
             filtered_df = df.copy()
             filtered_call_df = call_df.copy()
-            
+
             if start_date and end_date:
                 filtered_df = filtered_df[(filtered_df['Clean_Date'].dt.date >= start_date) & (filtered_df['Clean_Date'].dt.date <= end_date)]
                 filtered_call_df = filtered_call_df[(filtered_call_df['Clean_Date'].dt.date >= start_date) & (filtered_call_df['Clean_Date'].dt.date <= end_date)]
-            
+
             filtered_df_2 = pd.DataFrame()
             if compare_mode and start_date_2 and end_date_2:
                 filtered_df_2 = df[(df['Clean_Date'].dt.date >= start_date_2) & (df['Clean_Date'].dt.date <= end_date_2)].copy()
@@ -497,7 +514,7 @@ if selected_tab == "📊 Performance Dashboard":
 
                 st.markdown(f"### 👤 Performance Profile: {sel_agent.upper()}")
                 agent_call_type_filter = st.radio("Agent Call Type View:", ["Combined", "Sales", "Care"], horizontal=True, label_visibility="collapsed")
-                
+
                 if agent_call_type_filter != "Combined":
                     filtered_df = filtered_df[filtered_df['Clean_Call_Type'] == agent_call_type_filter]
                     filtered_call_df = filtered_call_df[filtered_call_df['Clean_Call_Type'] == agent_call_type_filter]
@@ -513,13 +530,13 @@ if selected_tab == "📊 Performance Dashboard":
                 avg_call_score = filtered_call_df['Call Percentage'].mean()
                 highest_score = filtered_call_df['Call Percentage'].max()
                 lowest_score = filtered_call_df['Call Percentage'].min()
-                
+
                 pass_rate = (len(filtered_call_df[filtered_call_df['Call Percentage'] >= pass_threshold]) / total_calls) * 100 if total_calls > 0 else 0
 
                 mid_point = start_date + (end_date - start_date) / 2
                 first_half = filtered_call_df[filtered_call_df['Clean_Date'].dt.date <= mid_point]
                 second_half = filtered_call_df[filtered_call_df['Clean_Date'].dt.date > mid_point]
-                
+
                 delta_avg, delta_pass = None, None
                 if not first_half.empty and not second_half.empty:
                     delta_avg = second_half['Call Percentage'].mean() - first_half['Call Percentage'].mean()
@@ -548,7 +565,7 @@ if selected_tab == "📊 Performance Dashboard":
                     st.markdown("### 🎯 Automated Action Plan Tracker")
                     historical_df = df[(df['Agent'] == sel_agent) & (df['Clean_Date'].dt.date < start_date)]
                     current_df = filtered_df[filtered_df['Agent'] == sel_agent]
-                    
+
                     if not historical_df.empty and not current_df.empty:
                         lowest_hist = historical_df.groupby('Category')['Score'].mean().reset_index().sort_values('Score').head(3)
                         tracker_data = []
@@ -564,15 +581,17 @@ if selected_tab == "📊 Performance Dashboard":
 
                     coach_row = agent_coach_data[agent_coach_data['Date Range'] == sel_coaching_date].iloc[0]
                     st.session_state.current_coach_view = f"{sel_agent}_{sel_coaching_date}"
-                    
+
                     edit_mode = st.checkbox("✏️ Enable Edit Mode (Uncheck this before hitting Ctrl + P to lock in your changes for printing!)", value=False)
                     col_good, col_bad = st.columns(2)
                     with col_good:
                         st.success("### 🌟 Top 3 Wins")
-                        wins_val = st.text_area("Edit Wins:", value=coach_row.get('Top 3 Wins', ''), height=350) if edit_mode else st.markdown(coach_row.get('Top 3 Wins', ''))
+                        if edit_mode: st.text_area("Edit Wins:", value=coach_row.get('Top 3 Wins', ''), height=350)
+                        else: st.markdown(coach_row.get('Top 3 Wins', ''))
                     with col_bad:
                         st.error("### ⚠️ Top 3 Areas for Improvement")
-                        imp_val = st.text_area("Edit Improvements:", value=coach_row.get('Top 3 Areas for Improvement', ''), height=350) if edit_mode else st.markdown(coach_row.get('Top 3 Areas for Improvement', ''))
+                        if edit_mode: st.text_area("Edit Improvements:", value=coach_row.get('Top 3 Areas for Improvement', ''), height=350)
+                        else: st.markdown(coach_row.get('Top 3 Areas for Improvement', ''))
 
                     st.divider()
                     st.info("To return to the main dashboard charts, change the 'Select Coaching Date Range' dropdown in the sidebar back to 'Hide 1-on-1 View'.")
@@ -582,14 +601,14 @@ if selected_tab == "📊 Performance Dashboard":
                         col_comp_title, col_comp_toggle = st.columns([1, 1])
                         with col_comp_title: st.markdown("**📑 SECTION PERFORMANCE COMPARISON**")
                         with col_comp_toggle: sec_view_comp = st.radio("Display:", ["📊 Chart", "📑 Table"], horizontal=True, label_visibility="collapsed")
-                            
+
                         col_sec1, col_sec2 = st.columns(2)
                         with col_sec1:
                             st.markdown(f"**Period 1 ({start_date.strftime('%m/%d')} to {end_date.strftime('%m/%d')})**")
                             sum_df1 = generate_section_summary(filtered_df)
                             if sec_view_comp == "📑 Table": st.dataframe(sum_df1, use_container_width=True, height=350)
                             else: st.plotly_chart(create_section_bar_chart(sum_df1, pass_threshold), use_container_width=True, key="chart_comp_1")
-                            
+
                         with col_sec2:
                             st.markdown(f"**Period 2 ({start_date_2.strftime('%m/%d')} to {end_date_2.strftime('%m/%d')})**")
                             if filtered_df_2.empty: st.warning("No data for this date range.")
@@ -597,15 +616,15 @@ if selected_tab == "📊 Performance Dashboard":
                                 sum_df2 = generate_section_summary(filtered_df_2)
                                 if sec_view_comp == "📑 Table": st.dataframe(sum_df2, use_container_width=True, height=350)
                                 else: st.plotly_chart(create_section_bar_chart(sum_df2, pass_threshold), use_container_width=True, key="chart_comp_2")
-                                
+
                         st.divider()
                         st.markdown("**((o)) METER BANK COMPARISON**\n*Legend: 🔴 Critical (1-2) | 🟡 Average (3) | 🟢 Excellent (4-5)*")
                         col_mb1, col_mb2 = st.columns(2)
                         with col_mb1:
-                            st.markdown(f"**Period 1**")
+                            st.markdown("**Period 1**")
                             st.dataframe(generate_meter_bank(filtered_df, sel_agent), use_container_width=True, height=350, column_config=col_config)
                         with col_mb2:
-                            st.markdown(f"**Period 2**")
+                            st.markdown("**Period 2**")
                             if filtered_df_2.empty: st.warning("No data.")
                             else: st.dataframe(generate_meter_bank(filtered_df_2, sel_agent), use_container_width=True, height=350, column_config=col_config)
 
@@ -614,7 +633,7 @@ if selected_tab == "📊 Performance Dashboard":
                         with col_trend:
                             st.markdown("**📈 SCORE TREND**")
                             st.line_chart(filtered_call_df.groupby('Clean_Date')['Call Percentage'].mean(), height=350, color="#4682B4")
-                        
+
                         with col_sections:
                             col_sec_title, col_sec_toggle = st.columns([1, 1])
                             with col_sec_title: st.markdown("**📑 SECTION PERFORMANCE**")
@@ -622,7 +641,7 @@ if selected_tab == "📊 Performance Dashboard":
                             summary_df = generate_section_summary(filtered_df)
                             if sec_view_std == "📑 Table": st.dataframe(summary_df, use_container_width=True, height=330)
                             else: st.plotly_chart(create_section_bar_chart(summary_df, pass_threshold), use_container_width=True)
-                        
+
                         st.divider()
                         st.markdown("**((o)) METER BANK — CLICK A CELL TO FOCUS COACHING PRIORITIES**\n*Legend: 🔴 Critical (1-2) | 🟡 Average (3) | 🟢 Excellent (4-5)*")
                         st.dataframe(generate_meter_bank(filtered_df, sel_agent), use_container_width=True, height=350, column_config=col_config)
@@ -634,10 +653,10 @@ if selected_tab == "📊 Performance Dashboard":
                         st.markdown("**AGENT LEADERBOARD (PERIOD 1)**")
                         leaderboard = filtered_call_df.groupby('Agent').agg(CALLS_GRADED=('Call', 'count'), AVG_CALL_SCORE=('Call Percentage', 'mean'))
                         leaderboard['PASS RATE %'] = (filtered_call_df[filtered_call_df['Call Percentage'] >= pass_threshold].groupby('Agent').size() / leaderboard['CALLS_GRADED']).fillna(0) * 100
-                        
+
                         agent_deltas = second_half.groupby('Agent')['Call Percentage'].mean() - first_half.groupby('Agent')['Call Percentage'].mean()
                         def format_trend(x): return "Not enough data" if pd.isna(x) else (f"⬆️ +{x:.1f}%" if x > 0 else (f"⬇️ {x:.1f}%" if x < 0 else "➖ 0.0%"))
-                        
+
                         leaderboard['Trend (vs First Half)'] = leaderboard.index.map(agent_deltas).map(format_trend)
                         leaderboard['AVG_CALL_SCORE'] = leaderboard['AVG_CALL_SCORE'].round(1).astype(str) + '%'
                         leaderboard['PASS RATE %'] = leaderboard['PASS RATE %'].round(0).astype(str) + '%'
@@ -656,11 +675,11 @@ if selected_tab == "📊 Performance Dashboard":
                                 if selected_call_name:
                                     search_call_id = re.findall(r'\d{6,8}', str(selected_call_name).strip())[0] if re.findall(r'\d{6,8}', str(selected_call_name).strip()) else str(selected_call_name).strip().lower()
                                     st.markdown(f"### 🔍 Call Audit for ID: `{search_call_id}`")
-                                    
+
                                     vault_transcripts = fetch_all_transcripts(FOLDER_ID)
                                     matched_t = next((t for t in vault_transcripts if search_call_id.lower() in t['file_name'].lower()), None)
                                     matched_a = next((a for a in fetch_audio_files_metadata(AUDIO_FOLDER_ID) if search_call_id.lower() in a['name'].lower()), None)
-                                    
+
                                     st.markdown("#### 🎧 Call Audio Recording")
                                     if matched_a:
                                         st.caption(f"🔊 **Available File:** `{matched_a['name']}`")
@@ -671,7 +690,7 @@ if selected_tab == "📊 Performance Dashboard":
                                                     st.audio(audio_bytes, format="audio/wav")
                                                     st.download_button(label="📥 Download .WAV File", data=audio_bytes, file_name=matched_a['name'], mime="audio/wav")
                                     else: st.warning(f"⚠️ No matching audio file found in Drive containing Call ID `{search_call_id}`.")
-                                        
+
                                     st.divider()
                                     st.markdown("#### 📄 Call Transcript Text")
                                     if matched_t: st.text_area("Raw Transcript Text:", value=matched_t['content'], height=350, disabled=True)
@@ -683,14 +702,14 @@ if selected_tab == "📊 Performance Dashboard":
                         st.markdown("**COACHING PRIORITIES (LOWEST SCORING - PERIOD 1)**")
                         for index, row in filtered_df.groupby('Category')['Score'].mean().reset_index().sort_values(by='Score', ascending=True).head(5).iterrows():
                             st.error(f"**{row['Category']}** \n Avg Score: {row['Score']:.2f} / 5.0")
-                            
+
     except Exception as e:
         st.error(f"⚠️ Unable to load data from Supabase. Details: {e}")
         st.info("Please verify SUPABASE_URL and SUPABASE_KEY are set correctly in secrets.toml.")
 
 
 # =========================================================================
-# AI SIDEBAR & DATA LOADING 
+# AI SIDEBAR & DATA LOADING
 # =========================================================================
 else:
     st.sidebar.header("AI Transcript Vault")
@@ -704,43 +723,45 @@ else:
     active_target_id = FOLDER_ID if selected_ai_folder == "📁 All Transcripts (All Weeks)" else subfolders.get(selected_ai_folder.replace("📅 ", ""), FOLDER_ID)
 
     # =========================================================================
-    # TAB 2: AI ASSISTANT (RAG GRAPH VIA SUPABASE VECTOR SEARCH + LIVE SCORES)
+    # TAB 2: AI ASSISTANT (RAG GRAPH VIA SUPABASE VECTOR SEARCH + LIVE SCORES
+    #         + GRAPH EXPANSION + ADVERSE EVENTS + 7-DIGIT DRILL-DOWN)
     # =========================================================================
     if selected_tab == "💬 AI Assistant (RAG Graph)":
         st.header("💬 Gemini Graph RAG & Compliance Intelligence")
-        st.markdown("Ask questions across your entire **Supabase LLM Wiki**, **Live QA Call Scores**, and **Coaching Feedback**.")
-        
+        st.markdown("Ask questions across your entire **Supabase LLM Wiki**, **Live QA Call Scores**, **Adverse Events**, and **Coaching Feedback**.")
+
         if "chat_history" not in st.session_state:
             st.session_state.chat_history = []
-            
+
         for message in st.session_state.chat_history:
             with st.chat_message(message["role"]):
                 st.markdown(message["content"])
-                
+
         if user_prompt := st.chat_input("Ask a question (e.g., 'How well are agents following the product discovery procedure?' or 'Why are people canceling?'):"):
             st.session_state.chat_history.append({"role": "user", "content": user_prompt})
             with st.chat_message("user"):
                 st.markdown(user_prompt)
-                
+
             with st.chat_message("assistant"):
                 loader_placeholder = st.empty()
                 try:
                     loader_placeholder.markdown("""
                     <div style="background-color: #0f172a; padding: 20px; border-radius: 12px; border: 2px dashed #8CC63F; text-align: center; margin-bottom: 15px;">
                         <div style="color: #cbd5e1; font-size: 16px; font-weight: 600; font-family: system-ui, sans-serif;">
-                            🧠 Reading Wiki SOPs, pulling Supabase QA Scores, & searching Vector DB...
+                            🧠 Reading Wiki SOPs, expanding graph links, pulling QA Scores + Adverse matches...
                         </div>
                     </div>
                     """, unsafe_allow_html=True)
-                    
+
                     model = genai.GenerativeModel('gemini-3.1-flash-lite')
+                    supabase = get_supabase_client()
 
                     # --- CONVERSATIONAL QUERY REWRITER ---
                     search_query = user_prompt
                     if len(st.session_state.chat_history) > 2:
                         recent_history = "\n".join([f"{m['role']}: {m['content']}" for m in st.session_state.chat_history[-5:-1]])
                         rewrite_prompt = f"""
-                        Given the following chat history and follow-up question, rewrite the follow-up question into a single standalone search query. 
+                        Given the following chat history and follow-up question, rewrite the follow-up question into a single standalone search query.
                         Replace pronouns like "he", "she", "they", or "it" with the specific agent or topic name mentioned earlier in history.
                         Do NOT answer the question, only output the rewritten standalone query.
 
@@ -754,17 +775,70 @@ else:
                         if rewrite_res.text.strip():
                             search_query = rewrite_res.text.strip()
 
+                    # --- GAP 3a: 7-digit call drill-down (deterministic, no guessing) ---
+                    drill_keys = re.findall(r"(\d{7})", search_query)
+                    drill_key = drill_keys[-1] if drill_keys else None
+                    drill_context = ""
+                    if drill_key:
+                        try:
+                            call_rows = supabase.table("call_scores").select(
+                                "agent_name,call_id,category,score").ilike("call_id", f"%{drill_key}%").limit(40).execute().data or []
+                            if call_rows:
+                                drill_lines = [f"{r['category']}: {r['score']}/5" for r in call_rows]
+                                drill_context = (
+                                    f"DIRECT CALL LOOKUP (key {drill_key}, agent {call_rows[0].get('agent_name')}, "
+                                    f"file {call_rows[0].get('call_id')}):\n" + "\n".join(drill_lines)
+                                )
+                            adv_row = supabase.table("adverse_events").select(
+                                "event_classification,verbatim_evidence,handling_determination,product"
+                            ).eq("call_key", drill_key).limit(1).execute().data
+                            if adv_row:
+                                a = adv_row[0]
+                                drill_context += (
+                                    f"\nADVERSE MATCH (key {drill_key}): {a.get('event_classification')} | "
+                                    f"product {a.get('product')} | evidence: {a.get('verbatim_evidence')} | "
+                                    f"handling: {a.get('handling_determination')}"
+                                )
+                            else:
+                                drill_context += f"\nAdverse check (key {drill_key}): no N-checked adverse event found."
+                        except Exception as derr:
+                            drill_context = f"Call drill-down failed: {derr}"
+
                     # 1. Vector Search across Wiki Pages
                     query_embedding = genai.embed_content(
-                        model="models/gemini-embedding-001", 
+                        model="models/gemini-embedding-001",
                         content=search_query,
                         output_dimensionality=768
                     )["embedding"]
-                    
-                    supabase = get_supabase_client()
+
                     match_res = supabase.rpc("match_wiki_pages", {"query_embedding": query_embedding, "match_threshold": 0.1, "match_count": 5}).execute()
-                    
-                    # 2. CONNECTOR: Fetch Quantitative QA Scores & Coaching Summaries from Supabase
+
+                    # --- GAP 1: 1-hop graph expansion via page_links (both directions) ---
+                    graph_context = ""
+                    try:
+                        hit_ids = [row["id"] for row in (match_res.data or []) if row.get("id")]
+                        if hit_ids:
+                            links_out = supabase.table("page_links").select(
+                                "target_page_id,relationship_context").in_("source_page_id", hit_ids).execute().data or []
+                            links_in = supabase.table("page_links").select(
+                                "source_page_id,relationship_context").in_("target_page_id", hit_ids).execute().data or []
+                            neighbor_ids = list({l["target_page_id"] for l in links_out} | {l["source_page_id"] for l in links_in})
+                            rel_map = {}
+                            for l in links_out:
+                                rel_map.setdefault(l["target_page_id"], []).append("out: " + str(l.get("relationship_context", "")))
+                            for l in links_in:
+                                rel_map.setdefault(l["source_page_id"], []).append("in: " + str(l.get("relationship_context", "")))
+                            if neighbor_ids:
+                                nb = supabase.table("wiki_pages").select("id,title,content").in_("id", neighbor_ids[:10]).execute().data or []
+                                g_lines = []
+                                for n in nb:
+                                    rels = "; ".join(rel_map.get(n["id"], []))
+                                    g_lines.append(f"--- LINKED PAGE: {n['title']} ({rels}) ---\n{n['content'][:1500]}")
+                                graph_context = "\n\n".join(g_lines)
+                    except Exception as gerr:
+                        graph_context = f"Graph expansion failed: {gerr}"
+
+                    # 2. CONNECTOR: Quantitative QA Scores & Coaching Summaries from Supabase
                     try:
                         scores_df = load_call_scores()
                         if not scores_df.empty:
@@ -776,24 +850,44 @@ else:
 
                         coach_df = load_coaching_feedback()
                         if not coach_df.empty:
-                            coach_context = coach_df[['Agent Name', 'Date Range', 'Top 3 Wins', 'Top 3 Areas for Improvement']].tail(20).to_string(index=False)
+                            # GAP 3b: filter coaching to agents named in the question
+                            q_lower = search_query.lower()
+                            try:
+                                agents_known = scores_df['Agent'].dropna().astype(str).unique().tolist() if not scores_df.empty else []
+                            except Exception:
+                                agents_known = []
+                            named = [a for a in agents_known if str(a).lower().split()[0] in q_lower and len(str(a).split()[0]) > 2]
+                            cdf = coach_df
+                            if named:
+                                firsts = {n.lower().split()[0] for n in named}
+                                cdf = coach_df[coach_df['Agent Name'].astype(str).apply(
+                                    lambda x: x.split()[0].lower() in firsts if pd.notna(x) else False)]
+                            coach_context = cdf[['Agent Name', 'Date Range', 'Top 3 Wins', 'Top 3 Areas for Improvement']].tail(20).to_string(index=False)
+                            if named:
+                                coach_context = f"(filtered to named agents: {', '.join(named)})\n" + coach_context
                         else:
                             coach_context = "No coaching feedback records found."
                     except Exception as err:
                         cat_context = f"Could not load score metrics: {err}"
                         coach_context = "Could not load coaching records."
 
-                    # 3. Combine Wiki + Quantitative Scores + Coaching Feedback into Gemini Context
+                    # --- GAP 2: Adverse-event context (free Gem + Sheet pipeline, cached) ---
+                    adverse_context = load_adverse_summary()
+
+                    # 3. Combine Wiki + Scores + Coaching + Adverse into Gemini Context
                     if not match_res.data:
                         wiki_context_str = "No specific Wiki pages matched the vector search query."
                     else:
                         wiki_context_str = "\n\n".join([f"--- WIKI PAGE: {row['title']} ---\n{row['content']}" for row in match_res.data])
-                        
+
                     full_prompt = f"""
                     You are an expert QA and Customer Service Intelligence Analyst for Balance of Nature.
 
                     OFFICIAL WIKI PROCEDURES (SOPs):
                     {wiki_context_str}
+
+                    GRAPH-NEIGHBOR PAGES (1-hop links from matched wiki pages):
+                    {graph_context if graph_context else "No linked neighbor pages."}
 
                     QUANTITATIVE QA SCORES SUMMARY (CATEGORY AVERAGES OUT OF 5.0):
                     {cat_context}
@@ -801,22 +895,32 @@ else:
                     QUALITATIVE COACHING FEEDBACK HIGHLIGHTS:
                     {coach_context}
 
+                    ADVERSE / SAFETY EVENTS (N-checked, free pipeline):
+                    {adverse_context}
+
+                    {'SPECIFIC CALL DRILL-DOWN (exact match, trust these numbers first):' + chr(10) + drill_context if drill_context else ""}
+
                     MANAGER'S QUESTION:
                     {user_prompt}
 
                     INSTRUCTIONS:
                     1. First, determine the intent of the manager's question.
                     2. IF the question is purely informational or procedural (e.g., product benefits, daily dosage, general SOP policies):
-                       - Answer directly using ONLY the Official Wiki Procedures.
+                       - Answer directly using ONLY the Official Wiki Procedures (+ graph neighbors if relevant).
                        - DO NOT include QA metrics, category averages, or coaching recommendations unless specifically requested.
-                    3. IF the question asks about agent performance, compliance, scores, or coaching gaps (e.g., "How well are agents handling Fiber & Spice?"):
+                    3. IF the question asks about agent performance, compliance, scores, or coaching gaps:
                        - Cross-reference the Wiki procedure with our QA Call Scores and Coaching Feedback.
                        - Include relevant Criteria IDs, exact score averages (out of 5.0), and actionable coaching recommendations.
+                    4. IF the question names a 7-digit call key or the drill-down block is present:
+                       - Lead with that call's exact scores and its adverse match status (flag safety issues FIRST).
+                    5. IF the question touches safety, complaints, side effects, or compliance COMP-5:
+                       - Always report the adverse block numbers and any matched event with its verbatim evidence.
+                    6. Cite sources: wiki page titles, call keys, and criteria IDs for every factual claim.
                     """
-                    
+
                     response = model.generate_content(full_prompt, stream=True)
                     loader_placeholder.empty()
-                    
+
                     full_response = st.write_stream(c.text for c in response)
                     st.session_state.chat_history.append({"role": "assistant", "content": full_response})
 
@@ -828,14 +932,14 @@ else:
     # TAB 3: LLM WIKI COMPILER (WRITES TO SUPABASE)
     # =========================================================================
     elif selected_tab == "🧠 LLM Knowledge Wiki (Compiler)":
-        
+
         # -------------------------------------------------------------------------
         # SAFE PDF / DOCUMENT WIKI UPLOADER
         # -------------------------------------------------------------------------
         with st.expander("📄 Upload PDF / Scoring Guide Directly to Wiki"):
             pdf_file = st.file_uploader("Choose a PDF file:", type=["pdf"])
             doc_title = st.text_input("Document Title in Wiki:", value="QA Scoring Guide & Rubric Rules")
-            
+
             if pdf_file and st.button("🚀 Push PDF to Supabase Wiki"):
                 try:
                     with st.spinner("Extracting PDF text and generating vector embedding..."):
@@ -845,9 +949,9 @@ else:
                             page_text = page.extract_text()
                             if page_text and page_text.strip():
                                 pdf_pages.append(f"--- Page {idx+1} ---\n" + page_text.strip())
-                        
+
                         full_pdf_text = "\n\n".join(pdf_pages)
-                        
+
                         # Generate vector embedding for 768-dim RAG search using a safe token sample
                         embedding = None
                         try:
@@ -868,9 +972,9 @@ else:
                         }
                         if embedding:
                             record["embedding"] = embedding
-                            
+
                         res = supabase.table("wiki_pages").upsert(record, on_conflict="title").execute()
-                        
+
                         st.success(f"✅ Successfully added '{doc_title}' to Supabase `wiki_pages`!")
                         st.cache_data.clear()
                 except Exception as err:
@@ -878,10 +982,10 @@ else:
 
         st.header("🧠 Compile LLM Knowledge Graph")
         st.markdown("""
-        This engine reads your raw transcripts from Google Drive, groups them by entity (Agents, Products, Objections), 
+        This engine reads your raw transcripts from Google Drive, groups them by entity (Agents, Products, Objections),
         synthesizes them into compounding **Wiki Pages**, and permanently stores the vector embeddings and links in Supabase.
         """)
-        
+
         transcripts_list = fetch_all_transcripts(active_target_id)
         if not transcripts_list:
             st.warning("Please select a valid folder with transcripts in the sidebar.")
@@ -890,100 +994,100 @@ else:
             if st.button("🚀 Run Compiler (Build Wiki Pages)"):
                 status_text = st.empty()
                 progress_bar = st.progress(0)
-                
+
                 try:
                     supabase = get_supabase_client()
                     model = genai.GenerativeModel('gemini-3.1-flash-lite')
                     total_calls = len(transcripts_list)
-                    chunk_size = 25 
-                    
+                    chunk_size = 25
+
                     for i in range(0, total_calls, chunk_size):
                         chunk = transcripts_list[i:i + chunk_size]
                         chunk_str = "\n\n".join([f"--- File: {c['file_name']} ---\n{c['content']}" for c in chunk])
-                        
+
                         current_batch = (i // chunk_size) + 1
                         total_batches = (total_calls + chunk_size - 1) // chunk_size
                         status_text.markdown(f"**⏳ Processing batch {current_batch} of {total_batches}...** *(Analyzing calls {i+1} to {min(i+chunk_size, total_calls)})*")
-                        
+
                         prompt = f"""
                         You are a strict Data Extraction API building a Knowledge Wiki. Read these transcripts and group the insights into "Pages".
-                        You MUST return a valid JSON array of objects. 
-                        
+                        You MUST return a valid JSON array of objects.
+
                         Each object must represent a standalone Wiki Page to create or update. Use titles like "Agent Adriel", "Fiber & Spice Product Insights", or "Top Cancellation Reasons".
-                        
+
                         Required Keys:
                         "title": (The name of the wiki page entity)
                         "content": (A robust, professional Markdown summary of everything you learned about this entity in this batch of transcripts)
                         "related_topics": (A list of strings containing exact titles of other pages this page strongly connects to)
-                        
+
                         Transcripts:
                         {chunk_str}
                         """
-                        
+
                         response = model.generate_content(prompt, generation_config={"response_mime_type": "application/json"})
                         raw_text = response.text.strip()
                         start_idx = raw_text.find('[')
                         end_idx = raw_text.rfind(']')
                         clean_text = raw_text[start_idx:end_idx + 1] if start_idx != -1 and end_idx != -1 else raw_text
-                            
+
                         pages_data = json.loads(clean_text)
-                        
+
                         for page in pages_data:
                             title = page.get("title", "Unknown Page").strip()
                             new_content = page.get("content", "").strip()
                             related_titles = page.get("related_topics", [])
-                            
+
                             existing_res = supabase.table("wiki_pages").select("id, content").eq("title", title).execute()
-                            
+
                             if existing_res.data:
                                 combined_content = existing_res.data[0]["content"] + "\n\n### New Insights:\n" + new_content
                             else:
                                 combined_content = new_content
-                                
+
                             embedding = genai.embed_content(
-                                model="models/gemini-embedding-001", 
+                                model="models/gemini-embedding-001",
                                 content=combined_content,
                                 output_dimensionality=768
                             )["embedding"]
-                            
+
                             upsert_res = supabase.table("wiki_pages").upsert({
                                 "title": title,
                                 "content": combined_content,
                                 "embedding": embedding
                             }, on_conflict="title").execute()
-                            
+
                             if upsert_res.data:
                                 source_id = upsert_res.data[0]["id"]
-                                
+
                                 for rel_title in related_titles:
                                     target_res = supabase.table("wiki_pages").select("id").eq("title", rel_title.strip()).execute()
                                     if target_res.data:
                                         target_id = target_res.data[0]["id"]
-                                        
+
                                         if source_id != target_id:
                                             link_check = supabase.table("page_links").select("id").eq("source_page_id", source_id).eq("target_page_id", target_id).execute()
-                                            
+
                                             if not link_check.data:
                                                 supabase.table("page_links").insert({
                                                     "source_page_id": source_id,
                                                     "target_page_id": target_id,
                                                     "relationship_context": "Linked via transcript batch analysis"
                                                 }).execute()
-                        
+
                         progress_bar.progress(min(1.0, (i + chunk_size) / total_calls))
                         if i + chunk_size < total_calls:
                             time.sleep(4)
-                    
+
                     status_text.empty()
                     progress_bar.empty()
                     st.success("✅ Knowledge Wiki Compiled Successfully!")
                     st.balloons()
-                    
+
                 except Exception as e:
                     status_text.empty()
                     progress_bar.empty()
                     st.error(f"Failed to compile Wiki. Details: {e}")
-            
+
             st.divider()
             st.markdown("### 📚 Current Wiki Database")
             try:
