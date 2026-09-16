@@ -256,18 +256,37 @@ def load_coaching_feedback():
 
 @st.cache_data(ttl=300)
 def load_adverse_summary():
-    """N-checked adverse events rollup for the RAG tab (Gap 2)."""
+    """N-checked adverse events rollup for the RAG tab (Gap 2).
+
+    Includes reviewer ground truth: monthly error-tracker rates by class plus
+    the column semantics (Q flag = mishandled, P = ticket filed) so the agent
+    can answer trend + why questions from this block alone."""
     try:
         supabase = get_supabase_client()
         rows = supabase.table("adverse_events").select(
-            "event_classification,product").limit(2000).execute().data or []
+            "event_classification,product,date_time_stamp,error_tracker_date,"
+            "ticket_submitted").limit(5000).execute().data or []
         if not rows:
             return "No N-checked adverse events recorded."
         adf = pd.DataFrame(rows)
         by_class = adf['event_classification'].value_counts().to_string()
         by_prod = adf['product'].value_counts().head(10).to_string()
+        adf['month'] = adf['date_time_stamp'].astype(str).str[:7]
+        adf['erred'] = adf['error_tracker_date'].astype(str).str.strip().ne('') & \
+            adf['error_tracker_date'].astype(str).str.strip().ne('-') & \
+            adf['error_tracker_date'].notna()
+        trend = adf.groupby(['month', 'event_classification'])['erred'].agg(
+            ['sum', 'count']).reset_index()
+        trend['rate'] = (trend['sum'] / trend['count']).round(2)
+        trend_lines = "\n".join(
+            f"{r['month']} {r['event_classification']}: {int(r['sum'])}/{int(r['count'])} "
+            f"error-tracked ({r['rate']:.0%})" for _, r in trend.iterrows())
         return (f"N-checked adverse events total: {len(adf)}\n"
-                f"By classification:\n{by_class}\nTop products:\n{by_prod}")
+                f"By classification:\n{by_class}\nTop products:\n{by_prod}\n"
+                f"REVIEWER GROUND TRUTH (review-sheet columns O:S): an Error Tracker date "
+                f"means mishandled; P (Ticket Submitted)=NO predicts mishandling; "
+                f"P=YES with no error flag means handled correctly.\n"
+                f"Monthly error-tracked rates:\n{trend_lines}")
     except Exception as e:
         return f"Could not load adverse events: {e}"
 
