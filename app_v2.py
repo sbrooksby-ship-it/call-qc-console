@@ -326,7 +326,7 @@ question_tooltips = {
     "CC 4": "Followed the established call flow",
     "CC 5": "Achieved their VFP by the end of the call",
     "COMP 1": "Properly verified the customer's account (N/A for new customers)",
-    "COMP 2": "Collected or verified the customer’s email (N/A for new customers)",
+    "COMP 2": "Collected or verified the customer's email (N/A for new customers)",
     "COMP 3": "Requested the customer to take the customer satisfaction survey after the end of their call",
     "COMP 4": "Did not make any claims about Balance of Nature products treating or preventing any specific disease or condition",
     "COMP 5": "Did the team member properly identify and handle any adverse events, or product complaints that came up in the call?"
@@ -732,6 +732,12 @@ if selected_tab == "📊 Performance Dashboard":
 # =========================================================================
 else:
     st.sidebar.header("AI Transcript Vault")
+    # Token budget display
+    if "gemini_tokens_used" in st.session_state:
+        st.sidebar.info(f"🔋 Gemini tokens used today: **{st.session_state.gemini_tokens_used:,}** / 250,000")
+    else:
+        st.sidebar.info("🔋 Gemini tokens used today: **0** / 250,000 (budget resets midnight Pacific)")
+    st.sidebar.caption("Free tier cap: 250K input tokens/day. Asking focused questions uses fewer tokens.")
     subfolders = get_drive_subfolders(FOLDER_ID)
     selected_ai_folder = st.sidebar.selectbox("Select Week to Analyze:", [f"📅 {name}" for name in sorted(subfolders.keys(), reverse=True)] + ["📁 All Transcripts (All Weeks)"])
 
@@ -772,27 +778,21 @@ else:
                     </div>
                     """, unsafe_allow_html=True)
 
-                    model = genai.GenerativeModel('gemini-3.1-flash-lite')
+                    model = genai.GenerativeModel('gemini-3.5-flash-lite')
                     supabase = get_supabase_client()
 
-                    # --- CONVERSATIONAL QUERY REWRITER ---
+                    # --- LOCAL QUERY EXPANSION (no Gemini call — saves tokens) ---
                     search_query = user_prompt
                     if len(st.session_state.chat_history) > 2:
-                        recent_history = "\n".join([f"{m['role']}: {m['content']}" for m in st.session_state.chat_history[-5:-1]])
-                        rewrite_prompt = f"""
-                        Given the following chat history and follow-up question, rewrite the follow-up question into a single standalone search query.
-                        Replace pronouns like "he", "she", "they", or "it" with the specific agent or topic name mentioned earlier in history.
-                        Do NOT answer the question, only output the rewritten standalone query.
-
-                        Chat History:
-                        {recent_history}
-
-                        Follow-up Question: {user_prompt}
-                        Standalone Search Query:
-                        """
-                        rewrite_res = model.generate_content(rewrite_prompt)
-                        if rewrite_res.text.strip():
-                            search_query = rewrite_res.text.strip()
+                        recent = st.session_state.chat_history[-2]
+                        if recent.get("role") == "assistant" and recent.get("content"):
+                            entities = re.findall(r'\b[A-Z][a-z]{2,}\b', recent["content"])
+                            stopwords = {'The','This','That','With','From','For','About','What','When','Where','Which','Their','There','They','Them','These','Those'}
+                            entities = [e for e in entities if e not in stopwords and len(e) > 2]
+                            if entities:
+                                for pron in ['he', 'she', 'they', 'him', 'her', 'them', 'it']:
+                                    search_query = re.sub(r'\b' + pron + r'\b', entities[0], search_query.lower())
+                                search_query = search_query.capitalize()
 
                     # --- GAP 3a: 7-digit call drill-down (deterministic, no guessing) ---
                     drill_keys = re.findall(r"(\d{7})", search_query)
@@ -848,16 +848,24 @@ else:
                             for l in links_in:
                                 rel_map.setdefault(l["source_page_id"], []).append("in: " + str(l.get("relationship_context", "")))
                             if neighbor_ids:
-                                nb = supabase.table("wiki_pages").select("id,title,content").in_("id", neighbor_ids[:10]).execute().data or []
+                                nb = supabase.table("wiki_pages").select("id,title,content").in_("id", neighbor_ids[:5]).execute().data or []
                                 g_lines = []
                                 for n in nb:
                                     rels = "; ".join(rel_map.get(n["id"], []))
-                                    g_lines.append(f"--- LINKED PAGE: {n['title']} ({rels}) ---\n{n['content'][:1500]}")
+                                    content = (n.get('content') or '').strip()
+                                    if len(content) > 600:
+                                        cut = content[:600]
+                                        last_nl = cut.rfind('\n\n')
+                                        if last_nl > 300:
+                                            cut = content[:last_nl]
+                                        g_lines.append(f"--- LINKED PAGE: {n['title']} ({rels}) ---\n{cut}\n[...{len(content) - len(cut)} more chars...]")
+                                    else:
+                                        g_lines.append(f"--- LINKED PAGE: {n['title']} ({rels}) ---\n{content}")
                                 graph_context = "\n\n".join(g_lines)
                     except Exception as gerr:
                         graph_context = f"Graph expansion failed: {gerr}"
 
-                    # 2. CONNECTOR: Quantitative QA Scores & Coaching Summaries from Supabase
+                    # 2. CONNECTOR: Quantitative QA Scores & Coaching (agent-filtered when named)
                     try:
                         scores_df = load_call_scores()
                         if not scores_df.empty:
@@ -869,7 +877,6 @@ else:
 
                         coach_df = load_coaching_feedback()
                         if not coach_df.empty:
-                            # GAP 3b: filter coaching to agents named in the question
                             q_lower = search_query.lower()
                             try:
                                 agents_known = scores_df['Agent'].dropna().astype(str).unique().tolist() if not scores_df.empty else []
@@ -881,7 +888,7 @@ else:
                                 firsts = {n.lower().split()[0] for n in named}
                                 cdf = coach_df[coach_df['Agent Name'].astype(str).apply(
                                     lambda x: x.split()[0].lower() in firsts if pd.notna(x) else False)]
-                            coach_context = cdf[['Agent Name', 'Date Range', 'Top 3 Wins', 'Top 3 Areas for Improvement']].tail(20).to_string(index=False)
+                            coach_context = cdf[['Agent Name', 'Date Range', 'Top 3 Wins', 'Top 3 Areas for Improvement']].tail(10).to_string(index=False)
                             if named:
                                 coach_context = f"(filtered to named agents: {', '.join(named)})\n" + coach_context
                         else:
@@ -897,7 +904,19 @@ else:
                     if not match_res.data:
                         wiki_context_str = "No specific Wiki pages matched the vector search query."
                     else:
-                        wiki_context_str = "\n\n".join([f"--- WIKI PAGE: {row['title']} ---\n{row['content']}" for row in match_res.data])
+                        wiki_parts = []
+                        for row in match_res.data:
+                            content = (row.get('content') or '').strip()
+                            title = row.get('title', 'Untitled')
+                            if len(content) > 800:
+                                cut = content[:800]
+                                last_nl = cut.rfind('\n\n')
+                                if last_nl > 400:
+                                    cut = content[:last_nl]
+                                wiki_parts.append(f"--- WIKI PAGE: {title} (excerpt, {len(content)} total chars) ---\n{cut}\n[...{len(content) - len(cut)} more chars — ask for full page if needed...]")
+                            else:
+                                wiki_parts.append(f"--- WIKI PAGE: {title} ---\n{content}")
+                        wiki_context_str = "\n\n".join(wiki_parts)
 
                     full_prompt = f"""
                     You are an expert QA and Customer Service Intelligence Analyst for Balance of Nature.
@@ -937,11 +956,46 @@ else:
                     6. Cite sources: wiki page titles, call keys, and criteria IDs for every factual claim.
                     """
 
-                    response = model.generate_content(full_prompt, stream=True)
-                    loader_placeholder.empty()
-
-                    full_response = st.write_stream(c.text for c in response)
-                    st.session_state.chat_history.append({"role": "assistant", "content": full_response})
+                    # --- TOKEN BUDGET GUARD ---
+                    if "gemini_tokens_used" not in st.session_state:
+                        st.session_state.gemini_tokens_used = 0
+                    DAILY_BUDGET = 240000
+                    prompt_chars = len(full_prompt)
+                    est_tokens = prompt_chars // 4
+                    budget_exceeded = False
+                    if st.session_state.gemini_tokens_used + est_tokens > DAILY_BUDGET:
+                        loader_placeholder.empty()
+                        st.warning(f"⚠️ Daily Gemini token budget near limit ({st.session_state.gemini_tokens_used:,}/{DAILY_BUDGET:,}). Skipping this query to avoid 429 errors. Try again later or ask something more specific.")
+                        st.session_state.chat_history.append({"role": "assistant", "content": f"I've hit the daily Gemini API token limit ({st.session_state.gemini_tokens_used:,} tokens used today). Please try again after midnight Pacific time, or ask a more focused question that needs less context."})
+                        budget_exceeded = True
+                    
+                    # --- GEMINI CALL WITH RETRY ---
+                    if not budget_exceeded:
+                        max_retries = 3
+                        response = None
+                        for attempt in range(max_retries):
+                            try:
+                                response = model.generate_content(full_prompt, stream=True)
+                                break
+                            except Exception as e:
+                                err_str = str(e).lower()
+                                if "429" in str(e) or "quota" in err_str or "rate limit" in err_str or "resource_exhausted" in err_str:
+                                    wait_times = [10, 30, 60]
+                                    wait = wait_times[attempt] if attempt < len(wait_times) else 60
+                                    if attempt < max_retries - 1:
+                                        loader_placeholder.markdown(f"""<div style="background-color: #0f172a; padding: 20px; border-radius: 12px; border: 2px dashed #8CC63F; text-align: center; margin-bottom: 15px;"><div style="color: #cbd5e1; font-size: 16px; font-weight: 600; font-family: system-ui, sans-serif;">⏳ Rate limited — retrying in {wait}s... (attempt {attempt+1}/{max_retries})</div></div>""", unsafe_allow_html=True)
+                                        time.sleep(wait)
+                                        continue
+                                    else:
+                                        raise Exception(f"Gemini quota exceeded after {max_retries} retries. Error: {e}")
+                                else:
+                                    raise
+                        if response is None:
+                            raise Exception("Gemini call failed after retries")
+                        st.session_state.gemini_tokens_used += est_tokens
+                        loader_placeholder.empty()
+                        full_response = st.write_stream(c.text for c in response)
+                        st.session_state.chat_history.append({"role": "assistant", "content": full_response})
 
                 except Exception as e:
                     loader_placeholder.empty()
@@ -974,12 +1028,21 @@ else:
                         # Generate vector embedding for 768-dim RAG search using a safe token sample
                         embedding = None
                         try:
-                            embed_sample = full_pdf_text[:3500]  # Safe token length window
-                            embedding = genai.embed_content(
-                                model="models/gemini-embedding-001",
-                                content=embed_sample,
-                                output_dimensionality=768
-                            )["embedding"]
+                            embed_sample = full_pdf_text[:3500]
+                            for attempt in range(3):
+                                try:
+                                    embedding = genai.embed_content(
+                                        model="models/gemini-embedding-001",
+                                        content=embed_sample,
+                                        output_dimensionality=768
+                                    )["embedding"]
+                                    break
+                                except Exception as ee:
+                                    if "429" in str(ee) or "quota" in str(ee).lower():
+                                        if attempt < 2:
+                                            time.sleep(10 * (attempt + 1))
+                                            continue
+                                    raise
                         except Exception as embed_err:
                             st.warning(f"⚠️ Vector embedding failed ({embed_err}). Saving text directly without embedding.")
 
@@ -1016,9 +1079,9 @@ else:
 
                 try:
                     supabase = get_supabase_client()
-                    model = genai.GenerativeModel('gemini-3.1-flash-lite')
+                    model = genai.GenerativeModel('gemini-3.5-flash-lite')
                     total_calls = len(transcripts_list)
-                    chunk_size = 25
+                    chunk_size = 10  # Reduced from 25: each transcript is ~1-2K chars, 25 transcripts = 25-50K input tokens per call
 
                     for i in range(0, total_calls, chunk_size):
                         chunk = transcripts_list[i:i + chunk_size]
@@ -1043,7 +1106,33 @@ else:
                         {chunk_str}
                         """
 
-                        response = model.generate_content(prompt, generation_config={"response_mime_type": "application/json"})
+                        # Token budget check for compiler
+                        if "gemini_tokens_used" not in st.session_state:
+                            st.session_state.gemini_tokens_used = 0
+                        est_compiler_tokens = len(prompt) // 4
+                        if st.session_state.gemini_tokens_used + est_compiler_tokens > 240000:
+                            status_text.empty()
+                            progress_bar.empty()
+                            st.warning(f"⚠️ Daily Gemini token budget near limit. Compiler paused to avoid 429 errors. Resume later — progress is saved per page in Supabase.")
+                            break
+
+                        st.session_state.gemini_tokens_used += est_compiler_tokens
+
+                        response = None
+                        for attempt in range(3):
+                            try:
+                                response = model.generate_content(prompt, generation_config={"response_mime_type": "application/json"})
+                                break
+                            except Exception as ce:
+                                if "429" in str(ce) or "quota" in str(ce).lower() or "rate limit" in str(ce).lower():
+                                    if attempt < 2:
+                                        status_text.markdown(f"**⏳ Rate limited — retrying in {10*(attempt+1)}s...**")
+                                        time.sleep(10 * (attempt + 1))
+                                        continue
+                                raise
+
+                        if response is None:
+                            raise Exception("Compiler Gemini call failed after retries")
                         raw_text = response.text.strip()
                         start_idx = raw_text.find('[')
                         end_idx = raw_text.rfind(']')
@@ -1063,11 +1152,24 @@ else:
                             else:
                                 combined_content = new_content
 
-                            embedding = genai.embed_content(
-                                model="models/gemini-embedding-001",
-                                content=combined_content,
-                                output_dimensionality=768
-                            )["embedding"]
+                            embedding = None
+                            try:
+                                for attempt in range(3):
+                                    try:
+                                        embedding = genai.embed_content(
+                                            model="models/gemini-embedding-001",
+                                            content=combined_content[:3500],
+                                            output_dimensionality=768
+                                        )["embedding"]
+                                        break
+                                    except Exception as ee:
+                                        if "429" in str(ee) or "quota" in str(ee).lower():
+                                            if attempt < 2:
+                                                time.sleep(10 * (attempt + 1))
+                                                continue
+                                        raise
+                            except Exception:
+                                embedding = None
 
                             upsert_res = supabase.table("wiki_pages").upsert({
                                 "title": title,
