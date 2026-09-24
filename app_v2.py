@@ -906,30 +906,86 @@ else:
                     # --- GAP 2: Adverse-event context (free Gem + Sheet pipeline, cached) ---
                     adverse_context = load_adverse_summary()
 
-                    # --- IDIOM ANALYSIS CONTEXT (from actual call data, not just wiki list) ---
+                    # --- IDIOM ANALYSIS: Load idioms from wiki + scan call_transcripts directly ---
+                    # No file dependency -- always reflects what's currently in Supabase
+                    idiom_context = ""
                     try:
-                        import os as _os
-                        _idiom_report_path = os.path.join(os.path.dirname(__file__) if '__file__' in dir() else '.', 'idiom_analysis_report.json')
-                        if _os.path.exists(_idiom_report_path):
-                            with open(_idiom_report_path) as _f:
-                                _idiom_data = json.load(_f)
-                            _idiom_lines = []
-                            if _idiom_data.get('top_idioms'):
-                                _idiom_lines.append("IDIOM USAGE FROM ACTUAL CALL TRANSCRIPTS (2,025 calls scanned):")
-                                _idiom_lines.append(f"Total idiom uses found: {_idiom_data['total_uses']} across {_idiom_data['idioms_found']} of {_idiom_data['idioms_in_wiki']} idioms in the reference list.")
-                                _idiom_lines.append("")
-                                for _item in _idiom_data['top_idioms'][:10]:
-                                    _idiom_lines.append(f"  * \"{_item['phrase']}\": {_item['total_uses']} uses, {_item['unique_calls']} calls, CARE={_item['care_uses']}, SALES={_item['sales_uses']}, top agent: {list(_item['top_agents'].keys())[0] if _item['top_agents'] else 'N/A'} ({list(_item['top_agents'].values())[0] if _item['top_agents'] else 0} uses)")
-                            if _idiom_data.get('never_used'):
-                                _idiom_lines.append(f"")
-                                _idiom_lines.append(f"Idioms from the reference list NEVER used in any call ({len(_idiom_data['never_used'])} of {_idiom_data['idioms_in_wiki']}):")
-                                for _item in _idiom_data['never_used'][:15]:
-                                    _idiom_lines.append(f"  - \"{_item['phrase']}\": {_item['definition']}")
-                            idiom_context = "\n".join(_idiom_lines)
+                        # Step 1: Get the idiom list from the wiki page
+                        _wiki_page = supabase.table("wiki_pages").select("content").match({"id": "a5661f56-9c60-4af4-a903-db7025409b9d"}).execute()
+                        _idiom_list = {}
+                        if _wiki_page.data:
+                            _wiki_content = _wiki_page.data[0].get("content", "")
+                            for _line in _wiki_content.split("\n"):
+                                _line = _line.strip()
+                                if _line.startswith("**") and " - " in _line:
+                                    _phrase = _line.split(" - ")[0].replace("**", "").strip().lower()
+                                    _def = _line.split(" - ", 1)[1].replace("**", "").strip() if " - " in _line else ""
+                                    _idiom_list[_phrase] = {"phrase": _line.split(" - ")[0].replace("**", "").strip(), "definition": _def}
+
+                        if not _idiom_list:
+                            idiom_context = "Idiom reference list not found in wiki."
                         else:
-                            idiom_context = "Idiom analysis report not yet generated. Run the ingestion pipeline first."
+                            # Step 2: Load transcripts in batches and scan for idioms
+                            _idiom_stats = {}
+                            for _ik in _idiom_list:
+                                _idiom_stats[_ik] = {"total": 0, "care": 0, "sales": 0, "calls": set(), "top_agent": {}, "top_count": 0}
+
+                            _batch = 500
+                            _page = 0
+                            _total_rows = 0
+                            while True:
+                                _rows = supabase.table("call_transcripts").select("transcript_text, agent_name, call_type").range(_page * _batch, (_page + 1) * _batch - 1).execute()
+                                _batch_data = _rows.data
+                                _total_rows += len(_batch_data)
+                                if not _batch_data:
+                                    break
+                                for _t in _batch_data:
+                                    _text = ( _t.get("transcript_text") or "").lower()
+                                    _agent = (_t.get("agent_name") or "unknown") or "unknown"
+                                    _ctype = (_t.get("call_type") or "unknown") or "unknown"
+                                    _cname = _t.get("call_id", "?")
+                                    for _ik, _info in _idiom_list.items():
+                                        _phrase = _ik
+                                        _cnt = _text.count(_phrase)
+                                        if _cnt > 0:
+                                            _s = _idiom_stats[_ik]
+                                            _s["total"] += _cnt
+                                            if _ctype == "CARE":
+                                                _s["care"] += _cnt
+                                            elif _ctype == "SALES":
+                                                _s["sales"] += _cnt
+                                            _s["calls"].add(_cname)
+                                            _s["top_agent"][_agent] = _s["top_agent"].get(_agent, 0) + _cnt
+                                _page += 1
+                                if len(_batch_data) < _batch:
+                                    break
+
+                            # Step 3: Build the context string (same format as before)
+                            _il = []
+                            _il.append(f"IDIOM USAGE FROM ACTUAL CALL TRANSCRIPTS ({_total_rows:,} calls scanned in Supabase):")
+                            _found = sum(1 for v in _idiom_stats.values() if v["total"] > 0)
+                            _total = sum(v["total"] for v in _idiom_stats.values())
+                            _il.append(f"Total idiom uses found: {_total} across {_found} of {len(_idiom_list)} idioms in the reference list.")
+                            _il.append("")
+                            # Top idioms by usage
+                            _sorted = sorted(_idiom_stats.items(), key=lambda x: -x[1]["total"])
+                            for _ik, _s in _sorted[:10]:
+                                if _s["total"] == 0:
+                                    break
+                                _ta = max(_s["top_agent"].items(), key=lambda x: x[1]) if _s["top_agent"] else ("N/A", 0)
+                                _il.append(f'  * "\"{_idiom_list[_ik]["phrase"]}\"": {_s["total"]} uses, {len(_s["calls"])} calls, CARE={_s["care"]}, SALES={_s["sales"]}, top speaker: {_ta[0]} ({_ta[1]} uses)')
+                            _il.append("")
+                            # Idioms never used
+                            _never = [ _idiom_list[_ik]["phrase"] for _ik, _s in _idiom_stats.items() if _s["total"] == 0 ]
+                            if _never:
+                                _il.append(f"Idioms from the reference list NEVER used in any call ({len(_never)} of {len(_idiom_list)}):")
+                                for _p in _never[:15]:
+                                    _il.append(f'  - "\"{_p}\"": {_idiom_list[[k for k,v in _idiom_list.items() if v["phrase"]==_p][0]]["definition"]}')
+                            idiom_context = "\n".join(_il)
                     except Exception as _ie:
-                        idiom_context = f"Could not load idiom analysis: {_ie}"
+                        idiom_context = f"Could not compute idiom analysis from Supabase: {_ie}"
+
+
 
                     # 3. Combine Wiki + Scores + Coaching + Adverse + Idiom into Gemini Context
                     if not match_res.data:
