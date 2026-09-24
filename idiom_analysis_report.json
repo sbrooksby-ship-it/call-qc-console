@@ -1,0 +1,60 @@
+{
+  "scan_date": "2026-09-24T14:54:53.713482",
+  "transcripts_scanned": 2025,
+  "idioms_in_wiki": 101,
+  "idioms_found": 4,
+  "idioms_not_found": 97,
+  "total_uses": 45,
+  "unique_agents": 346,
+  "top_idioms": [
+    {
+      "phrase": "going forward",
+      "definition": "the next time or on a future occasion",
+      "total_uses": 42,
+      "unique_calls": 36,
+      "care_uses": 20,
+      "sales_uses": 1,
+      "top_agents": {
+        "Carl": 19,
+        "Patrick": 4,
+        "Carlo": 4,
+        "unknown": 3,
+        "Miguel": 3
+      }
+    },
+    {
+      "phrase": "top of the line",
+      "definition": "the best possible version of something; the",
+      "total_uses": 1,
+      "unique_calls": 1,
+      "care_uses": 0,
+      "sales_uses": 1,
+      "top_agents": {
+        "Ron": 1
+      }
+    },
+    {
+      "phrase": "game plan",
+      "definition": "to put a plan in place; to decide how things should",
+      "total_uses": 1,
+      "unique_calls": 1,
+      "care_uses": 0,
+      "sales_uses": 0,
+      "top_agents": {
+        "Paulette Hindman": 1
+      }
+    },
+    {
+      "phrase": "play it by ear",
+      "definition": "to move forward without a specific plan; to figure",
+      "total_uses": 1,
+      "unique_calls": 1,
+      "care_uses": 0,
+      "sales_uses": 0,
+      "top_agents": {
+        "Sergio From Customer Care": 1
+      }
+    }
+  ],
+  "never_used": []
+}
