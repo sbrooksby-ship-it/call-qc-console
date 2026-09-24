@@ -326,7 +326,7 @@ question_tooltips = {
     "CC 4": "Followed the established call flow",
     "CC 5": "Achieved their VFP by the end of the call",
     "COMP 1": "Properly verified the customer's account (N/A for new customers)",
-    "COMP 2": "Collected or verified the customer's email (N/A for new customers)",
+    "COMP 2": "Collected or verified the customer’s email (N/A for new customers)",
     "COMP 3": "Requested the customer to take the customer satisfaction survey after the end of their call",
     "COMP 4": "Did not make any claims about Balance of Nature products treating or preventing any specific disease or condition",
     "COMP 5": "Did the team member properly identify and handle any adverse events, or product complaints that came up in the call?"
@@ -784,12 +784,16 @@ else:
                     # --- LOCAL QUERY EXPANSION (no Gemini call — saves tokens) ---
                     search_query = user_prompt
                     if len(st.session_state.chat_history) > 2:
+                        # Simple local pronoun resolution: grab last assistant answer's key entities
                         recent = st.session_state.chat_history[-2]
                         if recent.get("role") == "assistant" and recent.get("content"):
+                            # Extract likely agent names (Capitalized Word patterns) from last answer
                             entities = re.findall(r'\b[A-Z][a-z]{2,}\b', recent["content"])
+                            # Filter to known agent-like names (skip common words)
                             stopwords = {'The','This','That','With','From','For','About','What','When','Where','Which','Their','There','They','Them','These','Those'}
                             entities = [e for e in entities if e not in stopwords and len(e) > 2]
                             if entities:
+                                # Replace pronouns in user prompt with first entity as heuristic
                                 for pron in ['he', 'she', 'they', 'him', 'her', 'them', 'it']:
                                     search_query = re.sub(r'\b' + pron + r'\b', entities[0], search_query.lower())
                                 search_query = search_query.capitalize()
@@ -853,6 +857,7 @@ else:
                                 for n in nb:
                                     rels = "; ".join(rel_map.get(n["id"], []))
                                     content = (n.get('content') or '').strip()
+                                    # Same excerpt logic as wiki pages — 600 char limit per neighbor
                                     if len(content) > 600:
                                         cut = content[:600]
                                         last_nl = cut.rfind('\n\n')
@@ -865,7 +870,7 @@ else:
                     except Exception as gerr:
                         graph_context = f"Graph expansion failed: {gerr}"
 
-                    # 2. CONNECTOR: Quantitative QA Scores & Coaching (agent-filtered when named)
+                    # 2. CONNECTOR: Quantitative QA Scores & Coaching Summaries from Supabase
                     try:
                         scores_df = load_call_scores()
                         if not scores_df.empty:
@@ -877,6 +882,7 @@ else:
 
                         coach_df = load_coaching_feedback()
                         if not coach_df.empty:
+                            # GAP 3b: filter coaching to agents named in the question
                             q_lower = search_query.lower()
                             try:
                                 agents_known = scores_df['Agent'].dropna().astype(str).unique().tolist() if not scores_df.empty else []
@@ -900,7 +906,32 @@ else:
                     # --- GAP 2: Adverse-event context (free Gem + Sheet pipeline, cached) ---
                     adverse_context = load_adverse_summary()
 
-                    # 3. Combine Wiki + Scores + Coaching + Adverse into Gemini Context
+                    # --- IDIOM ANALYSIS CONTEXT (from actual call data, not just wiki list) ---
+                    try:
+                        import os as _os
+                        _idiom_report_path = os.path.join(os.path.dirname(__file__) if '__file__' in dir() else '.', 'idiom_analysis_report.json')
+                        if _os.path.exists(_idiom_report_path):
+                            with open(_idiom_report_path) as _f:
+                                _idiom_data = json.load(_f)
+                            _idiom_lines = []
+                            if _idiom_data.get('top_idioms'):
+                                _idiom_lines.append("IDIOM USAGE FROM ACTUAL CALL TRANSCRIPTS (2,025 calls scanned):")
+                                _idiom_lines.append(f"Total idiom uses found: {_idiom_data['total_uses']} across {_idiom_data['idioms_found']} of {_idiom_data['idioms_in_wiki']} idioms in the reference list.")
+                                _idiom_lines.append("")
+                                for _item in _idiom_data['top_idioms'][:10]:
+                                    _idiom_lines.append(f"  * \"{_item['phrase']}\": {_item['total_uses']} uses, {_item['unique_calls']} calls, CARE={_item['care_uses']}, SALES={_item['sales_uses']}, top agent: {list(_item['top_agents'].keys())[0] if _item['top_agents'] else 'N/A'} ({list(_item['top_agents'].values())[0] if _item['top_agents'] else 0} uses)")
+                            if _idiom_data.get('never_used'):
+                                _idiom_lines.append(f"")
+                                _idiom_lines.append(f"Idioms from the reference list NEVER used in any call ({len(_idiom_data['never_used'])} of {_idiom_data['idioms_in_wiki']}):")
+                                for _item in _idiom_data['never_used'][:15]:
+                                    _idiom_lines.append(f"  - \"{_item['phrase']}\": {_item['definition']}")
+                            idiom_context = "\n".join(_idiom_lines)
+                        else:
+                            idiom_context = "Idiom analysis report not yet generated. Run the ingestion pipeline first."
+                    except Exception as _ie:
+                        idiom_context = f"Could not load idiom analysis: {_ie}"
+
+                    # 3. Combine Wiki + Scores + Coaching + Adverse + Idiom into Gemini Context
                     if not match_res.data:
                         wiki_context_str = "No specific Wiki pages matched the vector search query."
                     else:
@@ -908,7 +939,10 @@ else:
                         for row in match_res.data:
                             content = (row.get('content') or '').strip()
                             title = row.get('title', 'Untitled')
+                            # Send only first 800 chars of each wiki page — enough for SOP reference
+                            # Full page is available if needed; this prevents burning tokens on long pages
                             if len(content) > 800:
+                                # Try to break at a paragraph boundary
                                 cut = content[:800]
                                 last_nl = cut.rfind('\n\n')
                                 if last_nl > 400:
@@ -936,6 +970,9 @@ else:
                     ADVERSE / SAFETY EVENTS (N-checked, free pipeline):
                     {adverse_context}
 
+                    CALL TRANSCRIPT IDIOM ANALYSIS (actual usage from scanned calls, not the reference list):
+                    {idiom_context}
+
                     {'SPECIFIC CALL DRILL-DOWN (exact match, trust these numbers first):' + chr(10) + drill_context if drill_context else ""}
 
                     MANAGER'S QUESTION:
@@ -957,9 +994,11 @@ else:
                     """
 
                     # --- TOKEN BUDGET GUARD ---
+                    # Free tier: 250K input tokens/day. Track usage in session state.
                     if "gemini_tokens_used" not in st.session_state:
                         st.session_state.gemini_tokens_used = 0
-                    DAILY_BUDGET = 240000
+                    DAILY_BUDGET = 240000  # 10K buffer under 250K cap
+                    # Estimate input tokens for this call (rough: chars/4 ≈ tokens)
                     prompt_chars = len(full_prompt)
                     est_tokens = prompt_chars // 4
                     budget_exceeded = False
@@ -976,7 +1015,7 @@ else:
                         for attempt in range(max_retries):
                             try:
                                 response = model.generate_content(full_prompt, stream=True)
-                                break
+                                break  # Success
                             except Exception as e:
                                 err_str = str(e).lower()
                                 if "429" in str(e) or "quota" in err_str or "rate limit" in err_str or "resource_exhausted" in err_str:
@@ -989,9 +1028,11 @@ else:
                                     else:
                                         raise Exception(f"Gemini quota exceeded after {max_retries} retries. Error: {e}")
                                 else:
-                                    raise
+                                    raise  # Not a quota error — re-raise immediately
+
                         if response is None:
                             raise Exception("Gemini call failed after retries")
+
                         st.session_state.gemini_tokens_used += est_tokens
                         loader_placeholder.empty()
                         full_response = st.write_stream(c.text for c in response)
@@ -1028,7 +1069,7 @@ else:
                         # Generate vector embedding for 768-dim RAG search using a safe token sample
                         embedding = None
                         try:
-                            embed_sample = full_pdf_text[:3500]
+                            embed_sample = full_pdf_text[:3500]  # Safe token length window
                             for attempt in range(3):
                                 try:
                                     embedding = genai.embed_content(
@@ -1158,7 +1199,7 @@ else:
                                     try:
                                         embedding = genai.embed_content(
                                             model="models/gemini-embedding-001",
-                                            content=combined_content[:3500],
+                                            content=combined_content[:3500],  # Trim for embedding — full content stored in DB
                                             output_dimensionality=768
                                         )["embedding"]
                                         break
@@ -1169,7 +1210,7 @@ else:
                                                 continue
                                         raise
                             except Exception:
-                                embedding = None
+                                embedding = None  # Skip embedding on failure, still save page text
 
                             upsert_res = supabase.table("wiki_pages").upsert({
                                 "title": title,
