@@ -530,12 +530,12 @@ if selected_tab == "📊 Performance Dashboard":
                 filtered_df = filtered_df[(filtered_df['Clean_Date'].dt.date >= start_date) & (filtered_df['Clean_Date'].dt.date <= end_date)]
                 filtered_call_df = filtered_call_df[(filtered_call_df['Clean_Date'].dt.date >= start_date) & (filtered_call_df['Clean_Date'].dt.date <= end_date)]
 
-                # Dynamic calculation of previous period range based on selected date range duration
-                days_diff = (end_date - start_date).days
-                prev_end = start_date - pd.Timedelta(days=1)
-                prev_start = start_date - pd.Timedelta(days=1 + days_diff)
-                prev_end_date = prev_end.date() if isinstance(prev_end, pd.Timestamp) else prev_end
-                prev_start_date = prev_start.date() if isinstance(prev_start, pd.Timestamp) else prev_start
+                # Shift exactly 7 days back from the selected dates
+                prev_start = pd.to_datetime(start_date) - pd.Timedelta(days=7)
+                prev_end = pd.to_datetime(end_date) - pd.Timedelta(days=7)
+                
+                prev_start_date = prev_start.date()
+                prev_end_date = prev_end.date()
                 
                 prev_filtered_df = df[(df['Clean_Date'].dt.date >= prev_start_date) & (df['Clean_Date'].dt.date <= prev_end_date)].copy()
 
