@@ -350,7 +350,7 @@ def get_section_name(category):
         if cat_upper.startswith(prefix): return section
     return "Other"
 
-def generate_section_summary(data_df):
+def generate_section_summary(data_df, prev_data_df=None):
     if data_df.empty: return pd.DataFrame()
     call_section_df = data_df.groupby(['Unique_Row_ID', 'Section'])['Score'].sum().reset_index()
     section_summary = call_section_df.groupby('Section')['Score'].mean().reset_index()
@@ -359,9 +359,24 @@ def generate_section_summary(data_df):
     section_summary['Avg_Percentage'] = (section_summary['Avg_Score'] / section_summary['Max_Display']) * 100
     section_summary['Score (Raw)'] = section_summary['Avg_Score'].round(1).astype(str) + " / " + section_summary['Max_Display'].astype(str)
     section_summary['Percentage'] = section_summary['Avg_Percentage'].round(1).astype(str) + "%"
+    
+    cols_to_return = ['Score (Raw)', 'Percentage']
+
+    if prev_data_df is not None:
+        if not prev_data_df.empty:
+            p_call_sec = prev_data_df.groupby(['Unique_Row_ID', 'Section'])['Score'].sum().reset_index()
+            p_sum = p_call_sec.groupby('Section')['Score'].mean().reset_index()
+            p_sum['Max_Display'] = p_sum['Section'].map(SECTION_MAX_SCORES).fillna(10).astype(int)
+            p_sum['Prev. Period'] = ((p_sum['Score'] / p_sum['Max_Display']) * 100).round(1).astype(str) + "%"
+            section_summary = section_summary.merge(p_sum[['Section', 'Prev. Period']], on='Section', how='left')
+            section_summary['Prev. Period'] = section_summary['Prev. Period'].fillna("N/A")
+        else:
+            section_summary['Prev. Period'] = "N/A"
+        cols_to_return.append('Prev. Period')
+
     section_order = ["Beginning", "ARC & Trust", "Ownership & Responsibility & Effort", "Personalization & Education", "Quality Communication", "Closing", "Call Control", "Compliance"]
     section_summary['Section'] = pd.Categorical(section_summary['Section'], categories=section_order, ordered=True)
-    return section_summary.sort_values('Section').set_index('Section')[['Score (Raw)', 'Percentage']]
+    return section_summary.sort_values('Section').set_index('Section')[cols_to_return]
 
 def create_section_bar_chart(summary_df, threshold):
     if summary_df.empty: return None
@@ -509,10 +524,20 @@ if selected_tab == "📊 Performance Dashboard":
 
             filtered_df = df.copy()
             filtered_call_df = call_df.copy()
+            prev_filtered_df = None
 
             if start_date and end_date:
                 filtered_df = filtered_df[(filtered_df['Clean_Date'].dt.date >= start_date) & (filtered_df['Clean_Date'].dt.date <= end_date)]
                 filtered_call_df = filtered_call_df[(filtered_call_df['Clean_Date'].dt.date >= start_date) & (filtered_call_df['Clean_Date'].dt.date <= end_date)]
+
+                # Dynamic calculation of previous period range based on selected date range duration
+                days_diff = (end_date - start_date).days
+                prev_end = start_date - pd.Timedelta(days=1)
+                prev_start = start_date - pd.Timedelta(days=1 + days_diff)
+                prev_end_date = prev_end.date() if isinstance(prev_end, pd.Timestamp) else prev_end
+                prev_start_date = prev_start.date() if isinstance(prev_start, pd.Timestamp) else prev_start
+                
+                prev_filtered_df = df[(df['Clean_Date'].dt.date >= prev_start_date) & (df['Clean_Date'].dt.date <= prev_end_date)].copy()
 
             filtered_df_2 = pd.DataFrame()
             if compare_mode and start_date_2 and end_date_2:
@@ -521,14 +546,17 @@ if selected_tab == "📊 Performance Dashboard":
             if sel_agent == "Sales":
                 filtered_df = filtered_df[filtered_df['Clean_Call_Type'] == 'Sales']
                 filtered_call_df = filtered_call_df[filtered_call_df['Clean_Call_Type'] == 'Sales']
+                if prev_filtered_df is not None and not prev_filtered_df.empty: prev_filtered_df = prev_filtered_df[prev_filtered_df['Clean_Call_Type'] == 'Sales']
                 if compare_mode and not filtered_df_2.empty: filtered_df_2 = filtered_df_2[filtered_df_2['Clean_Call_Type'] == 'Sales']
             elif sel_agent == "Care":
                 filtered_df = filtered_df[filtered_df['Clean_Call_Type'] == 'Care']
                 filtered_call_df = filtered_call_df[filtered_call_df['Clean_Call_Type'] == 'Care']
+                if prev_filtered_df is not None and not prev_filtered_df.empty: prev_filtered_df = prev_filtered_df[prev_filtered_df['Clean_Call_Type'] == 'Care']
                 if compare_mode and not filtered_df_2.empty: filtered_df_2 = filtered_df_2[filtered_df_2['Clean_Call_Type'] == 'Care']
             elif sel_agent != "All agents":
                 filtered_df = filtered_df[filtered_df['Agent'] == sel_agent]
                 filtered_call_df = filtered_call_df[filtered_call_df['Agent'] == sel_agent]
+                if prev_filtered_df is not None and not prev_filtered_df.empty: prev_filtered_df = prev_filtered_df[prev_filtered_df['Agent'] == sel_agent]
                 if compare_mode and not filtered_df_2.empty: filtered_df_2 = filtered_df_2[filtered_df_2['Agent'] == sel_agent]
 
                 st.markdown(f"### 👤 Performance Profile: {sel_agent.upper()}")
@@ -537,6 +565,7 @@ if selected_tab == "📊 Performance Dashboard":
                 if agent_call_type_filter != "Combined":
                     filtered_df = filtered_df[filtered_df['Clean_Call_Type'] == agent_call_type_filter]
                     filtered_call_df = filtered_call_df[filtered_call_df['Clean_Call_Type'] == agent_call_type_filter]
+                    if prev_filtered_df is not None and not prev_filtered_df.empty: prev_filtered_df = prev_filtered_df[prev_filtered_df['Clean_Call_Type'] == agent_call_type_filter]
                     if compare_mode and not filtered_df_2.empty: filtered_df_2 = filtered_df_2[filtered_df_2['Clean_Call_Type'] == agent_call_type_filter]
 
             if filtered_call_df.empty:
@@ -624,7 +653,7 @@ if selected_tab == "📊 Performance Dashboard":
                         col_sec1, col_sec2 = st.columns(2)
                         with col_sec1:
                             st.markdown(f"**Period 1 ({start_date.strftime('%m/%d')} to {end_date.strftime('%m/%d')})**")
-                            sum_df1 = generate_section_summary(filtered_df)
+                            sum_df1 = generate_section_summary(filtered_df, prev_filtered_df)
                             if sec_view_comp == "📑 Table": st.dataframe(sum_df1, use_container_width=True, height=350)
                             else: st.plotly_chart(create_section_bar_chart(sum_df1, pass_threshold), use_container_width=True, key="chart_comp_1")
 
@@ -657,7 +686,7 @@ if selected_tab == "📊 Performance Dashboard":
                             col_sec_title, col_sec_toggle = st.columns([1, 1])
                             with col_sec_title: st.markdown("**📑 SECTION PERFORMANCE**")
                             with col_sec_toggle: sec_view_std = st.radio("Display:", ["📊 Chart", "📑 Table"], horizontal=True, label_visibility="collapsed")
-                            summary_df = generate_section_summary(filtered_df)
+                            summary_df = generate_section_summary(filtered_df, prev_filtered_df)
                             if sec_view_std == "📑 Table": st.dataframe(summary_df, use_container_width=True, height=330)
                             else: st.plotly_chart(create_section_bar_chart(summary_df, pass_threshold), use_container_width=True)
 
@@ -784,16 +813,12 @@ else:
                     # --- LOCAL QUERY EXPANSION (no Gemini call — saves tokens) ---
                     search_query = user_prompt
                     if len(st.session_state.chat_history) > 2:
-                        # Simple local pronoun resolution: grab last assistant answer's key entities
                         recent = st.session_state.chat_history[-2]
                         if recent.get("role") == "assistant" and recent.get("content"):
-                            # Extract likely agent names (Capitalized Word patterns) from last answer
                             entities = re.findall(r'\b[A-Z][a-z]{2,}\b', recent["content"])
-                            # Filter to known agent-like names (skip common words)
                             stopwords = {'The','This','That','With','From','For','About','What','When','Where','Which','Their','There','They','Them','These','Those'}
                             entities = [e for e in entities if e not in stopwords and len(e) > 2]
                             if entities:
-                                # Replace pronouns in user prompt with first entity as heuristic
                                 for pron in ['he', 'she', 'they', 'him', 'her', 'them', 'it']:
                                     search_query = re.sub(r'\b' + pron + r'\b', entities[0], search_query.lower())
                                 search_query = search_query.capitalize()
@@ -857,7 +882,6 @@ else:
                                 for n in nb:
                                     rels = "; ".join(rel_map.get(n["id"], []))
                                     content = (n.get('content') or '').strip()
-                                    # Same excerpt logic as wiki pages — 600 char limit per neighbor
                                     if len(content) > 600:
                                         cut = content[:600]
                                         last_nl = cut.rfind('\n\n')
@@ -882,7 +906,6 @@ else:
 
                         coach_df = load_coaching_feedback()
                         if not coach_df.empty:
-                            # GAP 3b: filter coaching to agents named in the question
                             q_lower = search_query.lower()
                             try:
                                 agents_known = scores_df['Agent'].dropna().astype(str).unique().tolist() if not scores_df.empty else []
@@ -903,14 +926,12 @@ else:
                         cat_context = f"Could not load score metrics: {err}"
                         coach_context = "Could not load coaching records."
 
-                    # --- GAP 2: Adverse-event context (free Gem + Sheet pipeline, cached) ---
+                    # --- GAP 2: Adverse-event context ---
                     adverse_context = load_adverse_summary()
 
                     # --- IDIOM ANALYSIS: Load idioms from wiki + scan call_transcripts directly ---
-                    # No file dependency -- always reflects what's currently in Supabase
                     idiom_context = ""
                     try:
-                        # Step 1: Get the idiom list from the wiki page
                         _wiki_page = supabase.table("wiki_pages").select("content").match({"id": "a5661f56-9c60-4af4-a903-db7025409b9d"}).execute()
                         _idiom_list = {}
                         if _wiki_page.data:
@@ -925,7 +946,6 @@ else:
                         if not _idiom_list:
                             idiom_context = "Idiom reference list not found in wiki."
                         else:
-                            # Step 2: Load transcripts in batches and scan for idioms
                             _idiom_stats = {}
                             for _ik in _idiom_list:
                                 _idiom_stats[_ik] = {"total": 0, "care": 0, "sales": 0, "calls": set(), "top_agent": {}, "top_count": 0}
@@ -960,14 +980,12 @@ else:
                                 if len(_batch_data) < _batch:
                                     break
 
-                            # Step 3: Build the context string (same format as before)
                             _il = []
                             _il.append(f"IDIOM USAGE FROM ACTUAL CALL TRANSCRIPTS ({_total_rows:,} calls scanned in Supabase):")
                             _found = sum(1 for v in _idiom_stats.values() if v["total"] > 0)
                             _total = sum(v["total"] for v in _idiom_stats.values())
                             _il.append(f"Total idiom uses found: {_total} across {_found} of {len(_idiom_list)} idioms in the reference list.")
                             _il.append("")
-                            # Top idioms by usage
                             _sorted = sorted(_idiom_stats.items(), key=lambda x: -x[1]["total"])
                             for _ik, _s in _sorted[:10]:
                                 if _s["total"] == 0:
@@ -975,7 +993,6 @@ else:
                                 _ta = max(_s["top_agent"].items(), key=lambda x: x[1]) if _s["top_agent"] else ("N/A", 0)
                                 _il.append(f'  * "\"{_idiom_list[_ik]["phrase"]}\"": {_s["total"]} uses, {len(_s["calls"])} calls, CARE={_s["care"]}, SALES={_s["sales"]}, top speaker: {_ta[0]} ({_ta[1]} uses)')
                             _il.append("")
-                            # Idioms never used
                             _never = [ _idiom_list[_ik]["phrase"] for _ik, _s in _idiom_stats.items() if _s["total"] == 0 ]
                             if _never:
                                 _il.append(f"Idioms from the reference list NEVER used in any call ({len(_never)} of {len(_idiom_list)}):")
@@ -985,8 +1002,6 @@ else:
                     except Exception as _ie:
                         idiom_context = f"Could not compute idiom analysis from Supabase: {_ie}"
 
-
-
                     # 3. Combine Wiki + Scores + Coaching + Adverse + Idiom into Gemini Context
                     if not match_res.data:
                         wiki_context_str = "No specific Wiki pages matched the vector search query."
@@ -995,10 +1010,7 @@ else:
                         for row in match_res.data:
                             content = (row.get('content') or '').strip()
                             title = row.get('title', 'Untitled')
-                            # Send only first 800 chars of each wiki page — enough for SOP reference
-                            # Full page is available if needed; this prevents burning tokens on long pages
                             if len(content) > 800:
-                                # Try to break at a paragraph boundary
                                 cut = content[:800]
                                 last_nl = cut.rfind('\n\n')
                                 if last_nl > 400:
@@ -1050,11 +1062,9 @@ else:
                     """
 
                     # --- TOKEN BUDGET GUARD ---
-                    # Free tier: 250K input tokens/day. Track usage in session state.
                     if "gemini_tokens_used" not in st.session_state:
                         st.session_state.gemini_tokens_used = 0
-                    DAILY_BUDGET = 240000  # 10K buffer under 250K cap
-                    # Estimate input tokens for this call (rough: chars/4 ≈ tokens)
+                    DAILY_BUDGET = 240000
                     prompt_chars = len(full_prompt)
                     est_tokens = prompt_chars // 4
                     budget_exceeded = False
@@ -1071,7 +1081,7 @@ else:
                         for attempt in range(max_retries):
                             try:
                                 response = model.generate_content(full_prompt, stream=True)
-                                break  # Success
+                                break
                             except Exception as e:
                                 err_str = str(e).lower()
                                 if "429" in str(e) or "quota" in err_str or "rate limit" in err_str or "resource_exhausted" in err_str:
@@ -1084,7 +1094,7 @@ else:
                                     else:
                                         raise Exception(f"Gemini quota exceeded after {max_retries} retries. Error: {e}")
                                 else:
-                                    raise  # Not a quota error — re-raise immediately
+                                    raise
 
                         if response is None:
                             raise Exception("Gemini call failed after retries")
@@ -1103,9 +1113,6 @@ else:
     # =========================================================================
     elif selected_tab == "🧠 LLM Knowledge Wiki (Compiler)":
 
-        # -------------------------------------------------------------------------
-        # SAFE PDF / DOCUMENT WIKI UPLOADER
-        # -------------------------------------------------------------------------
         with st.expander("📄 Upload PDF / Scoring Guide Directly to Wiki"):
             pdf_file = st.file_uploader("Choose a PDF file:", type=["pdf"])
             doc_title = st.text_input("Document Title in Wiki:", value="QA Scoring Guide & Rubric Rules")
@@ -1122,10 +1129,9 @@ else:
 
                         full_pdf_text = "\n\n".join(pdf_pages)
 
-                        # Generate vector embedding for 768-dim RAG search using a safe token sample
                         embedding = None
                         try:
-                            embed_sample = full_pdf_text[:3500]  # Safe token length window
+                            embed_sample = full_pdf_text[:3500]
                             for attempt in range(3):
                                 try:
                                     embedding = genai.embed_content(
@@ -1143,7 +1149,6 @@ else:
                         except Exception as embed_err:
                             st.warning(f"⚠️ Vector embedding failed ({embed_err}). Saving text directly without embedding.")
 
-                        # Push full PDF text to Supabase wiki_pages
                         supabase = get_supabase_client()
                         record = {
                             "title": doc_title.strip(),
@@ -1178,7 +1183,7 @@ else:
                     supabase = get_supabase_client()
                     model = genai.GenerativeModel('gemini-3.5-flash-lite')
                     total_calls = len(transcripts_list)
-                    chunk_size = 10  # Reduced from 25: each transcript is ~1-2K chars, 25 transcripts = 25-50K input tokens per call
+                    chunk_size = 10
 
                     for i in range(0, total_calls, chunk_size):
                         chunk = transcripts_list[i:i + chunk_size]
@@ -1203,7 +1208,6 @@ else:
                         {chunk_str}
                         """
 
-                        # Token budget check for compiler
                         if "gemini_tokens_used" not in st.session_state:
                             st.session_state.gemini_tokens_used = 0
                         est_compiler_tokens = len(prompt) // 4
@@ -1255,7 +1259,7 @@ else:
                                     try:
                                         embedding = genai.embed_content(
                                             model="models/gemini-embedding-001",
-                                            content=combined_content[:3500],  # Trim for embedding — full content stored in DB
+                                            content=combined_content[:3500],
                                             output_dimensionality=768
                                         )["embedding"]
                                         break
@@ -1266,7 +1270,7 @@ else:
                                                 continue
                                         raise
                             except Exception:
-                                embedding = None  # Skip embedding on failure, still save page text
+                                embedding = None
 
                             upsert_res = supabase.table("wiki_pages").upsert({
                                 "title": title,
