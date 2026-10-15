@@ -1337,10 +1337,10 @@ else:
                         if i + chunk_size < total_calls:
                             time.sleep(4)
 
-                status_text.empty()
-                progress_bar.empty()
-                st.success("✅ Knowledge Wiki Compiled Successfully!")
-                st.balloons()
+                    status_text.empty()
+                    progress_bar.empty()
+                    st.success("✅ Knowledge Wiki Compiled Successfully!")
+                    st.balloons()
 
                 except Exception as e:
                     status_text.empty()
