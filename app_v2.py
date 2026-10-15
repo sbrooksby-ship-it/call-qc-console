@@ -240,6 +240,13 @@ def load_call_scores():
         "category": "Category",
         "score": "Score",
     })
+    
+    # Initialize and clean Jev fields
+    for c in ["jev_prob", "jev_status", "jev_checked_at"]:
+        if c not in df.columns:
+            df[c] = None
+    df["jev_prob"] = pd.to_numeric(df["jev_prob"], errors="coerce")
+    
     return df
 
 @st.cache_data(ttl=300)
@@ -481,8 +488,16 @@ if selected_tab == "📊 Performance Dashboard":
 
             # Filter out partial/corrupted entries (only score groups with multiple questions)
             call_df = call_df[call_df['Question_Count'] > 5].copy()
-
             call_df['Call Percentage'] = (call_df['Total Raw Score'] / 180) * 100
+
+            # 5. Group Jev columns and merge onto the call_df
+            jev_sum = df.groupby("Unique_Row_ID").agg(
+                Jev_Mean=("jev_prob", "mean"),
+                Jev_Min=("jev_prob", "min"),
+                Jev_N=("jev_prob", "count"),
+                Jev_Flags=("jev_status", lambda s: (s == "flag").sum()),
+            )
+            call_df = call_df.merge(jev_sum, on="Unique_Row_ID", how="left")
 
             st.sidebar.header("2. Dashboard Filters")
 
@@ -596,6 +611,14 @@ if selected_tab == "📊 Performance Dashboard":
                 kpi3.metric("HIGHEST CALL", f"{highest_score:.1f}%")
                 kpi4.metric("LOWEST CALL", f"{lowest_score:.1f}%")
                 kpi5.metric(f"PASS RATE (>{pass_threshold}%)", f"{pass_rate:.0f}%", f"{delta_pass:.0f}% vs first half" if delta_pass is not None else None)
+
+                # Overall Jev Metric display
+                if "Jev_Mean" in filtered_call_df.columns and filtered_call_df["Jev_Mean"].notna().any():
+                    avg_jev = filtered_call_df["Jev_Mean"].mean()
+                    total_flags = int(filtered_call_df["Jev_Flags"].fillna(0).sum())
+                    st.info(f"🤖 Jev overall confidence: **{avg_jev*100:.0f}%** across {int(filtered_call_df['Jev_Mean'].notna().sum())} checked calls | 🚩 {total_flags} flagged questions")
+                else:
+                    st.caption("🤖 Jev overall confidence: Pending - no checked calls in this filter yet.")
 
                 st.divider()
 
@@ -712,11 +735,13 @@ if selected_tab == "📊 Performance Dashboard":
 
                         if sel_agent not in ["All agents", "Sales", "Care"]:
                             st.markdown("**INDIVIDUAL CALL BREAKDOWN (PERIOD 1)**")
-                            call_breakdown = filtered_call_df[['Clean_Date', 'Call', 'Clean_Call_Type', 'Total Raw Score', 'Call Percentage']].copy().rename(columns={'Clean_Call_Type': 'Call Type', 'Clean_Date': 'Date'})
-                            call_breakdown['Status'] = call_breakdown['Call Percentage'].apply(lambda x: "✅ Pass" if x >= pass_threshold else "❌ Fail")
-                            call_breakdown['Call Percentage'] = call_breakdown['Call Percentage'].round(1).astype(str) + '%'
-                            call_breakdown = call_breakdown.sort_values(by='Date', ascending=False).set_index('Call')
-                            st.dataframe(call_breakdown, use_container_width=True)
+                            call_breakdown = filtered_call_df[["Clean_Date","Call","Clean_Call_Type","Total Raw Score","Call Percentage","Jev_Mean","Jev_Flags","Jev_N"]].copy().rename(columns={"Clean_Call_Type":"Call Type","Clean_Date":"Date"})
+                            call_breakdown["Status"] = call_breakdown["Call Percentage"].apply(lambda x: "✅ Pass" if x >= pass_threshold else "❌ Fail")
+                            call_breakdown["Jev Confidence"] = call_breakdown["Jev_Mean"].apply(lambda x: f"{x*100:.0f}%" if pd.notna(x) else "Pending")
+                            call_breakdown["Jev Flags"] = call_breakdown.apply(lambda r: f"{int(r['Jev_Flags'])}/{int(r['Jev_N'])}" if pd.notna(r["Jev_Mean"]) else "—", axis=1)
+                            call_breakdown["Call Percentage"] = call_breakdown["Call Percentage"].round(1).astype(str) + "%"
+                            call_breakdown = call_breakdown.sort_values(by="Date", ascending=False).set_index("Call")
+                            st.dataframe(call_breakdown[["Date","Call Type","Total Raw Score","Call Percentage","Status","Jev Confidence","Jev Flags"]], use_container_width=True)
 
                             with st.expander("👁️ Inspect Full Call Transcript & Audio Recording"):
                                 selected_call_name = st.selectbox("Select a call:", options=call_breakdown.index.unique())
@@ -743,6 +768,18 @@ if selected_tab == "📊 Performance Dashboard":
                                     st.markdown("#### 📄 Call Transcript Text")
                                     if matched_t: st.text_area("Raw Transcript Text:", value=matched_t['content'], height=350, disabled=True)
                                     else: st.warning(f"⚠️ No matching transcript text found in Drive containing Call ID `{search_call_id}`.")
+
+                                    st.markdown("#### 🤖 Jev Verification Detail")
+                                    try:
+                                        _call7 = re.findall(r'\d{7}', str(selected_call_name))[0]
+                                        _jev_rows = df[df['Call'].astype(str).str.contains(_call7)][['Category', 'Score', 'jev_prob', 'jev_status']].copy()
+                                        if _jev_rows.empty or _jev_rows['jev_prob'].isna().all():
+                                            st.caption("Jev Pending - Apps Script has not checked this call yet.")
+                                        else:
+                                            _jev_rows['Jev'] = _jev_rows['jev_prob'].apply(lambda x: f"{x*100:.0f}%" if pd.notna(x) else "Pending")
+                                            st.dataframe(_jev_rows[['Category', 'Score', 'Jev', 'jev_status']].rename(columns={'jev_status': 'Jev Status'}), use_container_width=True, height=400)
+                                    except Exception as _je:
+                                        st.caption(f"Could not load Jev detail: {_je}")
 
                         st.download_button(label="📥 Download Summary CSV", data=leaderboard.to_csv().encode('utf-8'), file_name="qc_summary_export.csv", mime="text/csv")
 
@@ -1300,10 +1337,10 @@ else:
                         if i + chunk_size < total_calls:
                             time.sleep(4)
 
-                    status_text.empty()
-                    progress_bar.empty()
-                    st.success("✅ Knowledge Wiki Compiled Successfully!")
-                    st.balloons()
+                status_text.empty()
+                progress_bar.empty()
+                st.success("✅ Knowledge Wiki Compiled Successfully!")
+                st.balloons()
 
                 except Exception as e:
                     status_text.empty()
