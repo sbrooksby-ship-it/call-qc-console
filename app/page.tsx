@@ -1157,7 +1157,18 @@ export default function DashboardPage() {
                     <tbody>
                       {sortedMeterData.map((item) => (
                         <tr key={item.label} className="group">
-                          <th scope="row" className="sticky left-0 z-[1] max-w-56 truncate border-b border-r border-slate-100 bg-white px-4 py-3 text-left font-semibold text-slate-800 group-hover:bg-emerald-50" title={item.label}>{item.label}</th>
+                          <th scope="row" className="sticky left-0 z-[1] max-w-56 truncate border-b border-r border-slate-100 bg-white px-4 py-3 text-left font-semibold text-slate-800 group-hover:bg-emerald-50" title={item.label}>
+                            {agentFilter === "All agents" || agentFilter === "Sales" || agentFilter === "Care" ? (
+                              <button
+                                type="button"
+                                onClick={() => setAgentFilter(item.label)}
+                                className="cursor-pointer text-left transition hover:text-blue-600 hover:underline focus:outline-none focus-visible:rounded-sm focus-visible:ring-2 focus-visible:ring-blue-500"
+                                aria-label={`Show dashboard for ${item.label}`}
+                              >
+                                {item.label}
+                              </button>
+                            ) : item.label}
+                          </th>
                           {meterBank.categories.map((category) => {
                             const score = item.scores[category];
                             return <td key={category} className="border-b border-slate-100 px-1.5 py-1 text-center"><span className={`inline-flex min-w-12 justify-center rounded-sm px-2 py-2 font-semibold tabular-nums ${scoreCellClass(score)}`}>{score == null ? "—" : score.toFixed(1)}</span></td>;
