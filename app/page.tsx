@@ -26,6 +26,8 @@ type ScoreRow = {
   score: number;
   callType: "Sales" | "Care";
   callKey: string;
+  jevProbability: number | null;
+  jevStatus: string;
 };
 
 type CallSummary = {
@@ -36,6 +38,9 @@ type CallSummary = {
   questionCount: number;
   totalScore: number;
   percentage: number;
+  jevProbabilityTotal: number;
+  jevCount: number;
+  jevFlags: number;
 };
 
 type SectionSummary = {
@@ -104,6 +109,7 @@ function normalizeRows(rows: RawScoreRow[]): ScoreRow[] {
       : call.toLowerCase().includes("sales") ? "Sales" : "Care";
     const scoreValue = Number(row.score ?? row.Score);
     const callKey = `${date ?? "UnknownDate"}||${agent.toLowerCase()}||${call.toLowerCase()}`;
+    const jevValue = row.jev_prob == null || text(row.jev_prob) === "" ? null : Number(row.jev_prob);
 
     return {
       date,
@@ -113,6 +119,8 @@ function normalizeRows(rows: RawScoreRow[]): ScoreRow[] {
       score: Number.isFinite(scoreValue) ? scoreValue : 0,
       callType,
       callKey,
+      jevProbability: jevValue != null && Number.isFinite(jevValue) ? jevValue : null,
+      jevStatus: text(row.jev_status).toLowerCase(),
     };
   });
 }
@@ -128,9 +136,17 @@ function summarizeCalls(rows: ScoreRow[]): CallSummary[] {
       questionCount: 0,
       totalScore: 0,
       percentage: 0,
+      jevProbabilityTotal: 0,
+      jevCount: 0,
+      jevFlags: 0,
     };
     current.questionCount += 1;
     current.totalScore += row.score;
+    if (row.jevStatus === "flag") current.jevFlags += 1;
+    if (row.jevProbability != null) {
+      current.jevProbabilityTotal += row.jevProbability;
+      current.jevCount += 1;
+    }
     grouped.set(row.callKey, current);
   }
 
@@ -272,6 +288,23 @@ export default function DashboardPage() {
 
   const calls = useMemo(() => summarizeCalls(filteredRows), [filteredRows]);
   const sections = useMemo(() => summarizeSections(filteredRows), [filteredRows]);
+  const isAgentView = !["All agents", "Sales", "Care"].includes(agentFilter);
+  const coachingPriorities = useMemo(() => {
+    const criteria = new Map<string, { total: number; count: number }>();
+    for (const row of filteredRows) {
+      const current = criteria.get(row.category) ?? { total: 0, count: 0 };
+      current.total += row.score;
+      current.count += 1;
+      criteria.set(row.category, current);
+    }
+
+    return Array.from(criteria, ([category, scores]) => ({
+      category,
+      average: scores.total / scores.count,
+    }))
+      .sort((a, b) => a.average - b.average)
+      .slice(0, 5);
+  }, [filteredRows]);
   const scoreTrend = useMemo(() => {
     const dailyScores = new Map<string, number[]>();
     for (const call of calls) {
@@ -430,7 +463,9 @@ export default function DashboardPage() {
               <div>
                 <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-leaf">Call quality over time</p>
                 <h2 id="score-trend-heading" className="mt-1 font-display text-lg font-bold text-slate-900">Score trend</h2>
-                <p className="mt-1 text-xs text-slate-500">Average call score by day</p>
+                <p className="mt-1 text-xs text-slate-500">
+                  {isAgentView ? `Average call score by day for ${agentFilter}` : "Average call score by day"}
+                </p>
               </div>
               <div className="mt-5 h-[280px] w-full">
                 {scoreTrend.length ? (
@@ -553,6 +588,72 @@ export default function DashboardPage() {
                 </dl>
               </article>
             </section>
+
+            {isAgentView && (
+              <section aria-label="Agent call breakdown and coaching priorities" className="mt-6 grid gap-4 xl:grid-cols-[minmax(0,1.8fr)_minmax(280px,1fr)]">
+                <article className="min-w-0 overflow-hidden rounded-md border border-slate-200 bg-white shadow-[0_2px_8px_rgba(23,61,50,0.04)]">
+                  <div className="border-b border-slate-200 px-5 py-4 sm:px-6">
+                    <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-leaf">Agent detail</p>
+                    <h2 className="mt-1 font-display text-lg font-bold text-slate-900">Individual Call Breakdown</h2>
+                    <p className="mt-1 text-xs text-slate-500">{agentFilter} · {calls.length} calls</p>
+                  </div>
+                  <div className="max-h-[520px] overflow-auto">
+                    {calls.length ? (
+                      <table className="w-full min-w-[900px] border-separate border-spacing-0 text-left text-xs">
+                        <thead className="sticky top-0 z-10 bg-slate-50 text-[10px] font-bold uppercase tracking-[0.08em] text-slate-600">
+                          <tr>
+                            <th scope="col" className="border-b border-slate-200 px-3 py-3">Call ID</th>
+                            <th scope="col" className="border-b border-slate-200 px-3 py-3">Date</th>
+                            <th scope="col" className="border-b border-slate-200 px-3 py-3">Call Type</th>
+                            <th scope="col" className="border-b border-slate-200 px-3 py-3 text-right">Total Raw Score</th>
+                            <th scope="col" className="border-b border-slate-200 px-3 py-3 text-right">Call Percentage</th>
+                            <th scope="col" className="border-b border-slate-200 px-3 py-3">Status</th>
+                            <th scope="col" className="border-b border-slate-200 px-3 py-3">Jev Confidence</th>
+                            <th scope="col" className="border-b border-slate-200 px-3 py-3">Jev Flags</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {[...calls].sort((a, b) => (b.date ?? "").localeCompare(a.date ?? "")).map((call) => (
+                            <tr key={call.callKey} className="hover:bg-slate-50">
+                              <th scope="row" className="border-b border-slate-100 px-3 py-3 text-left font-semibold text-slate-800">{call.call}</th>
+                              <td className="border-b border-slate-100 px-3 py-3 text-slate-600">{call.date ?? "—"}</td>
+                              <td className="border-b border-slate-100 px-3 py-3 text-slate-600">{call.callType}</td>
+                              <td className="border-b border-slate-100 px-3 py-3 text-right tabular-nums text-slate-700">{call.totalScore}</td>
+                              <td className="border-b border-slate-100 px-3 py-3 text-right font-semibold tabular-nums text-slate-800">{call.percentage.toFixed(1)}%</td>
+                              <td className="border-b border-slate-100 px-3 py-3">
+                                <span className={`rounded px-2 py-1 font-semibold ${call.percentage >= passThreshold ? "bg-emerald-100 text-emerald-800" : "bg-rose-100 text-rose-800"}`}>
+                                  {call.percentage >= passThreshold ? "Pass" : "Fail"}
+                                </span>
+                              </td>
+                              <td className="border-b border-slate-100 px-3 py-3 text-slate-600">
+                                {call.jevCount ? `${((call.jevProbabilityTotal / call.jevCount) * 100).toFixed(0)}%` : "Pending"}
+                              </td>
+                              <td className="border-b border-slate-100 px-3 py-3 tabular-nums text-slate-600">
+                                {call.jevCount ? `${call.jevFlags}/${call.jevCount}` : "—"}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    ) : <p className="px-6 py-12 text-center text-sm text-slate-500">No completed calls match this agent and date range.</p>}
+                  </div>
+                </article>
+
+                <article className="rounded-md border border-slate-200 bg-white p-5 shadow-[0_2px_8px_rgba(23,61,50,0.04)] sm:p-6">
+                  <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-rose-700">Coaching focus</p>
+                  <h2 className="mt-1 font-display text-lg font-bold text-slate-900">Coaching Priorities</h2>
+                  <p className="mt-1 text-xs text-slate-500">Five lowest-scoring criteria · {agentFilter}</p>
+                  <div className="mt-5 space-y-2.5">
+                    {coachingPriorities.length ? coachingPriorities.map(({ category, average }) => (
+                      <div key={category} className="rounded border border-rose-200 bg-rose-50 px-3 py-3 text-sm text-rose-900">
+                        <p className="font-bold">{category}</p>
+                        <p className="mt-1 text-xs font-medium">Avg Score: {average.toFixed(2)} / 5.0</p>
+                      </div>
+                    )) : <p className="py-8 text-center text-sm text-slate-500">No criteria scores match this agent and date range.</p>}
+                  </div>
+                </article>
+              </section>
+            )}
 
             <section className="mt-6 overflow-hidden rounded-md border border-slate-200 bg-white shadow-[0_2px_8px_rgba(23,61,50,0.04)]">
               <div className="flex flex-col gap-3 border-b border-slate-200 px-5 py-4 sm:flex-row sm:items-end sm:justify-between sm:px-6">
