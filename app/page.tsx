@@ -1,7 +1,7 @@
 "use client";
 
 import { createClient } from "@supabase/supabase-js";
-import { Activity, ArrowDown, ArrowDownRight, ArrowUp, ArrowUpRight, Flag, RefreshCw, RotateCcw, ShieldCheck, Sparkles } from "lucide-react";
+import { Activity, ArrowDown, ArrowDownRight, ArrowUp, ArrowUpRight, BadgeCheck, Flag, Gauge, Leaf, PhoneCall, RefreshCw, RotateCcw, ShieldCheck, Sparkles, TrendingDown, TrendingUp } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import {
   Bar,
@@ -260,28 +260,79 @@ function MetricCard({
   value,
   note,
   delta,
-  accent,
+  visualKind,
+  visualValues = [],
+  visualValue,
+  threshold,
 }: {
   label: string;
   value: string;
   note: string;
   delta?: number | null;
-  accent: string;
+  visualKind: "bars" | "sparkline" | "range" | "segments";
+  visualValues?: number[];
+  visualValue?: number | null;
+  threshold?: number;
 }) {
   const positive = delta != null && delta >= 0;
+  const values = visualValues.filter(Number.isFinite);
+  const min = values.length ? Math.min(...values) : 0;
+  const range = values.length ? Math.max(...values) - min || 1 : 1;
+  const points = values.map((item, index) => `${values.length < 2 ? 50 : (index / (values.length - 1)) * 100},${30 - ((item - min) / range) * 26}`).join(" ");
+  const clampedValue = Math.max(0, Math.min(100, visualValue ?? 0));
+  const Icon = label === "Calls graded"
+    ? PhoneCall
+    : label === "Average call score"
+      ? Gauge
+      : label === "Highest call"
+        ? TrendingUp
+        : label === "Lowest call"
+          ? TrendingDown
+          : BadgeCheck;
   return (
-    <article className="relative min-w-0 overflow-hidden rounded-md border border-slate-200 bg-white px-5 py-5 shadow-[0_2px_8px_rgba(23,61,50,0.04)]">
-      <span className={`absolute inset-y-0 left-0 w-1 ${accent}`} />
-      <p className="text-xs font-bold uppercase tracking-[0.12em] text-slate-500">{label}</p>
-      <p className="mt-3 font-display text-3xl font-bold tabular-nums text-slate-900">{value}</p>
-      <div className="mt-3 flex min-h-5 items-center gap-1.5 text-xs text-slate-500">
-        {delta != null && (positive
-          ? <ArrowUpRight aria-hidden="true" size={14} className="text-emerald-700" />
-          : <ArrowDownRight aria-hidden="true" size={14} className="text-rose-700" />)}
-        <span className={delta == null ? "" : positive ? "text-emerald-800" : "text-rose-800"}>
-          {delta == null ? note : `${delta >= 0 ? "+" : ""}${delta.toFixed(1)} pts vs first half`}
-        </span>
+    <article className={`relative flex min-w-0 flex-col justify-between gap-5 overflow-hidden rounded-2xl border p-5 backdrop-blur-md transition-colors ${label === "Average call score" ? "border-lime-300/25 bg-gradient-to-b from-lime-300/[0.10] to-white/[0.025] hover:from-lime-300/[0.14]" : "border-white/10 bg-white/[0.04] hover:bg-white/[0.065]"}`}>
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-[13px] font-medium text-emerald-100/70">{label}</p>
+        <Icon aria-hidden="true" size={17} className={label === "Average call score" ? "text-lime-300" : "text-emerald-100/55"} />
       </div>
+      <div>
+        <p className="font-mono text-[34px] font-medium leading-none tracking-[-0.04em] tabular-nums text-white">{value}</p>
+        <div className="mt-3 flex min-h-5 items-center gap-1.5 text-xs text-emerald-100/65">
+          {delta != null && (positive
+            ? <ArrowUpRight aria-hidden="true" size={14} className="text-lime-300" />
+            : <ArrowDownRight aria-hidden="true" size={14} className="text-rose-300" />)}
+          <span className={delta == null ? "" : positive ? "text-lime-200" : "text-rose-200"}>
+            {delta == null ? note : `${delta >= 0 ? "+" : ""}${delta.toFixed(1)} pts vs first half`}
+          </span>
+        </div>
+      </div>
+      {visualKind === "bars" && (
+        <div className="flex h-9 items-end gap-1" aria-hidden="true">
+          {values.map((item, index) => (
+            <span key={index} className={`flex-1 rounded-[3px] ${index === values.length - 1 ? "bg-lime-300" : "bg-white/15"}`} style={{ height: `${30 + ((item - min) / range) * 70}%` }} />
+          ))}
+        </div>
+      )}
+      {visualKind === "sparkline" && values.length > 1 && (
+        <svg viewBox="0 0 100 34" preserveAspectRatio="none" className="h-9 w-full overflow-visible" aria-hidden="true">
+          <polyline points={points} fill="none" stroke="rgb(190 242 100)" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+        </svg>
+      )}
+      {visualKind === "range" && (
+        <div className="relative flex h-9 items-center" aria-hidden="true">
+          <div className="h-1 w-full rounded-full bg-white/10" />
+          <div className={`absolute h-1 rounded-full ${label === "Lowest call" ? "bg-rose-300/55" : "bg-lime-300/55"}`} style={{ width: `${clampedValue}%` }} />
+          {threshold != null && <span className="absolute h-3 w-px bg-white/40" style={{ left: `${threshold}%` }} />}
+          <span className={`absolute size-3 -translate-x-1/2 rounded-full ring-4 ${label === "Lowest call" ? "bg-rose-300 ring-rose-300/20" : "bg-lime-300 ring-lime-300/20"}`} style={{ left: `${clampedValue}%` }} />
+        </div>
+      )}
+      {visualKind === "segments" && (
+        <div className="flex h-9 items-center gap-[3px]" aria-hidden="true">
+          {Array.from({ length: 24 }, (_, index) => (
+            <span key={index} className={`h-5 flex-1 rounded-[2px] ${index < Math.round((clampedValue / 100) * 24) ? "bg-lime-300" : "bg-white/10"}`} />
+          ))}
+        </div>
+      )}
     </article>
   );
 }
@@ -518,6 +569,7 @@ export default function DashboardPage() {
     return Array.from(dailyScores, ([date, scores]) => ({
       date,
       average: scores.reduce((sum, score) => sum + score, 0) / scores.length,
+      calls: scores.length,
     })).sort((a, b) => a.date.localeCompare(b.date));
   }, [calls]);
 
@@ -682,18 +734,23 @@ export default function DashboardPage() {
   }
 
   return (
-    <main className="min-h-screen pb-12">
-      <header className="border-b border-forest/20 bg-forest text-white">
-        <div className="mx-auto flex max-w-[1440px] flex-col gap-5 px-5 py-7 sm:px-8 lg:flex-row lg:items-end lg:justify-between lg:px-10">
+    <main className="min-h-screen bg-[#f4f7f4] pb-12">
+      <header className="relative overflow-hidden border-b border-white/[0.08] bg-[#0d211b] text-white">
+        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_80%_0%,rgba(117,181,69,0.14),transparent_42%)]" aria-hidden="true" />
+        <div className="relative mx-auto flex max-w-[1440px] flex-col gap-5 px-5 py-7 sm:px-8 lg:flex-row lg:items-end lg:justify-between lg:px-10">
           <div>
             <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-[0.2em] text-lime-200">
-              <span className="h-2 w-2 rounded-full bg-lime-400" /> Balance of Nature
+              <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-lime-300 text-[#173d32] shadow-[0_0_24px_-4px_rgba(190,242,100,0.55)]"><Leaf size={17} aria-hidden="true" /></span>
+              <span>Balance of Nature</span>
             </div>
             <h1 className="mt-3 font-display text-3xl font-extrabold tracking-tight sm:text-4xl">Call QC Console</h1>
             <p className="mt-2 text-sm text-emerald-100/75">Quality performance at a glance</p>
           </div>
           <div className="flex flex-wrap items-center justify-end gap-3">
-            <span className="hidden text-xs text-emerald-100/70 sm:inline">{loading ? "Syncing call scores" : `${rows.length.toLocaleString()} score rows loaded`}</span>
+            <span className="hidden items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-3 py-2 text-xs text-emerald-100/70 sm:inline-flex">
+              <span className={`size-1.5 rounded-full ${loading ? "animate-pulse bg-amber-300" : "bg-lime-300"}`} aria-hidden="true" />
+              {loading ? "Syncing call scores" : `${rows.length.toLocaleString()} score rows loaded`}
+            </span>
             <form
               className="flex flex-wrap items-center gap-2"
               onSubmit={(event) => {
@@ -710,12 +767,12 @@ export default function DashboardPage() {
                 onChange={(event) => setCompileSecret(event.target.value)}
                 placeholder="Compile secret"
                 disabled={compilingWiki}
-                className="h-10 w-36 rounded-md border border-white/20 bg-white/10 px-3 text-sm text-white outline-none placeholder:text-emerald-100/60 focus:border-lime-300 focus:ring-2 focus:ring-lime-300/30 disabled:opacity-60 sm:w-40"
+                className="h-10 w-36 rounded-xl border border-white/10 bg-white/[0.05] px-3 text-sm text-white outline-none placeholder:text-emerald-100/60 transition focus:border-lime-300/50 focus:bg-white/[0.08] focus:ring-2 focus:ring-lime-300/20 disabled:opacity-60 sm:w-40"
               />
               <button
                 type="submit"
                 disabled={compilingWiki || !compileSecret.trim()}
-                className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-lime-300/50 bg-lime-400 px-3 text-sm font-bold text-forest transition hover:bg-lime-300 disabled:cursor-not-allowed disabled:opacity-60"
+                className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-white/15 bg-lime-300 px-3 text-sm font-bold text-[#173d32] shadow-[0_8px_24px_-8px_rgba(190,242,100,0.8)] transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {compilingWiki ? <RefreshCw size={16} className="animate-spin" aria-hidden="true" /> : <Sparkles size={16} aria-hidden="true" />}
                 <span>{compilingWiki ? "Compiling..." : "Compile Knowledge Wiki"}</span>
@@ -727,7 +784,7 @@ export default function DashboardPage() {
               disabled={loading}
               title="Refresh call scores"
               aria-label="Refresh call scores"
-              className="inline-flex h-10 w-10 items-center justify-center rounded-md border border-white/20 bg-white/10 text-white transition hover:bg-white/20 disabled:cursor-wait disabled:opacity-60"
+              className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-white/10 bg-white/[0.05] text-white transition hover:bg-white/[0.12] disabled:cursor-wait disabled:opacity-60"
             >
               <RefreshCw size={17} className={loading ? "animate-spin" : ""} />
             </button>
@@ -757,37 +814,39 @@ export default function DashboardPage() {
         )}
       </header>
 
-      <div className="mx-auto max-w-[1440px] px-5 sm:px-8 lg:px-10">
-        <section aria-label="Dashboard filters" className="-mt-1 grid gap-3 border-b border-slate-200 bg-white/85 px-4 py-4 shadow-sm sm:grid-cols-2 lg:grid-cols-[1fr_1fr_1.4fr_1.2fr_auto] lg:px-5">
-          <label className="text-[11px] font-bold uppercase tracking-[0.12em] text-slate-500">
+      <section className="relative overflow-hidden bg-[#0d211b] pb-8 text-white">
+        <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.035)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.035)_1px,transparent_1px)] bg-[size:48px_48px] [mask-image:linear-gradient(to_bottom,black,transparent_88%)]" aria-hidden="true" />
+        <div className="relative mx-auto max-w-[1440px] px-5 sm:px-8 lg:px-10">
+        <section aria-label="Dashboard filters" className="grid gap-1 rounded-2xl border border-white/10 bg-white/[0.035] p-2 backdrop-blur-md [color-scheme:dark] sm:grid-cols-2 lg:grid-cols-[1fr_1fr_1.4fr_1.2fr_auto] lg:items-center lg:divide-x lg:divide-white/[0.06]">
+          <label className="group flex min-w-0 flex-col gap-1 rounded-xl px-4 py-2.5 text-[11px] font-medium uppercase tracking-[0.1em] text-emerald-100/60 transition-colors hover:bg-white/[0.05]">
             From
-            <input type="date" value={startDate} onChange={(event) => setStartDate(event.target.value)} className="mt-1.5 block h-10 w-full rounded border border-slate-300 bg-white px-3 text-sm font-medium normal-case tracking-normal text-slate-800 outline-none focus:border-forest focus:ring-2 focus:ring-leaf/30" />
+            <input type="date" value={startDate} onChange={(event) => setStartDate(event.target.value)} className="w-full bg-transparent text-sm font-medium normal-case tracking-normal text-white outline-none focus:text-white [&::-webkit-calendar-picker-indicator]:cursor-pointer [&::-webkit-calendar-picker-indicator]:opacity-70" />
           </label>
-          <label className="text-[11px] font-bold uppercase tracking-[0.12em] text-slate-500">
+          <label className="group flex min-w-0 flex-col gap-1 rounded-xl px-4 py-2.5 text-[11px] font-medium uppercase tracking-[0.1em] text-emerald-100/60 transition-colors hover:bg-white/[0.05]">
             To
-            <input type="date" value={endDate} min={startDate || undefined} onChange={(event) => setEndDate(event.target.value)} className="mt-1.5 block h-10 w-full rounded border border-slate-300 bg-white px-3 text-sm font-medium normal-case tracking-normal text-slate-800 outline-none focus:border-forest focus:ring-2 focus:ring-leaf/30" />
+            <input type="date" value={endDate} min={startDate || undefined} onChange={(event) => setEndDate(event.target.value)} className="w-full bg-transparent text-sm font-medium normal-case tracking-normal text-white outline-none focus:text-white [&::-webkit-calendar-picker-indicator]:cursor-pointer [&::-webkit-calendar-picker-indicator]:opacity-70" />
           </label>
-          <label className="text-[11px] font-bold uppercase tracking-[0.12em] text-slate-500">
+          <label className="group flex min-w-0 flex-col gap-1 rounded-xl px-4 py-2.5 text-[11px] font-medium uppercase tracking-[0.1em] text-emerald-100/60 transition-colors hover:bg-white/[0.05]">
             Agent / call type
-            <select value={agentFilter} onChange={(event) => setAgentFilter(event.target.value)} className="mt-1.5 block h-10 w-full rounded border border-slate-300 bg-white px-3 text-sm font-medium normal-case tracking-normal text-slate-800 outline-none focus:border-forest focus:ring-2 focus:ring-leaf/30">
+            <select value={agentFilter} onChange={(event) => setAgentFilter(event.target.value)} className="w-full cursor-pointer bg-transparent text-sm font-medium normal-case tracking-normal text-white outline-none [&>option]:bg-[#132b23]">
               <option>All agents</option>
               <option>Sales</option>
               <option>Care</option>
               {agents.map((agent) => <option key={agent}>{agent}</option>)}
             </select>
           </label>
-          <label className="text-[11px] font-bold uppercase tracking-[0.12em] text-slate-500">
+          <label className="group flex min-w-0 flex-col gap-1 rounded-xl px-4 py-2.5 text-[11px] font-medium uppercase tracking-[0.1em] text-emerald-100/60 transition-colors hover:bg-white/[0.05]">
             Pass threshold
-            <span className="mt-1.5 flex h-10 items-center gap-3 rounded border border-slate-300 bg-white px-3 focus-within:border-forest focus-within:ring-2 focus-within:ring-leaf/30">
-              <input type="range" min="0" max="100" step="1" value={passThreshold} onChange={(event) => setPassThreshold(Number(event.target.value))} aria-label="Pass threshold percentage" className="h-1 min-w-0 flex-1 accent-forest" />
-              <span className="w-11 text-right text-sm font-bold tabular-nums text-slate-800">{passThreshold}%</span>
+            <span className="flex h-7 items-center gap-3">
+              <input type="range" min="0" max="100" step="1" value={passThreshold} onChange={(event) => setPassThreshold(Number(event.target.value))} aria-label="Pass threshold percentage" className="h-1 min-w-0 flex-1 accent-lime-300" />
+              <span className="w-11 text-right font-mono text-sm font-semibold tabular-nums text-lime-300">{passThreshold}%</span>
             </span>
           </label>
           <button
             type="button"
             onClick={resetFilters}
             title="Restore the full date range, all agents, and the default pass threshold"
-            className="inline-flex h-10 items-center justify-center gap-2 self-end rounded border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-700 transition hover:border-slate-400 hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-forest/30"
+            className="inline-flex h-10 items-center justify-center gap-2 self-end rounded-xl px-4 text-sm font-medium text-emerald-100/65 transition hover:bg-white/[0.07] hover:text-white focus:outline-none focus:ring-2 focus:ring-lime-300/40"
           >
             <RotateCcw size={15} aria-hidden="true" />
             <span>Reset Filters</span>
@@ -801,29 +860,41 @@ export default function DashboardPage() {
           </div>
         )}
 
-        <section aria-label="Call performance metrics" className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-5">
-          <MetricCard label="Calls graded" value={loading ? "…" : metrics.count.toLocaleString()} note="Complete calls in this view" accent="bg-forest" />
-          <MetricCard label="Average call score" value={number(metrics.average)} note="Across selected calls" delta={metrics.averageDelta} accent="bg-sky-600" />
-          <MetricCard label="Highest call" value={number(metrics.highest)} note="Top call score" accent="bg-emerald-600" />
-          <MetricCard label="Lowest call" value={number(metrics.lowest)} note="Lowest call score" accent="bg-amber-500" />
-          <MetricCard label={`Pass rate · ${passThreshold}%`} value={number(metrics.passRate)} note="Calls at or above target" delta={metrics.passDelta} accent="bg-rose-500" />
+        <section aria-label="Call performance metrics" className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-5">
+          <MetricCard label="Calls graded" value={loading ? "…" : metrics.count.toLocaleString()} note="Complete calls in this view" visualKind="bars" visualValues={scoreTrend.map((point) => point.calls)} />
+          <MetricCard label="Average call score" value={number(metrics.average)} note="Across selected calls" delta={metrics.averageDelta} visualKind="sparkline" visualValues={scoreTrend.map((point) => point.average)} />
+          <MetricCard label="Highest call" value={number(metrics.highest)} note="Top call score" visualKind="range" visualValue={metrics.highest} threshold={passThreshold} />
+          <MetricCard label="Lowest call" value={number(metrics.lowest)} note="Lowest call score" visualKind="range" visualValue={metrics.lowest} threshold={passThreshold} />
+          <MetricCard label={`Pass rate · ${passThreshold}%`} value={number(metrics.passRate)} note="Calls at or above target" delta={metrics.passDelta} visualKind="segments" visualValue={metrics.passRate} />
         </section>
 
-        <div role="status" className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-2 rounded-md border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-950 shadow-sm">
-          <span className="font-medium">
-            Jev overall confidence:{" "}
-            <strong>{jevMetrics.averageConfidence == null ? "Pending" : `${(jevMetrics.averageConfidence * 100).toFixed(0)}%`}</strong>
-            {jevMetrics.averageConfidence != null && <> across <strong>{jevMetrics.checkedCalls}</strong> checked calls</>}
-            {jevMetrics.averageConfidence == null && " — no checked calls in this filter yet."}
+        <div role="status" className="mt-3 flex flex-wrap items-center gap-x-6 gap-y-3 rounded-2xl border border-white/10 bg-white/[0.035] px-5 py-3.5 text-sm text-emerald-100/70 backdrop-blur-md">
+          <span className="inline-flex items-center gap-2.5">
+            <ShieldCheck size={17} className="text-lime-300" aria-hidden="true" />
+            Jev overall confidence
           </span>
-          <span className="inline-flex items-center gap-1.5 font-medium text-rose-700">
-            <Flag size={15} fill="currentColor" aria-hidden="true" />
-            {jevMetrics.flaggedQuestions} flagged {jevMetrics.flaggedQuestions === 1 ? "question" : "questions"}
+          <span className="flex items-center gap-3">
+            <span className="h-1.5 w-32 overflow-hidden rounded-full bg-white/10 sm:w-40" role="progressbar" aria-valuenow={jevMetrics.averageConfidence == null ? 0 : jevMetrics.averageConfidence * 100} aria-valuemin={0} aria-valuemax={100} aria-label="Jev overall confidence">
+              <span className="block h-full rounded-full bg-lime-300" style={{ width: `${jevMetrics.averageConfidence == null ? 0 : jevMetrics.averageConfidence * 100}%` }} />
+            </span>
+            <strong className="font-mono text-white tabular-nums">{jevMetrics.averageConfidence == null ? "Pending" : `${(jevMetrics.averageConfidence * 100).toFixed(0)}%`}</strong>
+          </span>
+          <span>
+            {jevMetrics.averageConfidence != null
+              ? <>across <strong className="font-mono text-white tabular-nums">{jevMetrics.checkedCalls}</strong> checked calls</>
+              : "— no checked calls in this filter yet."}
+          </span>
+          <span className="inline-flex items-center gap-1.5 rounded-full border border-rose-300/20 bg-rose-400/10 px-3 py-1 text-xs font-medium text-rose-200 sm:ml-auto">
+            <Flag size={13} fill="currentColor" aria-hidden="true" />
+            <strong className="font-mono tabular-nums">{jevMetrics.flaggedQuestions}</strong> flagged {jevMetrics.flaggedQuestions === 1 ? "question" : "questions"}
           </span>
         </div>
+        </div>
+      </section>
 
+      <div className="mx-auto max-w-[1440px] px-5 sm:px-8 lg:px-10">
         {loading ? (
-          <div className="mt-6 flex min-h-64 items-center justify-center rounded-md border border-slate-200 bg-white text-sm font-medium text-slate-500">
+          <div className="mt-6 flex min-h-64 items-center justify-center rounded-2xl border border-slate-200 bg-white text-sm font-medium text-slate-500 shadow-sm">
             <Activity className="mr-2 animate-pulse text-leaf" size={18} /> Loading performance data…
           </div>
         ) : !error && calls.length === 0 ? (
@@ -833,7 +904,7 @@ export default function DashboardPage() {
           </div>
         ) : !error && (
           <>
-            <section aria-labelledby="score-trend-heading" className="mt-6 rounded-md border border-slate-200 bg-white p-5 shadow-[0_2px_8px_rgba(23,61,50,0.04)] sm:p-6">
+            <section aria-labelledby="score-trend-heading" className="mt-6 rounded-2xl border border-slate-200/80 bg-white p-5 shadow-[0_1px_2px_rgba(15,23,42,0.04),0_16px_40px_-20px_rgba(15,23,42,0.16)] sm:p-6">
               <div>
                 <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-leaf">Call quality over time</p>
                 <h2 id="score-trend-heading" className="mt-1 font-display text-lg font-bold text-slate-900">Score trend</h2>
@@ -869,10 +940,10 @@ export default function DashboardPage() {
                         type="monotone"
                         dataKey="average"
                         name="Average call score"
-                        stroke="#2f6b4f"
+                        stroke="#72ad3f"
                         strokeWidth={2.5}
-                        dot={{ fill: "#2f6b4f", r: 3 }}
-                        activeDot={{ r: 5 }}
+                        dot={{ fill: "#72ad3f", r: 3 }}
+                        activeDot={{ r: 5, fill: "#173d32", stroke: "#c6eb76", strokeWidth: 2 }}
                       />
                     </LineChart>
                   </ResponsiveContainer>
@@ -881,7 +952,7 @@ export default function DashboardPage() {
             </section>
 
             <section className="mt-6 grid gap-4 xl:grid-cols-[minmax(0,1.7fr)_minmax(300px,1fr)]">
-              <article className="min-w-0 rounded-md border border-slate-200 bg-white p-5 shadow-[0_2px_8px_rgba(23,61,50,0.04)] sm:p-6">
+              <article className="min-w-0 rounded-2xl border border-slate-200/80 bg-white p-5 shadow-[0_1px_2px_rgba(15,23,42,0.04),0_16px_40px_-20px_rgba(15,23,42,0.16)] sm:p-6">
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div>
                     <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-leaf">Quality breakdown</p>
@@ -893,7 +964,7 @@ export default function DashboardPage() {
                         type="button"
                         aria-pressed={sectionView === "chart"}
                         onClick={() => setSectionView("chart")}
-                        className={`rounded px-2.5 py-1 text-xs font-semibold transition ${sectionView === "chart" ? "bg-forest text-white" : "text-slate-600 hover:bg-slate-100"}`}
+                        className={`rounded-lg px-2.5 py-1 text-xs font-semibold transition ${sectionView === "chart" ? "bg-forest text-white" : "text-slate-600 hover:bg-slate-100"}`}
                       >
                         Chart
                       </button>
@@ -901,7 +972,7 @@ export default function DashboardPage() {
                         type="button"
                         aria-pressed={sectionView === "table"}
                         onClick={() => setSectionView("table")}
-                        className={`rounded px-2.5 py-1 text-xs font-semibold transition ${sectionView === "table" ? "bg-forest text-white" : "text-slate-600 hover:bg-slate-100"}`}
+                        className={`rounded-lg px-2.5 py-1 text-xs font-semibold transition ${sectionView === "table" ? "bg-forest text-white" : "text-slate-600 hover:bg-slate-100"}`}
                       >
                         Table
                       </button>
@@ -919,7 +990,7 @@ export default function DashboardPage() {
                           <YAxis type="category" dataKey="section" width={154} tick={{ fill: "#475569", fontSize: 11 }} axisLine={false} tickLine={false} />
                           <Tooltip formatter={(value) => [`${Number(value).toFixed(1)}%`, "Average score"]} cursor={{ fill: "#f5f7f2" }} />
                           <ReferenceLine x={passThreshold} stroke="#c33c3c" strokeDasharray="5 4" />
-                          <Bar dataKey="percentage" fill="#4b8f56" radius={[0, 3, 3, 0]} maxBarSize={22} label={{ position: "right", formatter: (value: number) => `${value.toFixed(0)}%`, fill: "#475569", fontSize: 10 }} />
+                          <Bar dataKey="percentage" fill="#72ad3f" radius={[0, 8, 8, 0]} maxBarSize={22} label={{ position: "right", formatter: (value: number) => `${value.toFixed(0)}%`, fill: "#475569", fontSize: 10 }} />
                         </BarChart>
                       </ResponsiveContainer>
                     ) : <div className="flex h-full items-center justify-center text-sm text-slate-500">No section scores to chart.</div>}
@@ -966,7 +1037,7 @@ export default function DashboardPage() {
                 )}
               </article>
 
-              <article className="rounded-md border border-slate-200 bg-white p-5 shadow-[0_2px_8px_rgba(23,61,50,0.04)] sm:p-6">
+              <article className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-[0_1px_2px_rgba(15,23,42,0.04),0_16px_40px_-20px_rgba(15,23,42,0.16)] sm:p-6">
                 <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-leaf">At a glance</p>
                 <h2 className="mt-1 font-display text-lg font-bold text-slate-900">Current selection</h2>
                 <dl className="mt-6 divide-y divide-slate-100">
@@ -983,7 +1054,7 @@ export default function DashboardPage() {
               className={`mt-6 grid gap-4 ${isAgentView || agentFilter === "All agents" ? "xl:grid-cols-[minmax(0,1.8fr)_minmax(280px,1fr)]" : "xl:grid-cols-1"}`}
             >
               {isAgentView && (
-                <article className="min-w-0 overflow-hidden rounded-md border border-slate-200 bg-white shadow-[0_2px_8px_rgba(23,61,50,0.04)]">
+                <article className="min-w-0 overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04),0_16px_40px_-20px_rgba(15,23,42,0.16)]">
                   <div className="border-b border-slate-200 px-5 py-4 sm:px-6">
                     <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-leaf">Agent detail</p>
                     <h2 className="mt-1 font-display text-lg font-bold text-slate-900">Individual Call Breakdown</h2>
@@ -1033,7 +1104,7 @@ export default function DashboardPage() {
               )}
 
               {agentFilter === "All agents" && (
-                <article className="min-w-0 overflow-hidden rounded-md border border-slate-200 bg-white shadow-[0_2px_8px_rgba(23,61,50,0.04)]">
+                <article className="min-w-0 overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04),0_16px_40px_-20px_rgba(15,23,42,0.16)]">
                   <div className="border-b border-slate-200 px-5 py-4 sm:px-6">
                     <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-leaf">Team performance</p>
                     <h2 className="mt-1 font-display text-lg font-bold text-slate-900">Agent Leaderboard</h2>
@@ -1077,22 +1148,33 @@ export default function DashboardPage() {
                 </article>
               )}
 
-              <article className="rounded-md border border-slate-200 bg-white p-5 shadow-[0_2px_8px_rgba(23,61,50,0.04)] sm:p-6">
+              <article className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-[0_1px_2px_rgba(15,23,42,0.04),0_16px_40px_-20px_rgba(15,23,42,0.16)] sm:p-6">
                 <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-rose-700">Coaching focus</p>
                 <h2 className="mt-1 font-display text-lg font-bold text-slate-900">Coaching Priorities</h2>
                 <p className="mt-1 text-xs text-slate-500">Five lowest-scoring criteria · {agentFilter}</p>
                 <div className="mt-5 space-y-2.5">
                   {coachingPriorities.length ? coachingPriorities.map(({ category, average }) => (
-                    <div key={category} className="rounded border border-rose-200 bg-rose-50 px-3 py-3 text-sm text-rose-900">
-                      <p className="font-bold">{category}</p>
-                      <p className="mt-1 text-xs font-medium">Avg Score: {average.toFixed(2)} / 5.0</p>
+                    <div key={category} className={`rounded-xl border px-4 py-3 text-sm transition-colors ${average < 1.6 ? "border-rose-200/80 bg-rose-50 text-rose-950" : "border-amber-200/80 bg-amber-50/70 text-amber-950"}`}>
+                      <div className="flex items-center justify-between gap-3">
+                        <p className="font-bold">{category}</p>
+                        <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${average < 1.6 ? "bg-rose-100 text-rose-800" : "bg-amber-100 text-amber-800"}`}>{average < 1.6 ? "Critical" : "At risk"}</span>
+                      </div>
+                      <div className="mt-2 flex items-center gap-3">
+                        <span className="flex flex-1 gap-1" aria-hidden="true">
+                          {Array.from({ length: 5 }, (_, index) => {
+                            const fill = Math.min(1, Math.max(0, average - index));
+                            return <span key={index} className="h-1.5 flex-1 overflow-hidden rounded-full bg-white/80"><span className={`block h-full rounded-full ${average < 1.6 ? "bg-rose-400" : "bg-amber-400"}`} style={{ width: `${fill * 100}%` }} /></span>;
+                          })}
+                        </span>
+                        <p className="shrink-0 text-xs font-medium">Avg Score: <strong className="font-mono tabular-nums">{average.toFixed(2)}</strong> / 5.0</p>
+                      </div>
                     </div>
                   )) : <p className="py-8 text-center text-sm text-slate-500">No criteria scores match the current filters.</p>}
                 </div>
               </article>
             </section>
 
-            <section className="mt-6 overflow-hidden rounded-md border border-slate-200 bg-white shadow-[0_2px_8px_rgba(23,61,50,0.04)]">
+            <section className="mt-6 overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04),0_16px_40px_-20px_rgba(15,23,42,0.16)]">
               <div className="flex flex-col gap-3 border-b border-slate-200 px-5 py-4 sm:flex-row sm:items-end sm:justify-between sm:px-6">
                 <div>
                   <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-leaf">Coaching detail</p>
@@ -1162,7 +1244,7 @@ export default function DashboardPage() {
                               <button
                                 type="button"
                                 onClick={() => setAgentFilter(item.label)}
-                                className="cursor-pointer text-left transition hover:text-blue-600 hover:underline focus:outline-none focus-visible:rounded-sm focus-visible:ring-2 focus-visible:ring-blue-500"
+                                className="cursor-pointer text-left transition hover:text-emerald-700 hover:underline focus:outline-none focus-visible:rounded-sm focus-visible:ring-2 focus-visible:ring-lime-600"
                                 aria-label={`Show dashboard for ${item.label}`}
                               >
                                 {item.label}
