@@ -90,6 +90,44 @@ const SECTION_ORDER = Object.values(SECTION_NAMES);
 const PREFIX_ORDER = ["BG", "ARC", "OE", "PE", "QC", "CL", "CC", "COMP"];
 const DEFAULT_AGENT_FILTER = "All agents";
 const DEFAULT_PASS_THRESHOLD = 80;
+const CRITERION_DESCRIPTIONS: Record<string, string> = {
+  "ARC 1": "Did the team member create genuine ARC with the customer early in the call?",
+  "ARC 2": "Did the team member recognize the customer's emotional state and adjust responses appropriately?",
+  "ARC 3": "Maintained or raised the customer's tone throughout the call",
+  "ARC 4": "Did the team member strengthen trust in Balance of Nature and its products through authentic personal experience, Success Story, or relevant examples?",
+  "BG 1": "What tone did the team member communicate during the first 30 seconds of the interaction?",
+  "BG 2": "Delivered the BON greeting and introduced themselves appropriately.",
+  "OE 1": "Did the team member actively advocate for the customer's best interests by exploring appropriate solutions and alternatives with a level of effort and persistence suited to the customer's situation?",
+  "OE 2": "Did the team member take responsibility for helping the customer rather than deflecting responsibility to others?",
+  "OE 3": "Did the customer hear evidence that effort was being invested and feel that their issue mattered?",
+  "PE 1": "Used information specific to the customer. Referenced customer history, goals, and concerns",
+  "PE 2": "Used purposeful discovery questions to understand the customer's situation, uncover needs, and guide the conversation effectively.",
+  "PE 3": "Identified the customer's success with the product (N/A for new customers)",
+  "PE 4": "Did the team member effectively respond to all opportunities presented in the call to educate and find solutions to their concerns, needs, and goals?",
+  "PE 5": "Did the team member identify and educate the customer on the next appropriate step in their wellness journey and current level of engagement with BON (e.g. WHS, other BON products, Plus Membership, etc.)?",
+  "QC 1": "How natural, conversational, smooth, and courteous was the team member's communication?",
+  "QC 2": "How well did the team member properly acknowledge the customer throughout the call?",
+  "QC 3": "Communicated clearly, concisely, and fluently in a manner that was easy for the customer to understand",
+  "QC 4": "Actively listened without interrupting",
+  "QC 5": "Used positive and empowering language",
+  "QC 6": "Demonstrated confidence and competence",
+  "QC 7": "Assumed the sale and/or success with the product",
+  "QC 8": "Maintained an appropriate tone throughout the interaction",
+  "CL 1": "Summarized actions taken and confirmed issue resolution",
+  "CL 2": "Communicated next steps clearly. The customer knows exactly what happens next.",
+  "CL 3": "Asked if additional assistance was needed",
+  "CL 4": "Ended the call warmly and sincerely. Thanked the customer for calling Balance of Nature.",
+  "CC 1": "Effectively guided the conversation",
+  "CC 2": "Maintained focus on the customer's primary concern",
+  "CC 3": "Managed talk time appropriately and balanced efficiency with customer care",
+  "CC 4": "Followed the established call flow",
+  "CC 5": "Achieved their VFP by the end of the call",
+  "COMP 1": "Properly verified the customer's account (N/A for new customers)",
+  "COMP 2": "Collected or verified the customer's email (N/A for new customers)",
+  "COMP 3": "Requested the customer to take the customer satisfaction survey after the end of their call",
+  "COMP 4": "Did not make any claims about Balance of Nature products treating or preventing any specific disease or condition",
+  "COMP 5": "Did the team member properly identify and handle any adverse events, or product complaints that came up in the call?",
+};
 
 function text(value: unknown): string {
   return value == null ? "" : String(value).trim();
@@ -210,6 +248,13 @@ function scoreCellClass(score: number | undefined): string {
   return "bg-rose-100 text-rose-900";
 }
 
+function criterionDescription(category: string): string {
+  const code = category.match(/^(BG|ARC|OE|PE|QC|CL|CC|COMP)\s*\d+/i)?.[0]
+    .replace(/\s+/g, " ")
+    .toUpperCase();
+  return (code && CRITERION_DESCRIPTIONS[code]) || `Average score for ${category}`;
+}
+
 function MetricCard({
   label,
   value,
@@ -280,6 +325,7 @@ export default function DashboardPage() {
   const [agentFilter, setAgentFilter] = useState(DEFAULT_AGENT_FILTER);
   const [passThreshold, setPassThreshold] = useState(DEFAULT_PASS_THRESHOLD);
   const [callSort, setCallSort] = useState<CallSort>({ column: "date", direction: "desc" });
+  const [meterSort, setMeterSort] = useState<{ column: string; direction: "asc" | "desc" }>({ column: "label", direction: "asc" });
   const [sectionView, setSectionView] = useState<"chart" | "table">("chart");
   const [compileSecret, setCompileSecret] = useState("");
   const [compilingWiki, setCompilingWiki] = useState(false);
@@ -539,6 +585,29 @@ export default function DashboardPage() {
     })).sort((a, b) => a.label.localeCompare(b.label));
     return { categories, data };
   }, [filteredRows, agentFilter]);
+
+  const sortedMeterData = useMemo(() => {
+    const direction = meterSort.direction === "asc" ? 1 : -1;
+    return [...meterBank.data].sort((left, right) => {
+      if (meterSort.column === "label") {
+        return left.label.localeCompare(right.label, undefined, { numeric: true }) * direction;
+      }
+
+      const leftScore = left.scores[meterSort.column];
+      const rightScore = right.scores[meterSort.column];
+      if (leftScore == null && rightScore == null) return left.label.localeCompare(right.label);
+      if (leftScore == null) return 1;
+      if (rightScore == null) return -1;
+      return (leftScore - rightScore) * direction || left.label.localeCompare(right.label);
+    });
+  }, [meterBank.data, meterSort]);
+
+  function changeMeterSort(column: string) {
+    setMeterSort((current) => ({
+      column,
+      direction: current.column === column && current.direction === "asc" ? "desc" : "asc",
+    }));
+  }
 
   const number = (value: number | null) => value == null ? "—" : `${value.toFixed(1)}%`;
 
@@ -1041,12 +1110,52 @@ export default function DashboardPage() {
                   <table className="w-full min-w-max border-separate border-spacing-0 text-left text-xs">
                     <thead className="sticky top-0 z-10 bg-slate-50 text-[10px] font-bold uppercase tracking-[0.1em] text-slate-600">
                       <tr>
-                        <th scope="col" className="sticky left-0 z-20 border-b border-r border-slate-200 bg-slate-50 px-4 py-3">{agentFilter === "All agents" || agentFilter === "Sales" || agentFilter === "Care" ? "Agent" : "Call"}</th>
-                        {meterBank.categories.map((category) => <th scope="col" key={category} title={category} className="max-w-32 border-b border-slate-200 px-3 py-3 text-center">{category}</th>)}
+                        <th
+                          scope="col"
+                          aria-sort={meterSort.column === "label" ? (meterSort.direction === "asc" ? "ascending" : "descending") : "none"}
+                          className="sticky left-0 z-20 border-b border-r border-slate-200 bg-slate-50 px-4 py-3 text-left"
+                        >
+                          <button
+                            type="button"
+                            onClick={() => changeMeterSort("label")}
+                            className="inline-flex items-center gap-1.5 font-bold text-slate-600 transition hover:text-forest"
+                          >
+                            {agentFilter === "All agents" || agentFilter === "Sales" || agentFilter === "Care" ? "Agent" : "Call"}
+                            <span aria-hidden="true" className={meterSort.column === "label" ? "text-forest" : "text-slate-300"}>
+                              {meterSort.column === "label" ? (meterSort.direction === "asc" ? "▲" : "▼") : "↕"}
+                            </span>
+                          </button>
+                        </th>
+                        {meterBank.categories.map((category) => {
+                          const description = criterionDescription(category);
+                          const active = meterSort.column === category;
+                          return (
+                            <th
+                              scope="col"
+                              key={category}
+                              title={description}
+                              aria-sort={active ? (meterSort.direction === "asc" ? "ascending" : "descending") : "none"}
+                              className="max-w-32 border-b border-slate-200 px-3 py-3 text-center"
+                            >
+                              <button
+                                type="button"
+                                title={description}
+                                aria-label={`Sort by ${category}: ${description}`}
+                                onClick={() => changeMeterSort(category)}
+                                className="inline-flex items-center justify-center gap-1.5 font-bold text-slate-600 transition hover:text-forest"
+                              >
+                                {category}
+                                <span aria-hidden="true" className={active ? "text-forest" : "text-slate-300"}>
+                                  {active ? (meterSort.direction === "asc" ? "▲" : "▼") : "↕"}
+                                </span>
+                              </button>
+                            </th>
+                          );
+                        })}
                       </tr>
                     </thead>
                     <tbody>
-                      {meterBank.data.map((item) => (
+                      {sortedMeterData.map((item) => (
                         <tr key={item.label} className="group">
                           <th scope="row" className="sticky left-0 z-[1] max-w-56 truncate border-b border-r border-slate-100 bg-white px-4 py-3 text-left font-semibold text-slate-800 group-hover:bg-emerald-50" title={item.label}>{item.label}</th>
                           {meterBank.categories.map((category) => {
