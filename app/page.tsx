@@ -45,6 +45,8 @@ type CallSummary = {
 
 type SectionSummary = {
   section: string;
+  rawScore: number;
+  maxScore: number;
   percentage: number;
 };
 
@@ -173,9 +175,16 @@ function summarizeSections(rows: ScoreRow[]): SectionSummary[] {
   });
 
   return Array.from(sections, ([section, scores]) => {
-    const average = scores.reduce((sum, score) => sum + score, 0) / scores.length;
-    return { section, percentage: (average / (SECTION_MAX[section] ?? 10)) * 100 };
+    const rawScore = scores.reduce((sum, score) => sum + score, 0) / scores.length;
+    const maxScore = SECTION_MAX[section] ?? 10;
+    return { section, rawScore, maxScore, percentage: (rawScore / maxScore) * 100 };
   }).sort((a, b) => SECTION_ORDER.indexOf(a.section) - SECTION_ORDER.indexOf(b.section));
+}
+
+function shiftDate(date: string, days: number): string {
+  const shifted = new Date(`${date}T00:00:00Z`);
+  shifted.setUTCDate(shifted.getUTCDate() + days);
+  return shifted.toISOString().slice(0, 10);
 }
 
 function scoreCellClass(score: number | undefined): string {
@@ -288,6 +297,21 @@ export default function DashboardPage() {
 
   const calls = useMemo(() => summarizeCalls(filteredRows), [filteredRows]);
   const sections = useMemo(() => summarizeSections(filteredRows), [filteredRows]);
+  const previousSections = useMemo(() => {
+    if (!startDate || !endDate || endDate < startDate) return [];
+    const windowLength = Math.round(
+      (new Date(`${endDate}T00:00:00Z`).getTime() - new Date(`${startDate}T00:00:00Z`).getTime())
+      / 86_400_000,
+    ) + 1;
+    const previousStart = shiftDate(startDate, -windowLength);
+    const previousEnd = shiftDate(startDate, -1);
+    const previousRows = rows.filter((row) => {
+      if (!row.date || row.date < previousStart || row.date > previousEnd) return false;
+      if (agentFilter === "Sales" || agentFilter === "Care") return row.callType === agentFilter;
+      return agentFilter === "All agents" || row.agent === agentFilter;
+    });
+    return summarizeSections(previousRows);
+  }, [rows, startDate, endDate, agentFilter]);
   const isAgentView = !["All agents", "Sales", "Care"].includes(agentFilter);
   const coachingPriorities = useMemo(() => {
     const criteria = new Map<string, { total: number; count: number }>();
@@ -553,23 +577,38 @@ export default function DashboardPage() {
                 ) : (
                   <div className="mt-5 max-h-[330px] overflow-auto">
                     {sections.length ? (
-                      <table className="w-full border-separate border-spacing-0 text-left text-sm">
-                        <caption className="sr-only">Average score percentage by section</caption>
-                        <thead className="sticky top-0 bg-slate-50 text-[10px] font-bold uppercase tracking-[0.1em] text-slate-600">
+                      <table className="w-full min-w-[600px] border-separate border-spacing-0 text-left text-sm">
+                        <caption className="sr-only">Raw score, percentage, and previous-period change by section</caption>
+                        <thead className="sticky top-0 z-10 bg-slate-50 text-[10px] font-bold uppercase tracking-[0.1em] text-slate-600">
                           <tr>
-                            <th scope="col" className="border-b border-slate-200 px-3 py-3">Section</th>
-                            <th scope="col" className="border-b border-slate-200 px-3 py-3 text-right">Average score</th>
-                            <th scope="col" className="border-b border-slate-200 px-3 py-3 text-right">Target</th>
+                            <th scope="col" className="border-b border-slate-200 px-4 py-3">Section</th>
+                            <th scope="col" className="border-b border-slate-200 px-4 py-3 text-right">Raw Score</th>
+                            <th scope="col" className="border-b border-slate-200 px-4 py-3 text-right">Percentage</th>
+                            <th scope="col" className="border-b border-slate-200 px-4 py-3 text-right">Previous Period</th>
                           </tr>
                         </thead>
                         <tbody>
-                          {sections.map((section) => (
-                            <tr key={section.section}>
-                              <th scope="row" className="border-b border-slate-100 px-3 py-3 text-left font-semibold text-slate-800">{section.section}</th>
-                              <td className="border-b border-slate-100 px-3 py-3 text-right font-semibold tabular-nums text-slate-800">{section.percentage.toFixed(1)}%</td>
-                              <td className="border-b border-slate-100 px-3 py-3 text-right tabular-nums text-slate-600">{passThreshold}%</td>
-                            </tr>
-                          ))}
+                          {sections.map((section, index) => {
+                            const previous = previousSections.find((item) => item.section === section.section);
+                            const change = previous ? section.percentage - previous.percentage : null;
+                            return (
+                              <tr key={section.section} className={index % 2 === 0 ? "bg-white" : "bg-slate-50/60"}>
+                                <th scope="row" className="border-b border-slate-100 px-4 py-3 text-left font-semibold text-slate-800">{section.section}</th>
+                                <td className="border-b border-slate-100 px-4 py-3 text-right font-medium tabular-nums text-slate-700">{section.rawScore.toFixed(2)} / {section.maxScore}</td>
+                                <td className="border-b border-slate-100 px-4 py-3 text-right font-semibold tabular-nums text-slate-900">{section.percentage.toFixed(1)}%</td>
+                                <td className="border-b border-slate-100 px-4 py-3 text-right tabular-nums">
+                                  {previous ? (
+                                    <span className="inline-flex flex-col items-end gap-0.5">
+                                      <span className="font-medium text-slate-700">{previous.percentage.toFixed(1)}%</span>
+                                      <span className={`text-xs font-semibold ${change != null && change > 0 ? "text-emerald-700" : change != null && change < 0 ? "text-rose-700" : "text-slate-500"}`}>
+                                        {change != null && change > 0 ? "+" : ""}{change?.toFixed(1)} pp
+                                      </span>
+                                    </span>
+                                  ) : <span className="text-slate-400">No prior data</span>}
+                                </td>
+                              </tr>
+                            );
+                          })}
                         </tbody>
                       </table>
                     ) : <div className="flex h-full min-h-64 items-center justify-center text-sm text-slate-500">No section scores to display.</div>}
