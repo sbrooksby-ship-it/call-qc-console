@@ -784,7 +784,7 @@ export default function DashboardPage() {
                         </thead>
                         <tbody>
                           {[...calls].sort((a, b) => (b.date ?? "").localeCompare(a.date ?? "")).map((call) => (
-                            <tr key={call.callKey} className="hover:bg-slate-50">
+                            <tr key={`${call.call}-${call.date ?? "unknown"}`} className="hover:bg-slate-50">
                               <th scope="row" className="border-b border-slate-100 px-3 py-3 text-left font-semibold text-slate-800">{call.call}</th>
                               <td className="border-b border-slate-100 px-3 py-3 text-slate-600">{call.date ?? "—"}</td>
                               <td className="border-b border-slate-100 px-3 py-3 text-slate-600">{call.callType}</td>
