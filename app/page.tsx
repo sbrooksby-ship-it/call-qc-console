@@ -1,7 +1,7 @@
 "use client";
 
 import { createClient } from "@supabase/supabase-js";
-import { Activity, ArrowDownRight, ArrowUpRight, RefreshCw, ShieldCheck, Sparkles } from "lucide-react";
+import { Activity, ArrowDown, ArrowDownRight, ArrowUp, ArrowUpRight, RefreshCw, ShieldCheck, Sparkles } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import {
   Bar,
@@ -41,6 +41,13 @@ type CallSummary = {
   jevProbabilityTotal: number;
   jevCount: number;
   jevFlags: number;
+};
+
+type CallSortColumn = "call" | "date" | "callType" | "totalScore" | "percentage" | "status";
+
+type CallSort = {
+  column: CallSortColumn;
+  direction: "asc" | "desc";
 };
 
 type SectionSummary = {
@@ -232,6 +239,35 @@ function MetricCard({
   );
 }
 
+function SortableHeader({
+  label,
+  column,
+  sort,
+  onSort,
+  align = "left",
+}: {
+  label: string;
+  column: CallSortColumn;
+  sort: CallSort;
+  onSort: (column: CallSortColumn) => void;
+  align?: "left" | "right";
+}) {
+  const active = sort.column === column;
+  const Indicator = active ? sort.direction === "asc" ? ArrowUp : ArrowDown : ArrowDown;
+  return (
+    <th scope="col" aria-sort={active ? (sort.direction === "asc" ? "ascending" : "descending") : "none"} className={`border-b border-slate-200 px-3 py-3 ${align === "right" ? "text-right" : "text-left"}`}>
+      <button
+        type="button"
+        onClick={() => onSort(column)}
+        className={`inline-flex items-center gap-1.5 font-bold transition hover:text-forest ${align === "right" ? "ml-auto" : ""}`}
+      >
+        {label}
+        <Indicator size={13} aria-hidden="true" className={active ? "text-forest" : "text-slate-300"} />
+      </button>
+    </th>
+  );
+}
+
 export default function DashboardPage() {
   const [rows, setRows] = useState<ScoreRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -241,6 +277,7 @@ export default function DashboardPage() {
   const [endDate, setEndDate] = useState("");
   const [agentFilter, setAgentFilter] = useState("All agents");
   const [passThreshold, setPassThreshold] = useState(80);
+  const [callSort, setCallSort] = useState<CallSort>({ column: "date", direction: "desc" });
   const [sectionView, setSectionView] = useState<"chart" | "table">("chart");
   const [compileSecret, setCompileSecret] = useState("");
   const [compilingWiki, setCompilingWiki] = useState(false);
@@ -341,6 +378,75 @@ export default function DashboardPage() {
       .sort((a, b) => a.average - b.average)
       .slice(0, 5);
   }, [filteredRows]);
+  const sortedIndividualCalls = useMemo(() => {
+    const direction = callSort.direction === "asc" ? 1 : -1;
+    return [...calls].sort((left, right) => {
+      let comparison = 0;
+      switch (callSort.column) {
+        case "call":
+          comparison = left.call.localeCompare(right.call);
+          break;
+        case "date":
+          comparison = (left.date ?? "").localeCompare(right.date ?? "");
+          break;
+        case "callType":
+          comparison = left.callType.localeCompare(right.callType);
+          break;
+        case "totalScore":
+          comparison = left.totalScore - right.totalScore;
+          break;
+        case "percentage":
+          comparison = left.percentage - right.percentage;
+          break;
+        case "status":
+          comparison = Number(left.percentage >= passThreshold) - Number(right.percentage >= passThreshold);
+          break;
+      }
+      return comparison * direction;
+    });
+  }, [calls, callSort, passThreshold]);
+
+  function changeCallSort(column: CallSortColumn) {
+    setCallSort((current) => ({
+      column,
+      direction: current.column === column && current.direction === "asc" ? "desc" : "asc",
+    }));
+  }
+
+  const agentLeaderboard = useMemo(() => {
+    const midpoint = startDate && endDate
+      ? new Date(`${startDate}T00:00:00`).getTime()
+        + (new Date(`${endDate}T00:00:00`).getTime() - new Date(`${startDate}T00:00:00`).getTime()) / 2
+      : null;
+    const agentCalls = new Map<string, { all: number[]; firstHalf: number[]; secondHalf: number[] }>();
+
+    for (const call of calls) {
+      const current = agentCalls.get(call.agent) ?? { all: [], firstHalf: [], secondHalf: [] };
+      current.all.push(call.percentage);
+      if (midpoint != null && call.date) {
+        const callTime = new Date(`${call.date}T00:00:00`).getTime();
+        (callTime <= midpoint ? current.firstHalf : current.secondHalf).push(call.percentage);
+      }
+      agentCalls.set(call.agent, current);
+    }
+
+    const average = (scores: number[]) => scores.length
+      ? scores.reduce((sum, score) => sum + score, 0) / scores.length
+      : null;
+    return Array.from(agentCalls, ([agent, scores]) => {
+      const firstHalfAverage = average(scores.firstHalf);
+      const secondHalfAverage = average(scores.secondHalf);
+      return {
+        agent,
+        callsGraded: scores.all.length,
+        average: average(scores.all),
+        passRate: scores.all.filter((score) => score >= passThreshold).length / scores.all.length * 100,
+        trend: firstHalfAverage != null && secondHalfAverage != null
+          ? secondHalfAverage - firstHalfAverage
+          : null,
+      };
+    }).sort((a, b) => (b.average ?? 0) - (a.average ?? 0) || a.agent.localeCompare(b.agent));
+  }, [calls, endDate, passThreshold, startDate]);
   const scoreTrend = useMemo(() => {
     const dailyScores = new Map<string, number[]>();
     for (const call of calls) {
@@ -761,7 +867,7 @@ export default function DashboardPage() {
 
             <section
               aria-label="Coaching priorities and agent call breakdown"
-              className={`mt-6 grid gap-4 ${isAgentView ? "xl:grid-cols-[minmax(0,1.8fr)_minmax(280px,1fr)]" : "xl:grid-cols-1"}`}
+              className={`mt-6 grid gap-4 ${isAgentView || agentFilter === "All agents" ? "xl:grid-cols-[minmax(0,1.8fr)_minmax(280px,1fr)]" : "xl:grid-cols-1"}`}
             >
               {isAgentView && (
                 <article className="min-w-0 overflow-hidden rounded-md border border-slate-200 bg-white shadow-[0_2px_8px_rgba(23,61,50,0.04)]">
@@ -775,18 +881,18 @@ export default function DashboardPage() {
                       <table className="w-full min-w-[900px] border-separate border-spacing-0 text-left text-xs">
                         <thead className="sticky top-0 z-10 bg-slate-50 text-[10px] font-bold uppercase tracking-[0.08em] text-slate-600">
                           <tr>
-                            <th scope="col" className="border-b border-slate-200 px-3 py-3">Call ID</th>
-                            <th scope="col" className="border-b border-slate-200 px-3 py-3">Date</th>
-                            <th scope="col" className="border-b border-slate-200 px-3 py-3">Call Type</th>
-                            <th scope="col" className="border-b border-slate-200 px-3 py-3 text-right">Total Raw Score</th>
-                            <th scope="col" className="border-b border-slate-200 px-3 py-3 text-right">Call Percentage</th>
-                            <th scope="col" className="border-b border-slate-200 px-3 py-3">Status</th>
+                            <SortableHeader label="Call ID" column="call" sort={callSort} onSort={changeCallSort} />
+                            <SortableHeader label="Date" column="date" sort={callSort} onSort={changeCallSort} />
+                            <SortableHeader label="Call Type" column="callType" sort={callSort} onSort={changeCallSort} />
+                            <SortableHeader label="Total Raw Score" column="totalScore" sort={callSort} onSort={changeCallSort} align="right" />
+                            <SortableHeader label="Call Percentage" column="percentage" sort={callSort} onSort={changeCallSort} align="right" />
+                            <SortableHeader label="Status" column="status" sort={callSort} onSort={changeCallSort} />
                             <th scope="col" className="border-b border-slate-200 px-3 py-3">Jev Confidence</th>
                             <th scope="col" className="border-b border-slate-200 px-3 py-3">Jev Flags</th>
                           </tr>
                         </thead>
                         <tbody>
-                          {[...calls].sort((a, b) => (b.date ?? "").localeCompare(a.date ?? "")).map((call) => (
+                          {sortedIndividualCalls.map((call) => (
                             <tr key={`${call.call}-${call.date ?? "unknown"}`} className="hover:bg-slate-50">
                               <th scope="row" className="border-b border-slate-100 px-3 py-3 text-left font-semibold text-slate-800">{call.call}</th>
                               <td className="border-b border-slate-100 px-3 py-3 text-slate-600">{call.date ?? "—"}</td>
@@ -809,6 +915,51 @@ export default function DashboardPage() {
                         </tbody>
                       </table>
                     ) : <p className="px-6 py-12 text-center text-sm text-slate-500">No completed calls match this agent and date range.</p>}
+                  </div>
+                </article>
+              )}
+
+              {agentFilter === "All agents" && (
+                <article className="min-w-0 overflow-hidden rounded-md border border-slate-200 bg-white shadow-[0_2px_8px_rgba(23,61,50,0.04)]">
+                  <div className="border-b border-slate-200 px-5 py-4 sm:px-6">
+                    <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-leaf">Team performance</p>
+                    <h2 className="mt-1 font-display text-lg font-bold text-slate-900">Agent Leaderboard</h2>
+                    <p className="mt-1 text-xs text-slate-500">Ranked by average call score · {calls.length} calls</p>
+                  </div>
+                  <div className="max-h-[520px] overflow-auto">
+                    {agentLeaderboard.length ? (
+                      <table className="w-full min-w-[680px] border-separate border-spacing-0 text-left text-xs">
+                        <thead className="sticky top-0 z-10 bg-slate-50 text-[10px] font-bold uppercase tracking-[0.08em] text-slate-600">
+                          <tr>
+                            <th scope="col" className="border-b border-slate-200 px-3 py-3">Agent</th>
+                            <th scope="col" className="border-b border-slate-200 px-3 py-3 text-right">Calls Graded</th>
+                            <th scope="col" className="border-b border-slate-200 px-3 py-3 text-right">Avg Call Score</th>
+                            <th scope="col" className="border-b border-slate-200 px-3 py-3 text-right">Pass Rate %</th>
+                            <th scope="col" className="border-b border-slate-200 px-3 py-3 text-right">Trend (vs First Half)</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {agentLeaderboard.map((agent, index) => (
+                            <tr key={agent.agent} className={index % 2 === 0 ? "bg-white" : "bg-slate-50/60"}>
+                              <th scope="row" className="border-b border-slate-100 px-3 py-3 text-left font-semibold text-slate-800">{agent.agent}</th>
+                              <td className="border-b border-slate-100 px-3 py-3 text-right tabular-nums text-slate-600">{agent.callsGraded}</td>
+                              <td className="border-b border-slate-100 px-3 py-3 text-right font-semibold tabular-nums text-slate-800">{agent.average?.toFixed(1) ?? "—"}%</td>
+                              <td className="border-b border-slate-100 px-3 py-3 text-right tabular-nums text-slate-700">{agent.passRate.toFixed(1)}%</td>
+                              <td className="border-b border-slate-100 px-3 py-3 text-right">
+                                {agent.trend == null ? (
+                                  <span className="text-slate-400">Not enough data</span>
+                                ) : (
+                                  <span className={`inline-flex items-center justify-end gap-1 font-semibold tabular-nums ${agent.trend > 0 ? "text-emerald-700" : agent.trend < 0 ? "text-rose-700" : "text-slate-500"}`}>
+                                    {agent.trend > 0 ? <ArrowUpRight size={14} aria-hidden="true" /> : agent.trend < 0 ? <ArrowDownRight size={14} aria-hidden="true" /> : null}
+                                    {agent.trend > 0 ? "+" : ""}{agent.trend.toFixed(1)} pts
+                                  </span>
+                                )}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    ) : <p className="px-6 py-12 text-center text-sm text-slate-500">No agent call scores match this date range.</p>}
                   </div>
                 </article>
               )}
