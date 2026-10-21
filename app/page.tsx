@@ -1,7 +1,7 @@
 "use client";
 
 import { createClient } from "@supabase/supabase-js";
-import { Activity, ArrowDown, ArrowDownRight, ArrowUp, ArrowUpRight, Flag, RefreshCw, ShieldCheck, Sparkles } from "lucide-react";
+import { Activity, ArrowDown, ArrowDownRight, ArrowUp, ArrowUpRight, Flag, RefreshCw, RotateCcw, ShieldCheck, Sparkles } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import {
   Bar,
@@ -88,6 +88,8 @@ const SECTION_MAX: Record<string, number> = {
 
 const SECTION_ORDER = Object.values(SECTION_NAMES);
 const PREFIX_ORDER = ["BG", "ARC", "OE", "PE", "QC", "CL", "CC", "COMP"];
+const DEFAULT_AGENT_FILTER = "All agents";
+const DEFAULT_PASS_THRESHOLD = 80;
 
 function text(value: unknown): string {
   return value == null ? "" : String(value).trim();
@@ -275,8 +277,8 @@ export default function DashboardPage() {
   const [refreshCount, setRefreshCount] = useState(0);
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
-  const [agentFilter, setAgentFilter] = useState("All agents");
-  const [passThreshold, setPassThreshold] = useState(80);
+  const [agentFilter, setAgentFilter] = useState(DEFAULT_AGENT_FILTER);
+  const [passThreshold, setPassThreshold] = useState(DEFAULT_PASS_THRESHOLD);
   const [callSort, setCallSort] = useState<CallSort>({ column: "date", direction: "desc" });
   const [sectionView, setSectionView] = useState<"chart" | "table">("chart");
   const [compileSecret, setCompileSecret] = useState("");
@@ -335,6 +337,17 @@ export default function DashboardPage() {
   }, [refreshCount]);
 
   const agents = useMemo(() => Array.from(new Set(rows.map((row) => row.agent))).sort((a, b) => a.localeCompare(b)), [rows]);
+  const defaultDateRange = useMemo(() => {
+    const dates = rows.map((row) => row.date).filter((date): date is string => date != null).sort();
+    return { start: dates[0] ?? "", end: dates[dates.length - 1] ?? "" };
+  }, [rows]);
+
+  function resetFilters() {
+    setStartDate(defaultDateRange.start);
+    setEndDate(defaultDateRange.end);
+    setAgentFilter(DEFAULT_AGENT_FILTER);
+    setPassThreshold(DEFAULT_PASS_THRESHOLD);
+  }
 
   const filteredRows = useMemo(() => rows.filter((row) => {
     if ((startDate || endDate) && !row.date) return false;
@@ -676,7 +689,7 @@ export default function DashboardPage() {
       </header>
 
       <div className="mx-auto max-w-[1440px] px-5 sm:px-8 lg:px-10">
-        <section aria-label="Dashboard filters" className="-mt-1 grid gap-3 border-b border-slate-200 bg-white/85 px-4 py-4 shadow-sm sm:grid-cols-2 lg:grid-cols-[1fr_1fr_1.4fr_1.2fr] lg:px-5">
+        <section aria-label="Dashboard filters" className="-mt-1 grid gap-3 border-b border-slate-200 bg-white/85 px-4 py-4 shadow-sm sm:grid-cols-2 lg:grid-cols-[1fr_1fr_1.4fr_1.2fr_auto] lg:px-5">
           <label className="text-[11px] font-bold uppercase tracking-[0.12em] text-slate-500">
             From
             <input type="date" value={startDate} onChange={(event) => setStartDate(event.target.value)} className="mt-1.5 block h-10 w-full rounded border border-slate-300 bg-white px-3 text-sm font-medium normal-case tracking-normal text-slate-800 outline-none focus:border-forest focus:ring-2 focus:ring-leaf/30" />
@@ -701,6 +714,15 @@ export default function DashboardPage() {
               <span className="w-11 text-right text-sm font-bold tabular-nums text-slate-800">{passThreshold}%</span>
             </span>
           </label>
+          <button
+            type="button"
+            onClick={resetFilters}
+            title="Restore the full date range, all agents, and the default pass threshold"
+            className="inline-flex h-10 items-center justify-center gap-2 self-end rounded border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-700 transition hover:border-slate-400 hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-forest/30"
+          >
+            <RotateCcw size={15} aria-hidden="true" />
+            <span>Reset Filters</span>
+          </button>
         </section>
 
         {error && (
