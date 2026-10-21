@@ -1,0 +1,33 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+  background: #f5f7f2;
+  color: #17231e;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  min-height: 100vh;
+  margin: 0;
+  background-color: #f5f7f2;
+  background-image: radial-gradient(#dce5d7 0.7px, transparent 0.7px);
+  background-size: 19px 19px;
+  font-family: var(--font-dm-sans), sans-serif;
+}
+
+button,
+input,
+select {
+  font: inherit;
+}
+
+::selection {
+  background: #c6df9e;
+  color: #173d32;
+}
