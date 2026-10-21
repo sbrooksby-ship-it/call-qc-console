@@ -1,7 +1,7 @@
 "use client";
 
 import { createClient } from "@supabase/supabase-js";
-import { Activity, ArrowDown, ArrowDownRight, ArrowUp, ArrowUpRight, RefreshCw, ShieldCheck, Sparkles } from "lucide-react";
+import { Activity, ArrowDown, ArrowDownRight, ArrowUp, ArrowUpRight, Flag, RefreshCw, ShieldCheck, Sparkles } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import {
   Bar,
@@ -492,6 +492,15 @@ export default function DashboardPage() {
     };
   }, [calls, passThreshold, startDate, endDate]);
 
+  const jevMetrics = useMemo(() => {
+    const checkedCalls = calls.filter((call) => call.jevCount > 0);
+    const averageConfidence = checkedCalls.length
+      ? checkedCalls.reduce((sum, call) => sum + call.jevProbabilityTotal / call.jevCount, 0) / checkedCalls.length
+      : null;
+    const flaggedQuestions = calls.reduce((sum, call) => sum + call.jevFlags, 0);
+    return { checkedCalls: checkedCalls.length, averageConfidence, flaggedQuestions };
+  }, [calls]);
+
   const meterBank = useMemo(() => {
     const byCall = !["All agents", "Sales", "Care"].includes(agentFilter);
     const values = new Map<string, Map<string, number[]>>();
@@ -708,6 +717,19 @@ export default function DashboardPage() {
           <MetricCard label="Lowest call" value={number(metrics.lowest)} note="Lowest call score" accent="bg-amber-500" />
           <MetricCard label={`Pass rate · ${passThreshold}%`} value={number(metrics.passRate)} note="Calls at or above target" delta={metrics.passDelta} accent="bg-rose-500" />
         </section>
+
+        <div role="status" className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-2 rounded-md border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-950 shadow-sm">
+          <span className="font-medium">
+            Jev overall confidence:{" "}
+            <strong>{jevMetrics.averageConfidence == null ? "Pending" : `${(jevMetrics.averageConfidence * 100).toFixed(0)}%`}</strong>
+            {jevMetrics.averageConfidence != null && <> across <strong>{jevMetrics.checkedCalls}</strong> checked calls</>}
+            {jevMetrics.averageConfidence == null && " — no checked calls in this filter yet."}
+          </span>
+          <span className="inline-flex items-center gap-1.5 font-medium text-rose-700">
+            <Flag size={15} fill="currentColor" aria-hidden="true" />
+            {jevMetrics.flaggedQuestions} flagged {jevMetrics.flaggedQuestions === 1 ? "question" : "questions"}
+          </span>
+        </div>
 
         {loading ? (
           <div className="mt-6 flex min-h-64 items-center justify-center rounded-md border border-slate-200 bg-white text-sm font-medium text-slate-500">
