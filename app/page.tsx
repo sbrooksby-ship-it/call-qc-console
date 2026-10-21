@@ -148,11 +148,11 @@ function summarizeSections(rows: ScoreRow[]): SectionSummary[] {
   }
 
   const sections = new Map<string, number[]>();
-  for (const callSection of callSections.values()) {
+  callSections.forEach((callSection) => {
     const values = sections.get(callSection.section) ?? [];
     values.push(callSection.score);
     sections.set(callSection.section, values);
-  }
+  });
 
   return Array.from(sections, ([section, scores]) => {
     const average = scores.reduce((sum, score) => sum + score, 0) / scores.length;
