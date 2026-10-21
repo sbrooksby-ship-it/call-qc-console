@@ -73,7 +73,7 @@ export default function ChatWidget() {
   }
 
   return (
-    <div className="fixed bottom-8 right-8 z-50 flex flex-col items-end gap-3">
+    <div className="fixed bottom-10 right-10 z-[9999] flex flex-col items-end gap-3">
       {isOpen && (
         <section
           aria-label="AI Assistant"
@@ -154,9 +154,9 @@ export default function ChatWidget() {
         onClick={() => setIsOpen((open) => !open)}
         aria-label={isOpen ? "Close AI Assistant" : "Open AI Assistant"}
         aria-expanded={isOpen}
-        className="flex h-20 w-20 items-center justify-center rounded-full bg-blue-600 text-white shadow-2xl ring-1 ring-white/30 transition hover:scale-105 hover:bg-blue-700 focus:outline-none focus:ring-4 focus:ring-blue-300"
+        className="flex h-24 w-24 items-center justify-center rounded-full bg-indigo-600 text-white shadow-2xl ring-1 ring-white/30 transition hover:scale-105 hover:bg-indigo-700 focus:outline-none focus:ring-4 focus:ring-indigo-300"
       >
-        {isOpen ? <X size={32} aria-hidden="true" /> : <MessageCircle size={32} aria-hidden="true" />}
+        {isOpen ? <X size={48} aria-hidden="true" /> : <MessageCircle size={48} aria-hidden="true" />}
       </button>
     </div>
   );
