@@ -1,7 +1,7 @@
 "use client";
 
 import { createClient } from "@supabase/supabase-js";
-import { Activity, ArrowDownRight, ArrowUpRight, RefreshCw, ShieldCheck } from "lucide-react";
+import { Activity, ArrowDownRight, ArrowUpRight, RefreshCw, ShieldCheck, Sparkles } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import {
   Bar,
@@ -49,6 +49,13 @@ type SectionSummary = {
   maxScore: number;
   percentage: number;
 };
+
+type WikiCompileEvent =
+  | { type: "status"; message: string }
+  | { type: "total"; total: number }
+  | { type: "progress"; processed: number; total: number }
+  | { type: "complete"; processed: number; total: number }
+  | { type: "error"; message: string };
 
 const SECTION_NAMES: Record<string, string> = {
   BG: "Beginning",
@@ -235,6 +242,11 @@ export default function DashboardPage() {
   const [agentFilter, setAgentFilter] = useState("All agents");
   const [passThreshold, setPassThreshold] = useState(80);
   const [sectionView, setSectionView] = useState<"chart" | "table">("chart");
+  const [compileSecret, setCompileSecret] = useState("");
+  const [compilingWiki, setCompilingWiki] = useState(false);
+  const [compileProgress, setCompileProgress] = useState<{ processed: number; total: number; message: string } | null>(null);
+  const [compileMessage, setCompileMessage] = useState("");
+  const [compileError, setCompileError] = useState("");
 
   useEffect(() => {
     let active = true;
@@ -402,6 +414,76 @@ export default function DashboardPage() {
 
   const number = (value: number | null) => value == null ? "—" : `${value.toFixed(1)}%`;
 
+  async function compileKnowledgeWiki() {
+    setCompilingWiki(true);
+    setCompileProgress({ processed: 0, total: 0, message: "Starting wiki compilation..." });
+    setCompileMessage("");
+    setCompileError("");
+
+    try {
+      const response = await fetch("/api/compile-wiki", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ secret: compileSecret }),
+      });
+      if (!response.ok) {
+        const result = await response.json() as { error?: string };
+        throw new Error(result.error || `Wiki compilation failed (${response.status}).`);
+      }
+      if (!response.body) throw new Error("The server did not return compilation progress.");
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffered = "";
+      let completed = false;
+      const handleEvent = (line: string) => {
+        if (!line.trim()) return;
+        const event = JSON.parse(line) as WikiCompileEvent;
+        if (event.type === "status") {
+          setCompileProgress((current) => ({
+            processed: current?.processed ?? 0,
+            total: current?.total ?? 0,
+            message: event.message,
+          }));
+        } else if (event.type === "total") {
+          setCompileProgress((current) => ({
+            processed: current?.processed ?? 0,
+            total: event.total,
+            message: event.total ? "Preparing embedding batches..." : "No wiki pages found.",
+          }));
+        } else if (event.type === "progress") {
+          setCompileProgress({
+            processed: event.processed,
+            total: event.total,
+            message: `Embedded ${event.processed} of ${event.total} wiki pages.`,
+          });
+        } else if (event.type === "complete") {
+          completed = true;
+          setCompileProgress({ processed: event.processed, total: event.total, message: "Compilation complete." });
+          setCompileMessage(`Knowledge Wiki compiled successfully. Updated embeddings for ${event.processed} ${event.processed === 1 ? "page" : "pages"}.`);
+        } else if (event.type === "error") {
+          throw new Error(event.message);
+        }
+      };
+
+      while (true) {
+        const { done, value } = await reader.read();
+        buffered += decoder.decode(value, { stream: !done });
+        const lines = buffered.split("\n");
+        buffered = lines.pop() ?? "";
+        lines.forEach(handleEvent);
+        if (done) break;
+      }
+      if (buffered.trim()) handleEvent(buffered);
+      if (!completed) throw new Error("The server ended compilation before reporting completion.");
+    } catch (error) {
+      setCompileError(error instanceof Error ? error.message : "Wiki compilation failed.");
+    } finally {
+      setCompilingWiki(false);
+      setCompileSecret("");
+    }
+  }
+
   return (
     <main className="min-h-screen pb-12">
       <header className="border-b border-forest/20 bg-forest text-white">
@@ -413,8 +495,35 @@ export default function DashboardPage() {
             <h1 className="mt-3 font-display text-3xl font-extrabold tracking-tight sm:text-4xl">Call QC Console</h1>
             <p className="mt-2 text-sm text-emerald-100/75">Quality performance at a glance</p>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center justify-end gap-3">
             <span className="hidden text-xs text-emerald-100/70 sm:inline">{loading ? "Syncing call scores" : `${rows.length.toLocaleString()} score rows loaded`}</span>
+            <form
+              className="flex flex-wrap items-center gap-2"
+              onSubmit={(event) => {
+                event.preventDefault();
+                void compileKnowledgeWiki();
+              }}
+            >
+              <label className="sr-only" htmlFor="compile-wiki-secret">Wiki compilation secret</label>
+              <input
+                id="compile-wiki-secret"
+                type="password"
+                autoComplete="off"
+                value={compileSecret}
+                onChange={(event) => setCompileSecret(event.target.value)}
+                placeholder="Compile secret"
+                disabled={compilingWiki}
+                className="h-10 w-36 rounded-md border border-white/20 bg-white/10 px-3 text-sm text-white outline-none placeholder:text-emerald-100/60 focus:border-lime-300 focus:ring-2 focus:ring-lime-300/30 disabled:opacity-60 sm:w-40"
+              />
+              <button
+                type="submit"
+                disabled={compilingWiki || !compileSecret.trim()}
+                className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-lime-300/50 bg-lime-400 px-3 text-sm font-bold text-forest transition hover:bg-lime-300 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {compilingWiki ? <RefreshCw size={16} className="animate-spin" aria-hidden="true" /> : <Sparkles size={16} aria-hidden="true" />}
+                <span>{compilingWiki ? "Compiling..." : "Compile Knowledge Wiki"}</span>
+              </button>
+            </form>
             <button
               type="button"
               onClick={() => setRefreshCount((count) => count + 1)}
@@ -427,6 +536,28 @@ export default function DashboardPage() {
             </button>
           </div>
         </div>
+        {(compilingWiki || compileMessage || compileError) && (
+          <div className="mx-auto max-w-[1440px] px-5 pb-4 sm:px-8 lg:px-10" aria-live="polite">
+            {compilingWiki && compileProgress && (
+              <div className="rounded-md border border-white/15 bg-white/10 px-4 py-3 text-sm text-white">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span>{compileProgress.message}</span>
+                  {compileProgress.total > 0 && <span className="tabular-nums">{Math.round((compileProgress.processed / compileProgress.total) * 100)}%</span>}
+                </div>
+                {compileProgress.total > 0 && (
+                  <progress
+                    className="mt-2 block h-2 w-full overflow-hidden rounded accent-lime-400"
+                    value={compileProgress.processed}
+                    max={compileProgress.total}
+                    aria-label="Wiki compilation progress"
+                  />
+                )}
+              </div>
+            )}
+            {compileMessage && <p role="status" className="rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-900">{compileMessage}</p>}
+            {compileError && <p role="alert" className="rounded-md border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-medium text-rose-900">Could not compile Knowledge Wiki: {compileError}</p>}
+          </div>
+        )}
       </header>
 
       <div className="mx-auto max-w-[1440px] px-5 sm:px-8 lg:px-10">
