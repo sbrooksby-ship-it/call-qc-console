@@ -73,7 +73,7 @@ export default function ChatWidget() {
   }
 
   return (
-    <div className="!fixed !bottom-10 !right-10 !z-[99999] flex flex-col items-end gap-3">
+    <div className="!fixed !top-32 !right-8 !z-[99999] flex flex-col items-end gap-3">
       {isOpen && (
         <section
           aria-label="AI Assistant"
