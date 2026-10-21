@@ -759,8 +759,11 @@ export default function DashboardPage() {
               </article>
             </section>
 
-            {isAgentView && (
-              <section aria-label="Agent call breakdown and coaching priorities" className="mt-6 grid gap-4 xl:grid-cols-[minmax(0,1.8fr)_minmax(280px,1fr)]">
+            <section
+              aria-label="Coaching priorities and agent call breakdown"
+              className={`mt-6 grid gap-4 ${isAgentView ? "xl:grid-cols-[minmax(0,1.8fr)_minmax(280px,1fr)]" : "xl:grid-cols-1"}`}
+            >
+              {isAgentView && (
                 <article className="min-w-0 overflow-hidden rounded-md border border-slate-200 bg-white shadow-[0_2px_8px_rgba(23,61,50,0.04)]">
                   <div className="border-b border-slate-200 px-5 py-4 sm:px-6">
                     <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-leaf">Agent detail</p>
@@ -808,22 +811,22 @@ export default function DashboardPage() {
                     ) : <p className="px-6 py-12 text-center text-sm text-slate-500">No completed calls match this agent and date range.</p>}
                   </div>
                 </article>
+              )}
 
-                <article className="rounded-md border border-slate-200 bg-white p-5 shadow-[0_2px_8px_rgba(23,61,50,0.04)] sm:p-6">
-                  <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-rose-700">Coaching focus</p>
-                  <h2 className="mt-1 font-display text-lg font-bold text-slate-900">Coaching Priorities</h2>
-                  <p className="mt-1 text-xs text-slate-500">Five lowest-scoring criteria · {agentFilter}</p>
-                  <div className="mt-5 space-y-2.5">
-                    {coachingPriorities.length ? coachingPriorities.map(({ category, average }) => (
-                      <div key={category} className="rounded border border-rose-200 bg-rose-50 px-3 py-3 text-sm text-rose-900">
-                        <p className="font-bold">{category}</p>
-                        <p className="mt-1 text-xs font-medium">Avg Score: {average.toFixed(2)} / 5.0</p>
-                      </div>
-                    )) : <p className="py-8 text-center text-sm text-slate-500">No criteria scores match this agent and date range.</p>}
-                  </div>
-                </article>
-              </section>
-            )}
+              <article className="rounded-md border border-slate-200 bg-white p-5 shadow-[0_2px_8px_rgba(23,61,50,0.04)] sm:p-6">
+                <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-rose-700">Coaching focus</p>
+                <h2 className="mt-1 font-display text-lg font-bold text-slate-900">Coaching Priorities</h2>
+                <p className="mt-1 text-xs text-slate-500">Five lowest-scoring criteria · {agentFilter}</p>
+                <div className="mt-5 space-y-2.5">
+                  {coachingPriorities.length ? coachingPriorities.map(({ category, average }) => (
+                    <div key={category} className="rounded border border-rose-200 bg-rose-50 px-3 py-3 text-sm text-rose-900">
+                      <p className="font-bold">{category}</p>
+                      <p className="mt-1 text-xs font-medium">Avg Score: {average.toFixed(2)} / 5.0</p>
+                    </div>
+                  )) : <p className="py-8 text-center text-sm text-slate-500">No criteria scores match the current filters.</p>}
+                </div>
+              </article>
+            </section>
 
             <section className="mt-6 overflow-hidden rounded-md border border-slate-200 bg-white shadow-[0_2px_8px_rgba(23,61,50,0.04)]">
               <div className="flex flex-col gap-3 border-b border-slate-200 px-5 py-4 sm:flex-row sm:items-end sm:justify-between sm:px-6">

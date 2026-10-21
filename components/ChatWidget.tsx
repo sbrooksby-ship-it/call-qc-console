@@ -77,7 +77,7 @@ export default function ChatWidget() {
       {isOpen && (
         <section
           aria-label="AI Assistant"
-          className="flex h-[min(620px,calc(100dvh-7rem))] w-[min(380px,calc(100vw-2.5rem))] flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-2xl"
+          className="flex h-[min(600px,calc(100dvh-7rem))] w-[min(450px,calc(100vw-2rem))] flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-2xl"
         >
           <header className="flex items-center justify-between bg-forest px-4 py-3.5 text-white">
             <div className="flex items-center gap-3">
