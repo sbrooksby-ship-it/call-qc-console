@@ -7,6 +7,8 @@ import {
   Bar,
   BarChart,
   CartesianGrid,
+  Line,
+  LineChart,
   ReferenceLine,
   ResponsiveContainer,
   Tooltip,
@@ -207,6 +209,7 @@ export default function DashboardPage() {
   const [endDate, setEndDate] = useState("");
   const [agentFilter, setAgentFilter] = useState("All agents");
   const [passThreshold, setPassThreshold] = useState(80);
+  const [sectionView, setSectionView] = useState<"chart" | "table">("chart");
 
   useEffect(() => {
     let active = true;
@@ -269,6 +272,20 @@ export default function DashboardPage() {
 
   const calls = useMemo(() => summarizeCalls(filteredRows), [filteredRows]);
   const sections = useMemo(() => summarizeSections(filteredRows), [filteredRows]);
+  const scoreTrend = useMemo(() => {
+    const dailyScores = new Map<string, number[]>();
+    for (const call of calls) {
+      if (!call.date) continue;
+      const scores = dailyScores.get(call.date) ?? [];
+      scores.push(call.percentage);
+      dailyScores.set(call.date, scores);
+    }
+
+    return Array.from(dailyScores, ([date, scores]) => ({
+      date,
+      average: scores.reduce((sum, score) => sum + score, 0) / scores.length,
+    })).sort((a, b) => a.date.localeCompare(b.date));
+  }, [calls]);
 
   const metrics = useMemo(() => {
     const percentages = calls.map((call) => call.percentage);
@@ -409,6 +426,51 @@ export default function DashboardPage() {
           </div>
         ) : !error && (
           <>
+            <section aria-labelledby="score-trend-heading" className="mt-6 rounded-md border border-slate-200 bg-white p-5 shadow-[0_2px_8px_rgba(23,61,50,0.04)] sm:p-6">
+              <div>
+                <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-leaf">Call quality over time</p>
+                <h2 id="score-trend-heading" className="mt-1 font-display text-lg font-bold text-slate-900">Score trend</h2>
+                <p className="mt-1 text-xs text-slate-500">Average call score by day</p>
+              </div>
+              <div className="mt-5 h-[280px] w-full">
+                {scoreTrend.length ? (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={scoreTrend} margin={{ top: 8, right: 16, left: 4, bottom: 4 }}>
+                      <CartesianGrid stroke="#e8ede7" vertical={false} />
+                      <XAxis
+                        dataKey="date"
+                        tickFormatter={(value: string) => new Date(`${value}T00:00:00`).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
+                        tick={{ fill: "#64748b", fontSize: 11 }}
+                        axisLine={false}
+                        tickLine={false}
+                      />
+                      <YAxis
+                        domain={[0, 100]}
+                        tickFormatter={(value: number) => `${value}%`}
+                        tick={{ fill: "#64748b", fontSize: 11 }}
+                        axisLine={false}
+                        tickLine={false}
+                        width={42}
+                      />
+                      <Tooltip
+                        labelFormatter={(value) => new Date(`${value}T00:00:00`).toLocaleDateString()}
+                        formatter={(value) => [`${Number(value).toFixed(1)}%`, "Average call score"]}
+                      />
+                      <Line
+                        type="monotone"
+                        dataKey="average"
+                        name="Average call score"
+                        stroke="#2f6b4f"
+                        strokeWidth={2.5}
+                        dot={{ fill: "#2f6b4f", r: 3 }}
+                        activeDot={{ r: 5 }}
+                      />
+                    </LineChart>
+                  </ResponsiveContainer>
+                ) : <div className="flex h-full items-center justify-center text-sm text-slate-500">No dated call scores to chart.</div>}
+              </div>
+            </section>
+
             <section className="mt-6 grid gap-4 xl:grid-cols-[minmax(0,1.7fr)_minmax(300px,1fr)]">
               <article className="min-w-0 rounded-md border border-slate-200 bg-white p-5 shadow-[0_2px_8px_rgba(23,61,50,0.04)] sm:p-6">
                 <div className="flex flex-wrap items-start justify-between gap-3">
@@ -416,22 +478,68 @@ export default function DashboardPage() {
                     <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-leaf">Quality breakdown</p>
                     <h2 className="mt-1 font-display text-lg font-bold text-slate-900">Section performance</h2>
                   </div>
-                  <span className="rounded-sm bg-emerald-50 px-2 py-1 text-xs font-semibold text-forest">Target {passThreshold}%</span>
+                  <div className="flex items-center gap-3">
+                    <div role="group" aria-label="Section performance view" className="inline-flex rounded border border-slate-300 p-0.5">
+                      <button
+                        type="button"
+                        aria-pressed={sectionView === "chart"}
+                        onClick={() => setSectionView("chart")}
+                        className={`rounded px-2.5 py-1 text-xs font-semibold transition ${sectionView === "chart" ? "bg-forest text-white" : "text-slate-600 hover:bg-slate-100"}`}
+                      >
+                        Chart
+                      </button>
+                      <button
+                        type="button"
+                        aria-pressed={sectionView === "table"}
+                        onClick={() => setSectionView("table")}
+                        className={`rounded px-2.5 py-1 text-xs font-semibold transition ${sectionView === "table" ? "bg-forest text-white" : "text-slate-600 hover:bg-slate-100"}`}
+                      >
+                        Table
+                      </button>
+                    </div>
+                    <span className="rounded-sm bg-emerald-50 px-2 py-1 text-xs font-semibold text-forest">Target {passThreshold}%</span>
+                  </div>
                 </div>
-                <div className="mt-5 h-[330px] w-full" role="img" aria-label="Horizontal bar chart showing average call score percentage by section">
-                  {sections.length ? (
-                    <ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={sections} layout="vertical" margin={{ top: 4, right: 18, left: 5, bottom: 4 }} barCategoryGap={10}>
-                        <CartesianGrid horizontal={false} stroke="#e8ede7" />
-                        <XAxis type="number" domain={[0, 100]} tickFormatter={(value: number) => `${value}%`} tick={{ fill: "#64748b", fontSize: 11 }} axisLine={false} tickLine={false} />
-                        <YAxis type="category" dataKey="section" width={154} tick={{ fill: "#475569", fontSize: 11 }} axisLine={false} tickLine={false} />
-                        <Tooltip formatter={(value) => [`${Number(value).toFixed(1)}%`, "Average score"]} cursor={{ fill: "#f5f7f2" }} />
-                        <ReferenceLine x={passThreshold} stroke="#c33c3c" strokeDasharray="5 4" />
-                        <Bar dataKey="percentage" fill="#4b8f56" radius={[0, 3, 3, 0]} maxBarSize={22} label={{ position: "right", formatter: (value: number) => `${value.toFixed(0)}%`, fill: "#475569", fontSize: 10 }} />
-                      </BarChart>
-                    </ResponsiveContainer>
-                  ) : <div className="flex h-full items-center justify-center text-sm text-slate-500">No section scores to chart.</div>}
-                </div>
+                {sectionView === "chart" ? (
+                  <div className="mt-5 h-[330px] w-full" role="img" aria-label="Horizontal bar chart showing average call score percentage by section">
+                    {sections.length ? (
+                      <ResponsiveContainer width="100%" height="100%">
+                        <BarChart data={sections} layout="vertical" margin={{ top: 4, right: 18, left: 5, bottom: 4 }} barCategoryGap={10}>
+                          <CartesianGrid horizontal={false} stroke="#e8ede7" />
+                          <XAxis type="number" domain={[0, 100]} tickFormatter={(value: number) => `${value}%`} tick={{ fill: "#64748b", fontSize: 11 }} axisLine={false} tickLine={false} />
+                          <YAxis type="category" dataKey="section" width={154} tick={{ fill: "#475569", fontSize: 11 }} axisLine={false} tickLine={false} />
+                          <Tooltip formatter={(value) => [`${Number(value).toFixed(1)}%`, "Average score"]} cursor={{ fill: "#f5f7f2" }} />
+                          <ReferenceLine x={passThreshold} stroke="#c33c3c" strokeDasharray="5 4" />
+                          <Bar dataKey="percentage" fill="#4b8f56" radius={[0, 3, 3, 0]} maxBarSize={22} label={{ position: "right", formatter: (value: number) => `${value.toFixed(0)}%`, fill: "#475569", fontSize: 10 }} />
+                        </BarChart>
+                      </ResponsiveContainer>
+                    ) : <div className="flex h-full items-center justify-center text-sm text-slate-500">No section scores to chart.</div>}
+                  </div>
+                ) : (
+                  <div className="mt-5 max-h-[330px] overflow-auto">
+                    {sections.length ? (
+                      <table className="w-full border-separate border-spacing-0 text-left text-sm">
+                        <caption className="sr-only">Average score percentage by section</caption>
+                        <thead className="sticky top-0 bg-slate-50 text-[10px] font-bold uppercase tracking-[0.1em] text-slate-600">
+                          <tr>
+                            <th scope="col" className="border-b border-slate-200 px-3 py-3">Section</th>
+                            <th scope="col" className="border-b border-slate-200 px-3 py-3 text-right">Average score</th>
+                            <th scope="col" className="border-b border-slate-200 px-3 py-3 text-right">Target</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {sections.map((section) => (
+                            <tr key={section.section}>
+                              <th scope="row" className="border-b border-slate-100 px-3 py-3 text-left font-semibold text-slate-800">{section.section}</th>
+                              <td className="border-b border-slate-100 px-3 py-3 text-right font-semibold tabular-nums text-slate-800">{section.percentage.toFixed(1)}%</td>
+                              <td className="border-b border-slate-100 px-3 py-3 text-right tabular-nums text-slate-600">{passThreshold}%</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    ) : <div className="flex h-full min-h-64 items-center justify-center text-sm text-slate-500">No section scores to display.</div>}
+                  </div>
+                )}
               </article>
 
               <article className="rounded-md border border-slate-200 bg-white p-5 shadow-[0_2px_8px_rgba(23,61,50,0.04)] sm:p-6">
