@@ -4,12 +4,9 @@ import { createClient } from "@supabase/supabase-js";
 import { Activity, ArrowDown, ArrowDownRight, ArrowUp, ArrowUpRight, BadgeCheck, Flag, Gauge, Leaf, PhoneCall, RefreshCw, RotateCcw, ShieldCheck, Sparkles, TrendingDown, TrendingUp } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import {
-  Bar,
-  BarChart,
+  Area,
+  AreaChart,
   CartesianGrid,
-  Cell,
-  Line,
-  LineChart,
   ReferenceLine,
   ResponsiveContainer,
   Tooltip,
@@ -66,9 +63,9 @@ type WikiCompileEvent =
   | { type: "error"; message: string };
 
 const SECTION_NAMES: Record<string, string> = {
-  BG: "Beginning",
-  ARC: "ARC & Trust",
-  OE: "Ownership & Responsibility & Effort",
+  BG: "Building Goodwill",
+  ARC: "Responsibility & Effort",
+  OE: "Opening & Engagement",
   PE: "Personalization & Education",
   QC: "Quality Communication",
   CL: "Closing",
@@ -77,9 +74,9 @@ const SECTION_NAMES: Record<string, string> = {
 };
 
 const SECTION_MAX: Record<string, number> = {
-  Beginning: 10,
-  "ARC & Trust": 20,
-  "Ownership & Effort": 15,
+  "Building Goodwill": 10,
+  "Responsibility & Effort": 20,
+  "Opening & Engagement": 15,
   "Personalization & Education": 25,
   "Quality Communication": 40,
   Closing: 20,
@@ -246,16 +243,12 @@ function summarizeSections(rows: ScoreRow[]): SectionSummary[] {
   }).sort((a, b) => SECTION_ORDER.indexOf(a.section) - SECTION_ORDER.indexOf(b.section));
 }
 
-function shiftDate(date: string, days: number): string {
-  const shifted = new Date(`${date}T00:00:00Z`);
-  shifted.setUTCDate(shifted.getUTCDate() + days);
-  return shifted.toISOString().slice(0, 10);
-}
-
 function scoreCellClass(score: number | undefined): string {
   if (score == null) return "bg-slate-50 text-slate-300";
-  if (score >= 4) return "bg-emerald-100 text-emerald-900";
-  if (score >= 3) return "bg-amber-100 text-amber-900";
+  if (score >= 4) return "bg-emerald-200 text-emerald-900";
+  if (score >= 3.5) return "bg-emerald-100 text-emerald-900";
+  if (score >= 2.5) return "bg-amber-100 text-amber-900";
+  if (score >= 2) return "bg-orange-100 text-orange-900";
   return "bg-rose-100 text-rose-900";
 }
 
@@ -399,7 +392,6 @@ export default function DashboardPage() {
   const [passThreshold, setPassThreshold] = useState(DEFAULT_PASS_THRESHOLD);
   const [callSort, setCallSort] = useState<CallSort>({ column: "date", direction: "desc" });
   const [meterSort, setMeterSort] = useState<{ column: string; direction: "asc" | "desc" }>({ column: "label", direction: "asc" });
-  const [sectionView, setSectionView] = useState<"chart" | "table">("chart");
   const [compileSecret, setCompileSecret] = useState("");
   const [compilingWiki, setCompilingWiki] = useState(false);
   const [compileProgress, setCompileProgress] = useState<{ processed: number; total: number; message: string } | null>(null);
@@ -478,21 +470,6 @@ export default function DashboardPage() {
 
   const calls = useMemo(() => summarizeCalls(filteredRows), [filteredRows]);
   const sections = useMemo(() => summarizeSections(filteredRows), [filteredRows]);
-  const previousSections = useMemo(() => {
-    if (!startDate || !endDate || endDate < startDate) return [];
-    const windowLength = Math.round(
-      (new Date(`${endDate}T00:00:00Z`).getTime() - new Date(`${startDate}T00:00:00Z`).getTime())
-      / 86_400_000,
-    ) + 1;
-    const previousStart = shiftDate(startDate, -windowLength);
-    const previousEnd = shiftDate(startDate, -1);
-    const previousRows = rows.filter((row) => {
-      if (!row.date || row.date < previousStart || row.date > previousEnd) return false;
-      if (agentFilter === "Sales" || agentFilter === "Care") return row.callType === agentFilter;
-      return agentFilter === "All agents" || row.agent === agentFilter;
-    });
-    return summarizeSections(previousRows);
-  }, [rows, startDate, endDate, agentFilter]);
   const isAgentView = !["All agents", "Sales", "Care"].includes(agentFilter);
   const coachingPriorities = useMemo(() => {
     const criteria = new Map<string, { total: number; count: number }>();
@@ -580,16 +557,25 @@ export default function DashboardPage() {
     }).sort((a, b) => (b.average ?? 0) - (a.average ?? 0) || a.agent.localeCompare(b.agent));
   }, [calls, endDate, passThreshold, startDate]);
   const scoreTrend = useMemo(() => {
-    const dailyScores = new Map<string, number[]>();
+    const weeklyScores = new Map<string, number[]>();
     for (const call of calls) {
       if (!call.date) continue;
-      const scores = dailyScores.get(call.date) ?? [];
+      const date = new Date(`${call.date}T00:00:00Z`);
+      const weekday = date.getUTCDay();
+      date.setUTCDate(date.getUTCDate() - ((weekday + 6) % 7));
+      const week = date.toISOString().slice(0, 10);
+      const scores = weeklyScores.get(week) ?? [];
       scores.push(call.percentage);
-      dailyScores.set(call.date, scores);
+      weeklyScores.set(week, scores);
     }
 
-    return Array.from(dailyScores, ([date, scores]) => ({
+    return Array.from(weeklyScores, ([date, scores]) => ({
       date,
+      label: new Date(`${date}T12:00:00Z`).toLocaleDateString("en-US", {
+        month: "short",
+        day: "numeric",
+        timeZone: "UTC",
+      }),
       average: scores.reduce((sum, score) => sum + score, 0) / scores.length,
       calls: scores.length,
     })).sort((a, b) => a.date.localeCompare(b.date));
@@ -637,6 +623,7 @@ export default function DashboardPage() {
   const meterBank = useMemo(() => {
     const byCall = !["All agents", "Sales", "Care"].includes(agentFilter);
     const values = new Map<string, Map<string, number[]>>();
+    const teamTotals = new Map<string, { total: number; count: number }>();
     for (const row of filteredRows) {
       const label = byCall ? `${row.call} (${row.callType})` : row.agent;
       const categories = values.get(label) ?? new Map<string, number[]>();
@@ -644,6 +631,10 @@ export default function DashboardPage() {
       scores.push(row.score);
       categories.set(row.category, scores);
       values.set(label, categories);
+      const total = teamTotals.get(row.category) ?? { total: 0, count: 0 };
+      total.total += row.score;
+      total.count += 1;
+      teamTotals.set(row.category, total);
     }
     const categories = Array.from(new Set(filteredRows.map((row) => row.category))).sort((a, b) => {
       const aPrefix = PREFIX_ORDER.findIndex((prefix) => a.toUpperCase().startsWith(prefix));
@@ -657,7 +648,11 @@ export default function DashboardPage() {
         items.reduce((sum, score) => sum + score, 0) / items.length,
       ])),
     })).sort((a, b) => a.label.localeCompare(b.label));
-    return { categories, data };
+    const teamAverage = Object.fromEntries(categories.map((category) => {
+      const values = teamTotals.get(category);
+      return [category, values ? values.total / values.count : null] as const;
+    }));
+    return { categories, data, teamAverage };
   }, [filteredRows, agentFilter]);
 
   const sortedMeterData = useMemo(() => {
@@ -701,12 +696,6 @@ export default function DashboardPage() {
       });
     }
   }
-  const meterTeamAverage: Record<string, number | null> = Object.fromEntries(meterBank.categories.map((category) => {
-    const scores = meterBank.data
-      .map((item) => item.scores[category])
-      .filter((score): score is number => score != null);
-    return [category, scores.length ? scores.reduce((sum, score) => sum + score, 0) / scores.length : null] as const;
-  }));
 
   async function compileKnowledgeWiki() {
     setCompilingWiki(true);
@@ -779,22 +768,25 @@ export default function DashboardPage() {
   }
 
   return (
-    <main className="min-h-screen bg-[#f4f7f4] pb-12">
-      <header className="relative overflow-hidden border-b border-white/[0.08] bg-[#0d211b] text-white">
+    <main className="min-h-screen bg-[#f4f7fa] pb-12">
+      <header className="sticky top-0 z-50 border-b border-white/[0.08] bg-[#0d211b]/95 text-white shadow-sm backdrop-blur-xl">
         <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_80%_0%,rgba(117,181,69,0.14),transparent_42%)]" aria-hidden="true" />
-        <div className="relative mx-auto flex max-w-[1440px] flex-col gap-5 px-5 py-7 sm:px-8 lg:flex-row lg:items-end lg:justify-between lg:px-10">
-          <div>
-            <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-[0.2em] text-lime-200">
-              <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-lime-300 text-[#173d32] shadow-[0_0_24px_-4px_rgba(190,242,100,0.55)]"><Leaf size={17} aria-hidden="true" /></span>
-              <span>Balance of Nature</span>
+        <div className="relative mx-auto flex min-h-10 max-w-[1440px] flex-wrap items-center justify-between gap-3 px-5 py-1.5 sm:px-8 lg:px-10">
+          <div className="flex items-center gap-3">
+            <span className="flex size-7 items-center justify-center rounded-lg bg-lime-300 text-[#173d32] shadow-[0_0_24px_-4px_rgba(190,242,100,0.45)]">
+              <Leaf size={17} aria-hidden="true" />
+            </span>
+            <div className="leading-tight">
+              <p className="text-sm font-semibold tracking-tight">Balance of Nature</p>
+              <p className="text-xs text-emerald-100/65">Call QC Console</p>
             </div>
-            <h1 className="mt-3 font-display text-3xl font-extrabold tracking-tight sm:text-4xl">Call QC Console</h1>
-            <p className="mt-2 text-sm text-emerald-100/75">Quality performance at a glance</p>
           </div>
-          <div className="flex flex-wrap items-center justify-end gap-3">
-            <span className="hidden items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-3 py-2 text-xs text-emerald-100/70 sm:inline-flex">
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <span className="hidden items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs text-emerald-100/70 sm:inline-flex">
               <span className={`size-1.5 rounded-full ${loading ? "animate-pulse bg-amber-300" : "bg-lime-300"}`} aria-hidden="true" />
-              {loading ? "Syncing call scores" : `${rows.length.toLocaleString()} score rows loaded`}
+              {loading ? "Syncing" : "Synced"}
+              {!loading && <span className="font-mono text-white tabular-nums">{rows.length.toLocaleString()}</span>}
+              {!loading && " score rows"}
             </span>
             <form
               className="flex flex-wrap items-center gap-2"
@@ -812,12 +804,12 @@ export default function DashboardPage() {
                 onChange={(event) => setCompileSecret(event.target.value)}
                 placeholder="Compile secret"
                 disabled={compilingWiki}
-                className="h-10 w-36 rounded-xl border border-white/10 bg-white/[0.05] px-3 text-sm text-white outline-none placeholder:text-emerald-100/60 transition focus:border-lime-300/50 focus:bg-white/[0.08] focus:ring-2 focus:ring-lime-300/20 disabled:opacity-60 sm:w-40"
+                className="h-8 w-36 rounded-lg border border-white/10 bg-white/[0.05] px-3 text-sm text-white outline-none placeholder:text-emerald-100/60 transition focus:border-lime-300/50 focus:bg-white/[0.08] focus:ring-2 focus:ring-lime-300/20 disabled:opacity-60 sm:w-40"
               />
               <button
                 type="submit"
                 disabled={compilingWiki || !compileSecret.trim()}
-                className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-white/15 bg-lime-300 px-3 text-sm font-bold text-[#173d32] shadow-[0_8px_24px_-8px_rgba(190,242,100,0.8)] transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-60"
+                className="inline-flex h-8 items-center justify-center gap-2 rounded-lg border border-white/15 bg-lime-300 px-3 text-sm font-bold text-[#173d32] shadow-[0_8px_24px_-8px_rgba(190,242,100,0.8)] transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {compilingWiki ? <RefreshCw size={16} className="animate-spin" aria-hidden="true" /> : <Sparkles size={16} aria-hidden="true" />}
                 <span>{compilingWiki ? "Compiling..." : "Compile Knowledge Wiki"}</span>
@@ -829,7 +821,7 @@ export default function DashboardPage() {
               disabled={loading}
               title="Refresh call scores"
               aria-label="Refresh call scores"
-              className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-white/10 bg-white/[0.05] text-white transition hover:bg-white/[0.12] disabled:cursor-wait disabled:opacity-60"
+              className="inline-flex size-8 items-center justify-center rounded-lg border border-white/10 bg-white/[0.05] text-white transition hover:bg-white/[0.12] disabled:cursor-wait disabled:opacity-60"
             >
               <RefreshCw size={17} className={loading ? "animate-spin" : ""} />
             </button>
@@ -952,7 +944,7 @@ export default function DashboardPage() {
         </div>
       </section>
 
-      <div className="mx-auto max-w-[1440px] px-5 sm:px-8 lg:px-10">
+      <div className="relative z-10 -mt-16 mx-auto max-w-[1440px] px-5 sm:px-8 lg:px-10">
         {loading ? (
           <div className="mt-6 flex min-h-64 items-center justify-center rounded-2xl border border-slate-200 bg-white text-sm font-medium text-slate-500 shadow-sm">
             <Activity className="mr-2 animate-pulse text-leaf" size={18} /> Loading performance data…
@@ -964,157 +956,171 @@ export default function DashboardPage() {
           </div>
         ) : !error && (
           <>
-            <section aria-labelledby="score-trend-heading" className="mt-6 rounded-2xl border border-slate-200/80 bg-white p-5 shadow-[0_1px_2px_rgba(15,23,42,0.04),0_16px_40px_-20px_rgba(15,23,42,0.16)] sm:p-6">
-              <div>
-                <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-leaf">Call quality over time</p>
-                <h2 id="score-trend-heading" className="mt-1 font-display text-lg font-bold text-slate-900">Score trend</h2>
-                <p className="mt-1 text-xs text-slate-500">
-                  {isAgentView ? `Average call score by day for ${agentFilter}` : "Average call score by day"}
-                </p>
+            <section aria-labelledby="score-trend-heading" className="mt-6 overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04),0_16px_40px_-20px_rgba(15,23,42,0.16)]">
+              <div className="flex flex-wrap items-start justify-between gap-4 px-5 pt-5 sm:px-6">
+                <div>
+                  <p className="flex items-center gap-2 font-mono text-[11px] font-medium uppercase tracking-[0.14em] text-forest">
+                    <span className="size-1.5 rounded-full bg-forest" aria-hidden="true" />
+                    Call quality over time
+                  </p>
+                  <h2 id="score-trend-heading" className="mt-2 text-lg font-semibold tracking-tight text-slate-900">Score trend</h2>
+                  <p className="mt-1 text-[13px] text-slate-500">Weekly average call score against the pass threshold</p>
+                </div>
+                <div className="flex items-center gap-4">
+                  <div className="text-right">
+                    <p className="text-xs text-slate-500">Period average</p>
+                    <p className="font-mono text-2xl font-medium tracking-tight text-slate-900 tabular-nums">
+                      {scoreTrend.length ? (scoreTrend.reduce((sum, point) => sum + point.average, 0) / scoreTrend.length).toFixed(1) : "—"}
+                      <span className="text-base text-slate-500">%</span>
+                    </p>
+                  </div>
+                  {scoreTrend.length > 1 && (
+                    <div className="hidden border-l border-slate-200 pl-4 text-right sm:block">
+                      <p className="text-xs text-slate-500">Period change</p>
+                      <span className={`mt-1 inline-flex items-center gap-1 rounded-full px-2 py-0.5 font-mono text-xs font-semibold tabular-nums ${scoreTrend[scoreTrend.length - 1].average >= scoreTrend[0].average ? "bg-emerald-100 text-emerald-800" : "bg-rose-100 text-rose-800"}`}>
+                        {scoreTrend[scoreTrend.length - 1].average >= scoreTrend[0].average ? <ArrowUpRight size={13} aria-hidden="true" /> : <ArrowDownRight size={13} aria-hidden="true" />}
+                        {scoreTrend[scoreTrend.length - 1].average > scoreTrend[0].average ? "+" : ""}
+                        {(scoreTrend[scoreTrend.length - 1].average - scoreTrend[0].average).toFixed(1)} pts
+                      </span>
+                    </div>
+                  )}
+                </div>
               </div>
-              <div className="mt-5 h-[280px] w-full">
+              <div className="h-80 px-3 pb-5">
                 {scoreTrend.length ? (
                   <ResponsiveContainer width="100%" height="100%">
-                    <LineChart data={scoreTrend} margin={{ top: 8, right: 16, left: 4, bottom: 4 }}>
-                      <CartesianGrid stroke="#e8ede7" vertical={false} />
+                    <AreaChart data={scoreTrend} margin={{ top: 16, right: 20, left: 4, bottom: 0 }}>
+                      <defs>
+                        <linearGradient id="trendFill" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="0%" stopColor="#168b69" stopOpacity={0.22} />
+                          <stop offset="100%" stopColor="#168b69" stopOpacity={0} />
+                        </linearGradient>
+                        <linearGradient id="trendStroke" x1="0" y1="0" x2="1" y2="0">
+                          <stop offset="0%" stopColor="#39b996" />
+                          <stop offset="100%" stopColor="#00875e" />
+                        </linearGradient>
+                      </defs>
+                      <CartesianGrid vertical={false} stroke="#dce5e8" strokeDasharray="3 5" />
                       <XAxis
-                        dataKey="date"
-                        tickFormatter={(value: string) => new Date(`${value}T00:00:00`).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
-                        tick={{ fill: "#64748b", fontSize: 11 }}
-                        axisLine={false}
+                        dataKey="label"
                         tickLine={false}
+                        axisLine={false}
+                        tickMargin={12}
+                        tick={{ fill: "#64748b", fontSize: 12 }}
                       />
                       <YAxis
-                        domain={[0, 100]}
+                        domain={[Math.max(0, Math.floor(((scoreTrend.length ? Math.min(...scoreTrend.map((point) => point.average)) : 0) - 12) / 10) * 10), 100]}
                         tickFormatter={(value: number) => `${value}%`}
-                        tick={{ fill: "#64748b", fontSize: 11 }}
-                        axisLine={false}
                         tickLine={false}
-                        width={42}
+                        axisLine={false}
+                        width={44}
+                        tickCount={5}
+                        tick={{ fill: "#64748b", fontSize: 12 }}
+                      />
+                      <ReferenceLine
+                        y={passThreshold}
+                        stroke="#dc5264"
+                        strokeDasharray="5 5"
+                        strokeOpacity={0.8}
+                        label={{ value: `Pass ${passThreshold}%`, position: "insideTopRight", fill: "#a52d41", fontSize: 11, fontWeight: 600 }}
                       />
                       <Tooltip
-                        labelFormatter={(value) => new Date(`${value}T00:00:00`).toLocaleDateString()}
-                        formatter={(value) => [`${Number(value).toFixed(1)}%`, "Average call score"]}
+                        labelFormatter={(value) => `Week of ${value}`}
+                        formatter={(value, _name, item) => [`${Number(value).toFixed(1)}%`, `${item.payload.calls} calls`]}
                       />
-                      <Line
+                      <Area
                         type="monotone"
                         dataKey="average"
-                        name="Average call score"
-                        stroke="#72ad3f"
+                        stroke="url(#trendStroke)"
                         strokeWidth={2.5}
-                        dot={{ fill: "#72ad3f", r: 3 }}
-                        activeDot={{ r: 5, fill: "#173d32", stroke: "#c6eb76", strokeWidth: 2 }}
+                        fill="url(#trendFill)"
+                        dot={false}
+                        activeDot={{ r: 6, fill: "#00875e", stroke: "#fff", strokeWidth: 3 }}
                       />
-                    </LineChart>
+                    </AreaChart>
                   </ResponsiveContainer>
-                ) : <div className="flex h-full items-center justify-center text-sm text-slate-500">No dated call scores to chart.</div>}
+                ) : <div className="flex h-full items-center justify-center text-sm text-slate-500">No calls in the selected date range.</div>}
               </div>
             </section>
 
-            <section className="mt-6 grid gap-4 xl:grid-cols-[minmax(0,1.7fr)_minmax(300px,1fr)]">
-              <article className="min-w-0 rounded-2xl border border-slate-200/80 bg-white p-5 shadow-[0_1px_2px_rgba(15,23,42,0.04),0_16px_40px_-20px_rgba(15,23,42,0.16)] sm:p-6">
+            <section className="mt-6 grid gap-6 xl:grid-cols-3">
+              <article className="min-w-0 rounded-2xl border border-slate-200/80 bg-white p-5 shadow-[0_1px_2px_rgba(15,23,42,0.04),0_16px_40px_-20px_rgba(15,23,42,0.16)] sm:p-6 xl:col-span-2">
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div>
-                    <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-leaf">Quality breakdown</p>
-                    <h2 className="mt-1 font-display text-lg font-bold text-slate-900">Section performance</h2>
+                    <p className="flex items-center gap-2 font-mono text-[11px] font-medium uppercase tracking-[0.14em] text-forest">
+                      <span className="size-1.5 rounded-full bg-forest" aria-hidden="true" />
+                      Rubric breakdown
+                    </p>
+                    <h2 className="mt-2 text-lg font-semibold tracking-tight text-slate-900">Section performance</h2>
+                    <p className="mt-1 text-[13px] text-slate-500">Average score by rubric section</p>
                   </div>
-                  <div className="flex flex-wrap items-center gap-3">
-                    <ul className="flex flex-wrap items-center gap-3 text-xs font-medium text-slate-500" aria-label="Section performance legend">
-                      <li className="inline-flex items-center gap-1.5"><span className="size-2 rounded-full bg-[#72ad3f]" aria-hidden="true" />On track</li>
-                      <li className="inline-flex items-center gap-1.5"><span className="size-2 rounded-full bg-[#e6a23c]" aria-hidden="true" />Watch</li>
-                      <li className="inline-flex items-center gap-1.5"><span className="size-2 rounded-full bg-[#c94c4c]" aria-hidden="true" />At risk</li>
-                    </ul>
-                    <div role="group" aria-label="Section performance view" className="inline-flex rounded border border-slate-300 p-0.5">
-                      <button
-                        type="button"
-                        aria-pressed={sectionView === "chart"}
-                        onClick={() => setSectionView("chart")}
-                        className={`rounded-lg px-2.5 py-1 text-xs font-semibold transition ${sectionView === "chart" ? "bg-forest text-white" : "text-slate-600 hover:bg-slate-100"}`}
-                      >
-                        Chart
-                      </button>
-                      <button
-                        type="button"
-                        aria-pressed={sectionView === "table"}
-                        onClick={() => setSectionView("table")}
-                        className={`rounded-lg px-2.5 py-1 text-xs font-semibold transition ${sectionView === "table" ? "bg-forest text-white" : "text-slate-600 hover:bg-slate-100"}`}
-                      >
-                        Table
-                      </button>
-                    </div>
-                    <span className="rounded-sm bg-emerald-50 px-2 py-1 text-xs font-semibold text-forest">Target {passThreshold}%</span>
-                  </div>
+                  <ul className="flex flex-wrap items-center gap-3 text-xs text-slate-500" aria-label="Section performance legend">
+                    <li className="inline-flex items-center gap-1.5"><span className="size-2 rounded-full bg-[#00875e]" aria-hidden="true" />On track</li>
+                    <li className="inline-flex items-center gap-1.5"><span className="size-2 rounded-full bg-[#e6a23c]" aria-hidden="true" />Watch</li>
+                    <li className="inline-flex items-center gap-1.5"><span className="size-2 rounded-full bg-[#dc5264]" aria-hidden="true" />At risk</li>
+                  </ul>
                 </div>
-                {sectionView === "chart" ? (
-                  <div className="mt-5 h-[330px] w-full" role="img" aria-label="Horizontal bar chart showing average call score percentage by section">
-                    {sections.length ? (
-                      <ResponsiveContainer width="100%" height="100%">
-                        <BarChart data={sections} layout="vertical" margin={{ top: 4, right: 18, left: 5, bottom: 4 }} barCategoryGap={10}>
-                          <CartesianGrid horizontal={false} stroke="#e8ede7" />
-                          <XAxis type="number" domain={[0, 100]} tickFormatter={(value: number) => `${value}%`} tick={{ fill: "#64748b", fontSize: 11 }} axisLine={false} tickLine={false} />
-                          <YAxis type="category" dataKey="section" width={154} tick={{ fill: "#475569", fontSize: 11 }} axisLine={false} tickLine={false} />
-                          <Tooltip formatter={(value) => [`${Number(value).toFixed(1)}%`, "Average score"]} cursor={{ fill: "#f5f7f2" }} />
-                          <ReferenceLine x={passThreshold} stroke="#c33c3c" strokeDasharray="5 4" />
-                          <Bar dataKey="percentage" radius={[0, 8, 8, 0]} maxBarSize={22} label={{ position: "right", formatter: (value: number) => `${value.toFixed(0)}%`, fill: "#475569", fontSize: 10 }}>
-                            {sections.map((section) => (
-                              <Cell
-                                key={section.section}
-                                fill={section.percentage >= passThreshold
-                                  ? "#72ad3f"
-                                  : section.percentage < 45
-                                    ? "#c94c4c"
-                                    : "#e6a23c"}
-                              />
-                            ))}
-                          </Bar>
-                        </BarChart>
-                      </ResponsiveContainer>
-                    ) : <div className="flex h-full items-center justify-center text-sm text-slate-500">No section scores to chart.</div>}
-                  </div>
-                ) : (
-                  <div className="mt-5 max-h-[330px] overflow-auto">
-                    {sections.length ? (
-                      <table className="w-full min-w-[600px] border-separate border-spacing-0 text-left text-sm">
-                        <caption className="sr-only">Raw score, percentage, and previous-period change by section</caption>
-                        <thead className="sticky top-0 z-10 bg-slate-50 text-[10px] font-bold uppercase tracking-[0.1em] text-slate-600">
-                          <tr>
-                            <th scope="col" className="border-b border-slate-200 px-4 py-3">Section</th>
-                            <th scope="col" className="border-b border-slate-200 px-4 py-3 text-right">Raw Score</th>
-                            <th scope="col" className="border-b border-slate-200 px-4 py-3 text-right">Percentage</th>
-                            <th scope="col" className="border-b border-slate-200 px-4 py-3 text-right">Previous Period</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {sections.map((section, index) => {
-                            const previous = previousSections.find((item) => item.section === section.section);
-                            const change = previous ? section.percentage - previous.percentage : null;
-                            return (
-                              <tr key={section.section} className={index % 2 === 0 ? "bg-white" : "bg-slate-50/60"}>
-                                <th scope="row" className="border-b border-slate-100 px-4 py-3 text-left font-semibold text-slate-800">{section.section}</th>
-                                <td className="border-b border-slate-100 px-4 py-3 text-right font-medium tabular-nums text-slate-700">{section.rawScore.toFixed(2)} / {section.maxScore}</td>
-                                <td className="border-b border-slate-100 px-4 py-3 text-right font-semibold tabular-nums text-slate-900">{section.percentage.toFixed(1)}%</td>
-                                <td className="border-b border-slate-100 px-4 py-3 text-right tabular-nums">
-                                  {previous ? (
-                                    <span className="inline-flex flex-col items-end gap-0.5">
-                                      <span className="font-medium text-slate-700">{previous.percentage.toFixed(1)}%</span>
-                                      <span className={`text-xs font-semibold ${change != null && change > 0 ? "text-emerald-700" : change != null && change < 0 ? "text-rose-700" : "text-slate-500"}`}>
-                                        {change != null && change > 0 ? "+" : ""}{change?.toFixed(1)} pp
-                                      </span>
-                                    </span>
-                                  ) : <span className="text-slate-400">No prior data</span>}
-                                </td>
-                              </tr>
-                            );
-                          })}
-                        </tbody>
-                      </table>
-                    ) : <div className="flex h-full min-h-64 items-center justify-center text-sm text-slate-500">No section scores to display.</div>}
-                  </div>
-                )}
+                <div className="mt-5" role="img" aria-label="Horizontal bar chart showing average call score percentage by section">
+                  {sections.length ? (
+                    <>
+                      <div className="grid grid-cols-[minmax(0,180px)_1fr_52px] items-center gap-x-5">
+                        <span />
+                        <div className="relative h-6">
+                          <span
+                            className="absolute bottom-1 -translate-x-1/2 whitespace-nowrap rounded-md bg-rose-50 px-1.5 py-0.5 font-mono text-[10px] font-semibold text-rose-700"
+                            style={{ left: `${passThreshold}%` }}
+                          >
+                            Pass {passThreshold}%
+                          </span>
+                        </div>
+                        <span />
+                      </div>
+                      <ul className="flex flex-col">
+                        {sections.map((section) => {
+                          const barColor = section.percentage < 45
+                            ? "bg-gradient-to-r from-rose-400 to-rose-600"
+                            : section.percentage < 60
+                              ? "bg-gradient-to-r from-amber-400 to-amber-500"
+                              : "bg-gradient-to-r from-emerald-400 to-emerald-600";
+                          return (
+                            <li
+                              key={section.section}
+                              className="grid grid-cols-[minmax(0,180px)_1fr_52px] items-center gap-x-5 border-b border-dashed border-slate-200 py-3 last:border-b-0"
+                            >
+                              <span className="truncate text-[13px] font-medium text-slate-800">{section.section}</span>
+                              <div
+                                className="relative h-3 rounded-full bg-slate-100"
+                                role="progressbar"
+                                aria-label={`${section.section} average score`}
+                                aria-valuenow={section.percentage}
+                                aria-valuemin={0}
+                                aria-valuemax={100}
+                              >
+                                <div className={`h-full rounded-full ${barColor}`} style={{ width: `${Math.min(100, Math.max(0, section.percentage))}%` }} />
+                                <span className="absolute -top-3 -bottom-3 w-px bg-rose-500/50" style={{ left: `${passThreshold}%` }} aria-hidden="true" />
+                              </div>
+                              <span className="text-right font-mono text-sm font-medium text-slate-900 tabular-nums">{section.percentage.toFixed(0)}%</span>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                      <div className="mt-2 grid grid-cols-[minmax(0,180px)_1fr_52px] gap-x-5" aria-hidden="true">
+                        <span />
+                        <div className="flex justify-between font-mono text-[11px] text-slate-500">
+                          {[0, 25, 50, 75, 100].map((tick) => <span key={tick}>{tick}</span>)}
+                        </div>
+                        <span />
+                      </div>
+                    </>
+                  ) : <div className="flex min-h-64 items-center justify-center text-sm text-slate-500">No section scores to chart.</div>}
+                </div>
               </article>
 
               <article className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-[0_1px_2px_rgba(15,23,42,0.04),0_16px_40px_-20px_rgba(15,23,42,0.16)] sm:p-6">
-                <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-leaf">At a glance</p>
+                <p className="mb-2 flex items-center gap-2 font-mono text-[11px] font-medium uppercase tracking-[0.14em] text-forest">
+                  <span className="size-1.5 rounded-full bg-forest" aria-hidden="true" />
+                  At a glance
+                </p>
                 <h2 className="mt-1 font-display text-lg font-bold text-slate-900">Section summary</h2>
                 <p className="mt-1 text-xs text-slate-500">Rubric health in this view</p>
                 <div className="grid place-items-center py-4">
@@ -1179,7 +1185,7 @@ export default function DashboardPage() {
 
             <section
               aria-label="Coaching priorities and agent call breakdown"
-              className={`mt-6 grid gap-4 ${isAgentView || agentFilter === "All agents" ? "xl:grid-cols-[minmax(0,1.8fr)_minmax(280px,1fr)]" : "xl:grid-cols-1"}`}
+              className={`mt-6 grid gap-6 ${isAgentView || agentFilter === "All agents" ? "xl:grid-cols-[minmax(0,2fr)_minmax(280px,1fr)]" : "xl:grid-cols-1"}`}
             >
               {isAgentView && (
                 <article className="min-w-0 overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04),0_16px_40px_-20px_rgba(15,23,42,0.16)]">
@@ -1233,8 +1239,11 @@ export default function DashboardPage() {
 
               {agentFilter === "All agents" && (
                 <article className="min-w-0 overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04),0_16px_40px_-20px_rgba(15,23,42,0.16)]">
-                  <div className="border-b border-slate-200 px-5 py-4 sm:px-6">
-                    <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-leaf">Team performance</p>
+                  <div className="border-b border-slate-200 px-6 py-5">
+                    <p className="mb-2 flex items-center gap-2 font-mono text-[11px] font-medium uppercase tracking-[0.14em] text-forest">
+                      <span className="size-1.5 rounded-full bg-forest" aria-hidden="true" />
+                      Team performance
+                    </p>
                     <h2 className="mt-1 font-display text-lg font-bold text-slate-900">Agent leaderboard</h2>
                     <p className="mt-1 text-xs text-slate-500">Ranked by average call score · {calls.length} calls</p>
                   </div>
@@ -1243,7 +1252,7 @@ export default function DashboardPage() {
                       <table className="w-full min-w-[760px] border-separate border-spacing-0 text-left text-sm">
                         <thead className="sticky top-0 z-10 bg-white/95 text-[11px] font-medium uppercase tracking-[0.08em] text-slate-500 backdrop-blur">
                           <tr>
-                            <th scope="col" className="w-14 border-b border-slate-200 py-3 pl-5">#</th>
+                            <th scope="col" className="w-14 border-b border-slate-200 py-3 pl-6">#</th>
                             <th scope="col" className="border-b border-slate-200 py-3">Agent</th>
                             <th scope="col" className="border-b border-slate-200 px-3 py-3 text-right">Calls</th>
                             <th scope="col" className="min-w-48 border-b border-slate-200 px-3 py-3">Avg call score</th>
@@ -1254,8 +1263,8 @@ export default function DashboardPage() {
                         <tbody>
                           {agentLeaderboard.map((agent, index) => (
                             <tr key={agent.agent} className="transition-colors hover:bg-emerald-50/50">
-                              <td className="border-b border-slate-100 py-2.5 pl-5">
-                                <span className={`inline-flex size-7 items-center justify-center rounded-full font-mono text-[11px] font-semibold tabular-nums ${index === 0 ? "bg-lime-300 text-[#173d32]" : "bg-slate-100 text-slate-500"}`}>
+                              <td className="border-b border-slate-100 py-2.5 pl-6">
+                                <span className={`inline-flex size-6 items-center justify-center font-mono text-[11px] font-semibold tabular-nums ${index === 0 ? "rounded-full bg-lime-300 text-[#173d32]" : index === 1 ? "rounded-full bg-[#0d211b] text-white" : index === 2 ? "rounded-full bg-[#46544f] text-white" : "text-slate-500"}`}>
                                   {index + 1}
                                 </span>
                               </td>
@@ -1298,11 +1307,17 @@ export default function DashboardPage() {
                       </table>
                     ) : <p className="px-6 py-12 text-center text-sm text-slate-500">No agent call scores match this date range.</p>}
                   </div>
+                  <div className="border-t border-slate-200 bg-slate-50/70 px-5 py-3 text-xs text-slate-500">
+                    {agentLeaderboard.length} agents ranked · pass at {passThreshold}%
+                  </div>
                 </article>
               )}
 
-              <article className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-[0_1px_2px_rgba(15,23,42,0.04),0_16px_40px_-20px_rgba(15,23,42,0.16)] sm:p-6">
-                <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-rose-700">Coaching focus</p>
+              <article className="rounded-2xl border border-slate-200/80 bg-white p-6 shadow-[0_1px_2px_rgba(15,23,42,0.04),0_16px_40px_-20px_rgba(15,23,42,0.16)]">
+                <p className="mb-2 flex items-center gap-2 font-mono text-[11px] font-medium uppercase tracking-[0.14em] text-rose-700">
+                  <span className="size-1.5 rounded-full bg-rose-500" aria-hidden="true" />
+                  Coaching focus
+                </p>
                 <h2 className="mt-1 font-display text-lg font-bold text-slate-900">Coaching priorities</h2>
                 <p className="mt-1 text-xs text-slate-500">Five lowest-scoring criteria · {agentFilter}</p>
                 <div className="mt-5 space-y-2.5">
@@ -1322,13 +1337,10 @@ export default function DashboardPage() {
                         <span className="flex flex-1 gap-1" role="img" aria-label={`Average score ${average.toFixed(2)} out of 5`}>
                           {Array.from({ length: 5 }, (_, index) => {
                             const fill = Math.min(1, Math.max(0, average - index));
-                            return <span key={index} className="h-2 flex-1 overflow-hidden rounded-sm bg-slate-100"><span className={`block h-full rounded-sm ${average < 1.6 ? "bg-rose-500" : "bg-amber-400"}`} style={{ width: `${fill * 100}%` }} /></span>;
+                            return <span key={index} className="h-1.5 flex-1 overflow-hidden rounded-full bg-slate-100"><span className={`block h-full rounded-full ${average < 1.6 ? "bg-rose-500" : "bg-amber-400"}`} style={{ width: `${fill * 100}%` }} /></span>;
                           })}
                         </span>
                         <p className="shrink-0 font-mono text-xs text-slate-500 tabular-nums"><strong className="text-slate-900">{average.toFixed(2)}</strong> / 5</p>
-                      </div>
-                      <div className="mt-1 flex justify-between pl-7 font-mono text-[9px] text-slate-400" aria-hidden="true">
-                        {[1, 2, 3, 4, 5].map((score) => <span key={score}>{score}</span>)}
                       </div>
                     </div>
                   )) : <p className="py-8 text-center text-sm text-slate-500">No criteria scores match the current filters.</p>}
@@ -1337,16 +1349,25 @@ export default function DashboardPage() {
             </section>
 
             <section className="mt-6 overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04),0_16px_40px_-20px_rgba(15,23,42,0.16)]">
-              <div className="flex flex-col gap-3 border-b border-slate-200 px-5 py-4 sm:flex-row sm:items-end sm:justify-between sm:px-6">
+              <div className="flex flex-col gap-3 border-b border-slate-200 px-6 py-5 sm:flex-row sm:items-end sm:justify-between">
                 <div>
-                  <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-leaf">Coaching detail</p>
+                  <p className="mb-2 flex items-center gap-2 font-mono text-[11px] font-medium uppercase tracking-[0.14em] text-forest">
+                    <span className="size-1.5 rounded-full bg-forest" aria-hidden="true" />
+                    Coaching detail
+                  </p>
                   <h2 className="mt-1 font-display text-lg font-bold text-slate-900">Meter bank</h2>
                   <p className="mt-1 text-xs text-slate-500">Average score by criterion · scale of 1 to 5</p>
                 </div>
-                <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs font-medium text-slate-600" aria-label="Score legend">
-                  <span className="inline-flex items-center gap-1.5"><i className="h-2.5 w-2.5 rounded-sm bg-rose-300" />Critical · 1–2</span>
-                  <span className="inline-flex items-center gap-1.5"><i className="h-2.5 w-2.5 rounded-sm bg-amber-300" />Average · 3</span>
-                  <span className="inline-flex items-center gap-1.5"><i className="h-2.5 w-2.5 rounded-sm bg-emerald-300" />Excellent · 4–5</span>
+                <div className="flex items-center gap-3 text-xs text-slate-500" aria-label="Score legend">
+                  <span>Critical</span>
+                  <ul className="flex items-center gap-1" aria-label="Score scale">
+                    <li className="h-5 w-9 rounded-md bg-rose-100" title="Below 2.0" />
+                    <li className="h-5 w-9 rounded-md bg-orange-100" title="2.0 to 2.4" />
+                    <li className="h-5 w-9 rounded-md bg-amber-100" title="2.5 to 3.4" />
+                    <li className="h-5 w-9 rounded-md bg-emerald-100" title="3.5 to 3.9" />
+                    <li className="h-5 w-9 rounded-md bg-emerald-200" title="4.0 and above" />
+                  </ul>
+                  <span>Excellent</span>
                 </div>
               </div>
               <div className="max-h-[560px] overflow-auto">
@@ -1442,7 +1463,7 @@ export default function DashboardPage() {
                         </th>
                         {meterBank.categories.map((category) => (
                           <td key={category} className="sticky bottom-0 z-10 border-t border-slate-700 bg-[#173d32] px-2 py-3 text-center font-mono text-xs font-semibold text-white tabular-nums">
-                            {meterTeamAverage[category]?.toFixed(1) ?? "—"}
+                            {meterBank.teamAverage[category]?.toFixed(1) ?? "—"}
                           </td>
                         ))}
                       </tr>
