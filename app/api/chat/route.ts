@@ -50,7 +50,7 @@ export async function POST(request: Request): Promise<Response> {
   let geminiApiKey = process.env.GEMINI_API_KEY;
   if (!geminiApiKey) {
     try {
-      geminiApiKey = getRequestContext().env.GEMINI_API_KEY as string;
+      geminiApiKey = (getRequestContext().env as any).GEMINI_API_KEY as string;
     } catch {
       geminiApiKey = undefined;
     }
