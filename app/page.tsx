@@ -3,7 +3,7 @@
 import { createClient } from "@supabase/supabase-js";
 import { Activity, ArrowDown, ArrowDownRight, ArrowUp, ArrowUpRight, BadgeCheck, Flag, Gauge, Leaf, PhoneCall, RefreshCw, RotateCcw, ShieldCheck, Sparkles, TrendingDown, TrendingUp } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import ChatWidget from "@/components/ChatWidget";
+import MorphOrb from "@/components/MorphOrb";
 import {
   Area,
   AreaChart,
@@ -62,6 +62,31 @@ type WikiCompileEvent =
   | { type: "progress"; processed: number; total: number }
   | { type: "complete"; processed: number; total: number }
   | { type: "error"; message: string };
+
+async function submitChatMessage(message: string, signal: AbortSignal): Promise<string> {
+  const response = await fetch("/api/chat", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ message }),
+    signal,
+  });
+  if (!response.ok) {
+    const result = await response.json() as { error?: string };
+    throw new Error(result.error || `Assistant request failed (${response.status}).`);
+  }
+  if (!response.body) throw new Error("The assistant response stream is unavailable.");
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let answer = "";
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    answer += decoder.decode(value, { stream: true });
+  }
+  answer += decoder.decode();
+  return answer;
+}
 
 const SECTION_NAMES: Record<string, string> = {
   BG: "Beginning",
@@ -816,7 +841,6 @@ export default function DashboardPage() {
             >
               <RefreshCw size={17} className={loading ? "animate-spin" : ""} />
             </button>
-            <ChatWidget />
           </div>
         </div>
         {(compilingWiki || compileMessage || compileError) && (
@@ -1473,6 +1497,7 @@ export default function DashboardPage() {
           </>
         )}
       </div>
+      <MorphOrb onSubmit={submitChatMessage} />
     </main>
   );
 }
