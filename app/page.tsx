@@ -7,6 +7,7 @@ import {
   Bar,
   BarChart,
   CartesianGrid,
+  Cell,
   Line,
   LineChart,
   ReferenceLine,
@@ -88,6 +89,16 @@ const SECTION_MAX: Record<string, number> = {
 
 const SECTION_ORDER = Object.values(SECTION_NAMES);
 const PREFIX_ORDER = ["BG", "ARC", "OE", "PE", "QC", "CL", "CC", "COMP"];
+const METER_SECTION_NAMES: Record<string, string> = {
+  BG: "Building Goodwill",
+  ARC: "Responsibility & Effort",
+  OE: "Opening & Engagement",
+  PE: "Personalization & Education",
+  QC: "Quality Communication",
+  CL: "Closing",
+  CC: "Call Control",
+  COMP: "Compliance",
+};
 const DEFAULT_AGENT_FILTER = "All agents";
 const DEFAULT_PASS_THRESHOLD = 80;
 const CRITERION_DESCRIPTIONS: Record<string, string> = {
@@ -246,6 +257,17 @@ function scoreCellClass(score: number | undefined): string {
   if (score >= 4) return "bg-emerald-100 text-emerald-900";
   if (score >= 3) return "bg-amber-100 text-amber-900";
   return "bg-rose-100 text-rose-900";
+}
+
+function agentInitials(name: string): string {
+  const parts = name.split(/\s+/).filter(Boolean);
+  return `${parts[0]?.[0] ?? "?"}${parts.length > 1 ? parts[parts.length - 1][0] : ""}`.toUpperCase();
+}
+
+function agentHue(name: string): number {
+  let hue = 0;
+  for (const character of name) hue = (hue * 31 + character.charCodeAt(0)) % 360;
+  return hue;
 }
 
 function criterionDescription(category: string): string {
@@ -662,6 +684,29 @@ export default function DashboardPage() {
   }
 
   const number = (value: number | null) => value == null ? "—" : `${value.toFixed(1)}%`;
+  const sectionAverage = sections.length
+    ? sections.reduce((sum, section) => sum + section.percentage, 0) / sections.length
+    : null;
+  const meterGroups: { prefix: string; name: string; categories: string[] }[] = [];
+  for (const category of meterBank.categories) {
+    const prefix = category.match(/^[A-Z]+/i)?.[0].toUpperCase() ?? "OTHER";
+    const currentGroup = meterGroups[meterGroups.length - 1];
+    if (currentGroup?.prefix === prefix) {
+      currentGroup.categories.push(category);
+    } else {
+      meterGroups.push({
+        prefix,
+        name: METER_SECTION_NAMES[prefix] ?? "Other",
+        categories: [category],
+      });
+    }
+  }
+  const meterTeamAverage: Record<string, number | null> = Object.fromEntries(meterBank.categories.map((category) => {
+    const scores = meterBank.data
+      .map((item) => item.scores[category])
+      .filter((score): score is number => score != null);
+    return [category, scores.length ? scores.reduce((sum, score) => sum + score, 0) / scores.length : null] as const;
+  }));
 
   async function compileKnowledgeWiki() {
     setCompilingWiki(true);
@@ -817,6 +862,21 @@ export default function DashboardPage() {
       <section className="relative overflow-hidden bg-[#0d211b] pb-8 text-white">
         <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.035)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.035)_1px,transparent_1px)] bg-[size:48px_48px] [mask-image:linear-gradient(to_bottom,black,transparent_88%)]" aria-hidden="true" />
         <div className="relative mx-auto max-w-[1440px] px-5 sm:px-8 lg:px-10">
+        <div className="flex flex-wrap items-end justify-between gap-6 py-10 sm:py-12">
+          <div className="max-w-2xl">
+            <p className="mb-4 flex items-center gap-2 font-mono text-[11px] font-medium uppercase tracking-[0.18em] text-lime-300">
+              <span className="h-px w-6 bg-lime-300/60" aria-hidden="true" />
+              Quality overview
+            </p>
+            <h1 className="text-4xl leading-[1.05] font-semibold tracking-[-0.04em] text-balance sm:text-[52px]">
+              Every call, scored. <span className="text-emerald-100/65">Every agent, coached.</span>
+            </h1>
+          </div>
+          <p className="max-w-xs text-sm leading-relaxed text-emerald-100/70">
+            Viewing <span className="font-medium text-white">{agentFilter.toLowerCase()}</span>
+            {startDate && endDate && <> from <span className="font-mono text-white">{startDate}</span> to <span className="font-mono text-white">{endDate}</span></>}.
+          </p>
+        </div>
         <section aria-label="Dashboard filters" className="grid gap-1 rounded-2xl border border-white/10 bg-white/[0.035] p-2 backdrop-blur-md [color-scheme:dark] sm:grid-cols-2 lg:grid-cols-[1fr_1fr_1.4fr_1.2fr_auto] lg:items-center lg:divide-x lg:divide-white/[0.06]">
           <label className="group flex min-w-0 flex-col gap-1 rounded-xl px-4 py-2.5 text-[11px] font-medium uppercase tracking-[0.1em] text-emerald-100/60 transition-colors hover:bg-white/[0.05]">
             From
@@ -958,7 +1018,12 @@ export default function DashboardPage() {
                     <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-leaf">Quality breakdown</p>
                     <h2 className="mt-1 font-display text-lg font-bold text-slate-900">Section performance</h2>
                   </div>
-                  <div className="flex items-center gap-3">
+                  <div className="flex flex-wrap items-center gap-3">
+                    <ul className="flex flex-wrap items-center gap-3 text-xs font-medium text-slate-500" aria-label="Section performance legend">
+                      <li className="inline-flex items-center gap-1.5"><span className="size-2 rounded-full bg-[#72ad3f]" aria-hidden="true" />On track</li>
+                      <li className="inline-flex items-center gap-1.5"><span className="size-2 rounded-full bg-[#e6a23c]" aria-hidden="true" />Watch</li>
+                      <li className="inline-flex items-center gap-1.5"><span className="size-2 rounded-full bg-[#c94c4c]" aria-hidden="true" />At risk</li>
+                    </ul>
                     <div role="group" aria-label="Section performance view" className="inline-flex rounded border border-slate-300 p-0.5">
                       <button
                         type="button"
@@ -990,7 +1055,18 @@ export default function DashboardPage() {
                           <YAxis type="category" dataKey="section" width={154} tick={{ fill: "#475569", fontSize: 11 }} axisLine={false} tickLine={false} />
                           <Tooltip formatter={(value) => [`${Number(value).toFixed(1)}%`, "Average score"]} cursor={{ fill: "#f5f7f2" }} />
                           <ReferenceLine x={passThreshold} stroke="#c33c3c" strokeDasharray="5 4" />
-                          <Bar dataKey="percentage" fill="#72ad3f" radius={[0, 8, 8, 0]} maxBarSize={22} label={{ position: "right", formatter: (value: number) => `${value.toFixed(0)}%`, fill: "#475569", fontSize: 10 }} />
+                          <Bar dataKey="percentage" radius={[0, 8, 8, 0]} maxBarSize={22} label={{ position: "right", formatter: (value: number) => `${value.toFixed(0)}%`, fill: "#475569", fontSize: 10 }}>
+                            {sections.map((section) => (
+                              <Cell
+                                key={section.section}
+                                fill={section.percentage >= passThreshold
+                                  ? "#72ad3f"
+                                  : section.percentage < 45
+                                    ? "#c94c4c"
+                                    : "#e6a23c"}
+                              />
+                            ))}
+                          </Bar>
                         </BarChart>
                       </ResponsiveContainer>
                     ) : <div className="flex h-full items-center justify-center text-sm text-slate-500">No section scores to chart.</div>}
@@ -1039,13 +1115,65 @@ export default function DashboardPage() {
 
               <article className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-[0_1px_2px_rgba(15,23,42,0.04),0_16px_40px_-20px_rgba(15,23,42,0.16)] sm:p-6">
                 <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-leaf">At a glance</p>
-                <h2 className="mt-1 font-display text-lg font-bold text-slate-900">Current selection</h2>
-                <dl className="mt-6 divide-y divide-slate-100">
-                  <div className="flex items-baseline justify-between gap-4 py-3"><dt className="text-sm text-slate-500">Score rows</dt><dd className="font-display text-lg font-bold tabular-nums text-slate-900">{filteredRows.length.toLocaleString()}</dd></div>
-                  <div className="flex items-baseline justify-between gap-4 py-3"><dt className="text-sm text-slate-500">Agents represented</dt><dd className="font-display text-lg font-bold tabular-nums text-slate-900">{new Set(filteredRows.map((row) => row.agent)).size}</dd></div>
-                  <div className="flex items-baseline justify-between gap-4 py-3"><dt className="text-sm text-slate-500">Sections with scores</dt><dd className="font-display text-lg font-bold tabular-nums text-slate-900">{sections.length}</dd></div>
-                  <div className="flex items-baseline justify-between gap-4 py-3"><dt className="text-sm text-slate-500">Passing calls</dt><dd className="font-display text-lg font-bold tabular-nums text-forest">{calls.filter((call) => call.percentage >= passThreshold).length} <span className="font-sans text-xs font-medium text-slate-500">of {calls.length}</span></dd></div>
+                <h2 className="mt-1 font-display text-lg font-bold text-slate-900">Section summary</h2>
+                <p className="mt-1 text-xs text-slate-500">Rubric health in this view</p>
+                <div className="grid place-items-center py-4">
+                  <svg viewBox="0 0 128 128" className="size-40 -rotate-90 [grid-area:1/1]" role="img" aria-label={`Average section score: ${sectionAverage == null ? "no data" : `${sectionAverage.toFixed(1)}%`}`}>
+                    <defs>
+                      <linearGradient id="section-summary-gradient" x1="0" y1="0" x2="1" y2="1">
+                        <stop offset="0%" stopColor="#8fcf6b" />
+                        <stop offset="100%" stopColor="#43875d" />
+                      </linearGradient>
+                    </defs>
+                    <circle cx="64" cy="64" r="52" fill="none" stroke="#edf1ed" strokeWidth="10" />
+                    <circle
+                      cx="64"
+                      cy="64"
+                      r="52"
+                      fill="none"
+                      stroke="url(#section-summary-gradient)"
+                      strokeWidth="10"
+                      strokeLinecap="round"
+                      strokeDasharray={2 * Math.PI * 52}
+                      strokeDashoffset={2 * Math.PI * 52 * (1 - Math.min(100, Math.max(0, sectionAverage ?? 0)) / 100)}
+                    />
+                  </svg>
+                  <div className="text-center [grid-area:1/1]">
+                    <p className="font-mono text-3xl font-medium tracking-tight text-slate-900 tabular-nums">
+                      {sectionAverage?.toFixed(1) ?? "—"}<span className="text-lg text-slate-500">%</span>
+                    </p>
+                    <p className="text-xs text-slate-500">avg section score</p>
+                  </div>
+                </div>
+                <dl className="grid grid-cols-2 gap-3">
+                  <div className="rounded-xl bg-slate-50 px-4 py-3">
+                    <dt className="text-xs text-slate-500">Sections scored</dt>
+                    <dd className="mt-1 font-mono text-xl font-semibold text-slate-900 tabular-nums">{sections.length}</dd>
+                  </div>
+                  <div className="rounded-xl bg-slate-50 px-4 py-3">
+                    <dt className="text-xs text-slate-500">Passing calls</dt>
+                    <dd className="mt-1 font-mono text-xl font-semibold text-slate-900 tabular-nums">
+                      {calls.filter((call) => call.percentage >= passThreshold).length}
+                      <span className="ml-1 text-xs font-normal text-slate-500">/ {calls.length}</span>
+                    </dd>
+                  </div>
                 </dl>
+                {sections.length > 0 && (
+                  <div className="mt-3 space-y-2">
+                    {[sections.reduce((best, section) => section.percentage > best.percentage ? section : best), sections.reduce((worst, section) => section.percentage < worst.percentage ? section : worst)].map((section, index) => (
+                      <div key={`${index}-${section.section}`} className={`flex items-center gap-3 rounded-xl border px-3 py-2.5 ${index === 0 ? "border-emerald-200 bg-emerald-50" : "border-rose-200 bg-rose-50"}`}>
+                        <span className={`flex size-7 shrink-0 items-center justify-center rounded-lg bg-white ${index === 0 ? "text-emerald-700" : "text-rose-700"}`}>
+                          {index === 0 ? <ArrowUpRight size={15} aria-hidden="true" /> : <ArrowDownRight size={15} aria-hidden="true" />}
+                        </span>
+                        <div className="min-w-0 flex-1">
+                          <p className={`text-[10px] font-bold uppercase tracking-[0.1em] ${index === 0 ? "text-emerald-800" : "text-rose-800"}`}>{index === 0 ? "Strongest" : "Needs attention"}</p>
+                          <p className="truncate text-xs font-semibold text-slate-800">{section.section}</p>
+                        </div>
+                        <span className={`font-mono text-xs font-bold tabular-nums ${index === 0 ? "text-emerald-800" : "text-rose-800"}`}>{section.percentage.toFixed(1)}%</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </article>
             </section>
 
@@ -1107,33 +1235,58 @@ export default function DashboardPage() {
                 <article className="min-w-0 overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04),0_16px_40px_-20px_rgba(15,23,42,0.16)]">
                   <div className="border-b border-slate-200 px-5 py-4 sm:px-6">
                     <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-leaf">Team performance</p>
-                    <h2 className="mt-1 font-display text-lg font-bold text-slate-900">Agent Leaderboard</h2>
+                    <h2 className="mt-1 font-display text-lg font-bold text-slate-900">Agent leaderboard</h2>
                     <p className="mt-1 text-xs text-slate-500">Ranked by average call score · {calls.length} calls</p>
                   </div>
                   <div className="max-h-[520px] overflow-auto">
                     {agentLeaderboard.length ? (
-                      <table className="w-full min-w-[680px] border-separate border-spacing-0 text-left text-xs">
-                        <thead className="sticky top-0 z-10 bg-slate-50 text-[10px] font-bold uppercase tracking-[0.08em] text-slate-600">
+                      <table className="w-full min-w-[760px] border-separate border-spacing-0 text-left text-sm">
+                        <thead className="sticky top-0 z-10 bg-white/95 text-[11px] font-medium uppercase tracking-[0.08em] text-slate-500 backdrop-blur">
                           <tr>
-                            <th scope="col" className="border-b border-slate-200 px-3 py-3">Agent</th>
-                            <th scope="col" className="border-b border-slate-200 px-3 py-3 text-right">Calls Graded</th>
-                            <th scope="col" className="border-b border-slate-200 px-3 py-3 text-right">Avg Call Score</th>
-                            <th scope="col" className="border-b border-slate-200 px-3 py-3 text-right">Pass Rate %</th>
-                            <th scope="col" className="border-b border-slate-200 px-3 py-3 text-right">Trend (vs First Half)</th>
+                            <th scope="col" className="w-14 border-b border-slate-200 py-3 pl-5">#</th>
+                            <th scope="col" className="border-b border-slate-200 py-3">Agent</th>
+                            <th scope="col" className="border-b border-slate-200 px-3 py-3 text-right">Calls</th>
+                            <th scope="col" className="min-w-48 border-b border-slate-200 px-3 py-3">Avg call score</th>
+                            <th scope="col" className="border-b border-slate-200 px-3 py-3 text-right">Pass rate</th>
+                            <th scope="col" className="border-b border-slate-200 py-3 pr-5 pl-3 text-right">Trend</th>
                           </tr>
                         </thead>
                         <tbody>
                           {agentLeaderboard.map((agent, index) => (
-                            <tr key={agent.agent} className={index % 2 === 0 ? "bg-white" : "bg-slate-50/60"}>
-                              <th scope="row" className="border-b border-slate-100 px-3 py-3 text-left font-semibold text-slate-800">{agent.agent}</th>
-                              <td className="border-b border-slate-100 px-3 py-3 text-right tabular-nums text-slate-600">{agent.callsGraded}</td>
-                              <td className="border-b border-slate-100 px-3 py-3 text-right font-semibold tabular-nums text-slate-800">{agent.average?.toFixed(1) ?? "—"}%</td>
-                              <td className="border-b border-slate-100 px-3 py-3 text-right tabular-nums text-slate-700">{agent.passRate.toFixed(1)}%</td>
-                              <td className="border-b border-slate-100 px-3 py-3 text-right">
+                            <tr key={agent.agent} className="transition-colors hover:bg-emerald-50/50">
+                              <td className="border-b border-slate-100 py-2.5 pl-5">
+                                <span className={`inline-flex size-7 items-center justify-center rounded-full font-mono text-[11px] font-semibold tabular-nums ${index === 0 ? "bg-lime-300 text-[#173d32]" : "bg-slate-100 text-slate-500"}`}>
+                                  {index + 1}
+                                </span>
+                              </td>
+                              <th scope="row" className="border-b border-slate-100 py-2.5 text-left font-semibold text-slate-800">
+                                <span className="flex items-center gap-3 whitespace-nowrap">
+                                  <span
+                                    className="flex size-8 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold"
+                                    style={{ backgroundColor: `hsl(${agentHue(agent.agent)} 70% 92%)`, color: `hsl(${agentHue(agent.agent)} 45% 35%)` }}
+                                    aria-hidden="true"
+                                  >
+                                    {agentInitials(agent.agent)}
+                                  </span>
+                                  {agent.agent}
+                                </span>
+                              </th>
+                              <td className="border-b border-slate-100 px-3 py-2.5 text-right font-mono text-slate-500 tabular-nums">{agent.callsGraded}</td>
+                              <td className="border-b border-slate-100 px-3 py-2.5">
+                                <div className="flex items-center gap-3">
+                                  <div className="relative h-1.5 flex-1 rounded-full bg-slate-100">
+                                    <div className="h-full rounded-full bg-gradient-to-r from-[#8fcf6b] to-[#43875d]" style={{ width: `${agent.average ?? 0}%` }} />
+                                    <span className="absolute -top-1 -bottom-1 w-px bg-rose-500/50" style={{ left: `${passThreshold}%` }} aria-hidden="true" />
+                                  </div>
+                                  <span className="w-12 text-right font-mono font-semibold text-slate-800 tabular-nums">{agent.average?.toFixed(1) ?? "—"}%</span>
+                                </div>
+                              </td>
+                              <td className="border-b border-slate-100 px-3 py-2.5 text-right font-mono text-slate-600 tabular-nums">{agent.passRate.toFixed(1)}%</td>
+                              <td className="border-b border-slate-100 py-2.5 pr-5 pl-3 text-right">
                                 {agent.trend == null ? (
-                                  <span className="text-slate-400">Not enough data</span>
+                                  <span className="text-xs text-slate-400">Not enough data</span>
                                 ) : (
-                                  <span className={`inline-flex items-center justify-end gap-1 font-semibold tabular-nums ${agent.trend > 0 ? "text-emerald-700" : agent.trend < 0 ? "text-rose-700" : "text-slate-500"}`}>
+                                  <span className={`inline-flex items-center justify-end gap-1 rounded-full px-1.5 py-0.5 font-mono text-[11px] font-semibold tabular-nums ${agent.trend > 0 ? "bg-emerald-50 text-emerald-800" : agent.trend < 0 ? "bg-rose-50 text-rose-800" : "bg-slate-100 text-slate-500"}`}>
                                     {agent.trend > 0 ? <ArrowUpRight size={14} aria-hidden="true" /> : agent.trend < 0 ? <ArrowDownRight size={14} aria-hidden="true" /> : null}
                                     {agent.trend > 0 ? "+" : ""}{agent.trend.toFixed(1)} pts
                                   </span>
@@ -1150,23 +1303,32 @@ export default function DashboardPage() {
 
               <article className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-[0_1px_2px_rgba(15,23,42,0.04),0_16px_40px_-20px_rgba(15,23,42,0.16)] sm:p-6">
                 <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-rose-700">Coaching focus</p>
-                <h2 className="mt-1 font-display text-lg font-bold text-slate-900">Coaching Priorities</h2>
+                <h2 className="mt-1 font-display text-lg font-bold text-slate-900">Coaching priorities</h2>
                 <p className="mt-1 text-xs text-slate-500">Five lowest-scoring criteria · {agentFilter}</p>
                 <div className="mt-5 space-y-2.5">
-                  {coachingPriorities.length ? coachingPriorities.map(({ category, average }) => (
-                    <div key={category} className={`rounded-xl border px-4 py-3 text-sm transition-colors ${average < 1.6 ? "border-rose-200/80 bg-rose-50 text-rose-950" : "border-amber-200/80 bg-amber-50/70 text-amber-950"}`}>
-                      <div className="flex items-center justify-between gap-3">
-                        <p className="font-bold">{category}</p>
-                        <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${average < 1.6 ? "bg-rose-100 text-rose-800" : "bg-amber-100 text-amber-800"}`}>{average < 1.6 ? "Critical" : "At risk"}</span>
+                  {coachingPriorities.length ? coachingPriorities.map(({ category, average }, index) => (
+                    <div key={category} className={`rounded-2xl border p-4 text-sm transition-colors ${index === 0 ? "border-rose-200 bg-rose-50" : "border-slate-200 bg-white hover:bg-slate-50"}`}>
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex min-w-0 items-start gap-3">
+                          <span className="mt-0.5 font-mono text-[11px] text-slate-400 tabular-nums">{String(index + 1).padStart(2, "0")}</span>
+                          <div className="min-w-0">
+                            <p className="font-mono text-[15px] font-semibold tracking-tight text-slate-900">{category}</p>
+                            <p className="truncate text-xs text-slate-500">{sectionName(category)}</p>
+                          </div>
+                        </div>
+                        <span className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-semibold ${average < 1.6 ? "bg-rose-100 text-rose-800" : "bg-amber-100 text-amber-800"}`}>{average < 1.6 ? "Critical" : "At risk"}</span>
                       </div>
-                      <div className="mt-2 flex items-center gap-3">
-                        <span className="flex flex-1 gap-1" aria-hidden="true">
+                      <div className="mt-3 flex items-center gap-3 pl-7">
+                        <span className="flex flex-1 gap-1" role="img" aria-label={`Average score ${average.toFixed(2)} out of 5`}>
                           {Array.from({ length: 5 }, (_, index) => {
                             const fill = Math.min(1, Math.max(0, average - index));
-                            return <span key={index} className="h-1.5 flex-1 overflow-hidden rounded-full bg-white/80"><span className={`block h-full rounded-full ${average < 1.6 ? "bg-rose-400" : "bg-amber-400"}`} style={{ width: `${fill * 100}%` }} /></span>;
+                            return <span key={index} className="h-2 flex-1 overflow-hidden rounded-sm bg-slate-100"><span className={`block h-full rounded-sm ${average < 1.6 ? "bg-rose-500" : "bg-amber-400"}`} style={{ width: `${fill * 100}%` }} /></span>;
                           })}
                         </span>
-                        <p className="shrink-0 text-xs font-medium">Avg Score: <strong className="font-mono tabular-nums">{average.toFixed(2)}</strong> / 5.0</p>
+                        <p className="shrink-0 font-mono text-xs text-slate-500 tabular-nums"><strong className="text-slate-900">{average.toFixed(2)}</strong> / 5</p>
+                      </div>
+                      <div className="mt-1 flex justify-between pl-7 font-mono text-[9px] text-slate-400" aria-hidden="true">
+                        {[1, 2, 3, 4, 5].map((score) => <span key={score}>{score}</span>)}
                       </div>
                     </div>
                   )) : <p className="py-8 text-center text-sm text-slate-500">No criteria scores match the current filters.</p>}
@@ -1194,6 +1356,7 @@ export default function DashboardPage() {
                       <tr>
                         <th
                           scope="col"
+                          rowSpan={2}
                           aria-sort={meterSort.column === "label" ? (meterSort.direction === "asc" ? "ascending" : "descending") : "none"}
                           className="sticky left-0 z-20 border-b border-r border-slate-200 bg-slate-50 px-4 py-3 text-left"
                         >
@@ -1208,6 +1371,19 @@ export default function DashboardPage() {
                             </span>
                           </button>
                         </th>
+                        {meterGroups.map((group) => (
+                          <th
+                            key={group.prefix}
+                            scope="colgroup"
+                            colSpan={group.categories.length}
+                            className="border-b border-l border-slate-200 px-3 py-2 text-left text-[10px] font-semibold normal-case tracking-normal text-slate-500"
+                          >
+                            <span className="mr-1.5 font-mono font-bold text-slate-800">{group.prefix}</span>
+                            {group.name}
+                          </th>
+                        ))}
+                      </tr>
+                      <tr>
                         {meterBank.categories.map((category) => {
                           const description = criterionDescription(category);
                           const active = meterSort.column === category;
@@ -1217,19 +1393,20 @@ export default function DashboardPage() {
                               key={category}
                               title={description}
                               aria-sort={active ? (meterSort.direction === "asc" ? "ascending" : "descending") : "none"}
-                              className="max-w-32 border-b border-slate-200 px-3 py-3 text-center"
+                              className="border-b border-slate-200 px-2 py-2 text-center"
                             >
                               <button
                                 type="button"
                                 title={description}
                                 aria-label={`Sort by ${category}: ${description}`}
                                 onClick={() => changeMeterSort(category)}
-                                className="inline-flex items-center justify-center gap-1.5 font-bold text-slate-600 transition hover:text-forest"
+                                className="inline-flex items-center justify-center gap-1.5 font-mono font-semibold text-slate-600 transition hover:text-forest"
                               >
-                                {category}
+                                {category.match(/\d+/)?.[0] ?? category}
                                 <span aria-hidden="true" className={active ? "text-forest" : "text-slate-300"}>
                                   {active ? (meterSort.direction === "asc" ? "▲" : "▼") : "↕"}
                                 </span>
+                                <span className="sr-only">{category}</span>
                               </button>
                             </th>
                           );
@@ -1258,6 +1435,18 @@ export default function DashboardPage() {
                         </tr>
                       ))}
                     </tbody>
+                    <tfoot>
+                      <tr>
+                        <th scope="row" className="sticky bottom-0 left-0 z-20 border-t border-r border-slate-700 bg-[#173d32] px-4 py-3 text-left text-[10px] font-bold uppercase tracking-[0.1em] text-lime-200">
+                          TEAM AVERAGE
+                        </th>
+                        {meterBank.categories.map((category) => (
+                          <td key={category} className="sticky bottom-0 z-10 border-t border-slate-700 bg-[#173d32] px-2 py-3 text-center font-mono text-xs font-semibold text-white tabular-nums">
+                            {meterTeamAverage[category]?.toFixed(1) ?? "—"}
+                          </td>
+                        ))}
+                      </tr>
+                    </tfoot>
                   </table>
                 ) : <p className="px-6 py-12 text-center text-sm text-slate-500">No category scores match these filters.</p>}
               </div>
