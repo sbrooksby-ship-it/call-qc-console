@@ -3,6 +3,7 @@
 import { createClient } from "@supabase/supabase-js";
 import { Activity, ArrowDown, ArrowDownRight, ArrowUp, ArrowUpRight, BadgeCheck, Flag, Gauge, Leaf, PhoneCall, RefreshCw, RotateCcw, ShieldCheck, Sparkles, TrendingDown, TrendingUp } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import ChatWidget from "@/components/ChatWidget";
 import {
   Area,
   AreaChart,
@@ -63,9 +64,9 @@ type WikiCompileEvent =
   | { type: "error"; message: string };
 
 const SECTION_NAMES: Record<string, string> = {
-  BG: "Building Goodwill",
+  BG: "Beginning",
   ARC: "Responsibility & Effort",
-  OE: "Opening & Engagement",
+  OE: "Ownership & Effort",
   PE: "Personalization & Education",
   QC: "Quality Communication",
   CL: "Closing",
@@ -74,9 +75,9 @@ const SECTION_NAMES: Record<string, string> = {
 };
 
 const SECTION_MAX: Record<string, number> = {
-  "Building Goodwill": 10,
+  Beginning: 10,
   "Responsibility & Effort": 20,
-  "Opening & Engagement": 15,
+  "Ownership & Effort": 15,
   "Personalization & Education": 25,
   "Quality Communication": 40,
   Closing: 20,
@@ -86,16 +87,6 @@ const SECTION_MAX: Record<string, number> = {
 
 const SECTION_ORDER = Object.values(SECTION_NAMES);
 const PREFIX_ORDER = ["BG", "ARC", "OE", "PE", "QC", "CL", "CC", "COMP"];
-const METER_SECTION_NAMES: Record<string, string> = {
-  BG: "Building Goodwill",
-  ARC: "Responsibility & Effort",
-  OE: "Opening & Engagement",
-  PE: "Personalization & Education",
-  QC: "Quality Communication",
-  CL: "Closing",
-  CC: "Call Control",
-  COMP: "Compliance",
-};
 const DEFAULT_AGENT_FILTER = "All agents";
 const DEFAULT_PASS_THRESHOLD = 80;
 const CRITERION_DESCRIPTIONS: Record<string, string> = {
@@ -691,7 +682,7 @@ export default function DashboardPage() {
     } else {
       meterGroups.push({
         prefix,
-        name: METER_SECTION_NAMES[prefix] ?? "Other",
+        name: SECTION_NAMES[prefix] ?? "Other",
         categories: [category],
       });
     }
@@ -825,6 +816,7 @@ export default function DashboardPage() {
             >
               <RefreshCw size={17} className={loading ? "animate-spin" : ""} />
             </button>
+            <ChatWidget />
           </div>
         </div>
         {(compilingWiki || compileMessage || compileError) && (
@@ -853,7 +845,10 @@ export default function DashboardPage() {
 
       <section className="relative overflow-hidden bg-[#0d211b] pb-8 text-white">
         <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.035)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.035)_1px,transparent_1px)] bg-[size:48px_48px] [mask-image:linear-gradient(to_bottom,black,transparent_88%)]" aria-hidden="true" />
-        <div className="relative mx-auto max-w-[1440px] px-5 sm:px-8 lg:px-10">
+        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_42%_70%_at_48%_7%,rgba(0,112,73,0.48),transparent_100%)]" aria-hidden="true" />
+        <div className="pointer-events-none absolute -top-20 right-[4%] h-[460px] w-[520px] rounded-full bg-[radial-gradient(closest-side,rgba(141,184,46,0.18),transparent)] blur-2xl" aria-hidden="true" />
+        <div className="pointer-events-none absolute -top-24 left-[23%] h-[420px] w-[620px] rounded-full bg-[radial-gradient(closest-side,rgba(0,91,65,0.34),transparent)] blur-2xl" aria-hidden="true" />
+        <div className="relative z-10 mx-auto max-w-[1440px] px-5 sm:px-8 lg:px-10">
         <div className="flex flex-wrap items-end justify-between gap-6 py-10 sm:py-12">
           <div className="max-w-2xl">
             <p className="mb-4 flex items-center gap-2 font-mono text-[11px] font-medium uppercase tracking-[0.18em] text-lime-300">
@@ -1077,9 +1072,9 @@ export default function DashboardPage() {
                       </div>
                       <ul className="flex flex-col">
                         {sections.map((section) => {
-                          const barColor = section.percentage < 45
+                          const barColor = section.percentage < 68
                             ? "bg-gradient-to-r from-rose-400 to-rose-600"
-                            : section.percentage < 60
+                            : section.percentage < 80
                               ? "bg-gradient-to-r from-amber-400 to-amber-500"
                               : "bg-gradient-to-r from-emerald-400 to-emerald-600";
                           return (

@@ -73,11 +73,11 @@ export default function ChatWidget() {
   }
 
   return (
-    <div className="!fixed !top-32 !right-8 !z-[99999] flex flex-col items-end gap-3">
+    <div className="relative flex shrink-0 items-center">
       {isOpen && (
         <section
           aria-label="AI Assistant"
-          className="flex h-[min(600px,calc(100dvh-7rem))] w-[min(450px,calc(100vw-2rem))] flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-2xl"
+          className="absolute top-full right-0 z-[60] mt-3 flex h-[min(600px,calc(100dvh-5rem))] w-[min(450px,calc(100vw-2rem))] flex-col overflow-hidden rounded-xl border border-slate-200 bg-white text-left shadow-2xl"
         >
           <header className="flex items-center justify-between bg-forest px-4 py-3.5 text-white">
             <div className="flex items-center gap-3">
@@ -154,11 +154,10 @@ export default function ChatWidget() {
         onClick={() => setIsOpen((open) => !open)}
         aria-label={isOpen ? "Close AI Assistant" : "Open AI Assistant"}
         aria-expanded={isOpen}
-        className="!flex !h-20 !w-20 items-center justify-center rounded-full !bg-blue-600 !text-white !opacity-100 !shadow-2xl ring-1 ring-white/30 transition hover:scale-105 hover:bg-blue-700 focus:outline-none focus:ring-4 focus:ring-blue-300"
+        className="inline-flex h-8 items-center justify-center gap-2 rounded-lg border border-white/10 bg-white/[0.05] px-3 text-sm font-medium text-white transition hover:bg-white/[0.12] focus:outline-none focus:ring-2 focus:ring-lime-300/40"
       >
-        {isOpen
-          ? <X size={40} className="h-10 w-10" aria-hidden="true" />
-          : <MessageCircle size={40} className="h-10 w-10" aria-hidden="true" />}
+        {isOpen ? <X size={16} aria-hidden="true" /> : <MessageCircle size={16} aria-hidden="true" />}
+        <span className="hidden sm:inline">{isOpen ? "Close chat" : "AI chat"}</span>
       </button>
     </div>
   );
