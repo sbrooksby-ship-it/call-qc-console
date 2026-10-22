@@ -77,7 +77,7 @@ export default function ChatWidget() {
       {isOpen && (
         <section
           aria-label="AI Assistant"
-          className="absolute top-full right-0 z-[60] mt-3 flex h-[min(600px,calc(100dvh-5rem))] w-[min(450px,calc(100vw-2rem))] flex-col overflow-hidden rounded-xl border border-slate-200 bg-white text-left shadow-2xl"
+          className="fixed top-14 right-4 z-[60] flex h-[min(600px,calc(100dvh-4rem))] w-[min(450px,calc(100vw-2rem))] flex-col overflow-hidden rounded-xl border border-slate-200 bg-white text-left shadow-2xl sm:right-6"
         >
           <header className="flex items-center justify-between bg-forest px-4 py-3.5 text-white">
             <div className="flex items-center gap-3">
@@ -131,7 +131,7 @@ export default function ChatWidget() {
                 value={input}
                 maxLength={MAX_MESSAGE_LENGTH}
                 onChange={(event) => setInput(event.target.value)}
-                placeholder="Ask a question..."
+                placeholder="Ask me anything..."
                 disabled={sending}
                 className="min-w-0 flex-1 bg-transparent px-2 py-2 text-sm text-slate-800 outline-none placeholder:text-slate-400 disabled:opacity-60"
               />
