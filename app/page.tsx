@@ -33,6 +33,7 @@ type CallSummary = {
   date: string | null;
   agent: string;
   call: string;
+  callKey: string;
   callType: "Sales" | "Care";
   questionCount: number;
   totalScore: number;
@@ -214,6 +215,7 @@ function summarizeCalls(rows: ScoreRow[]): CallSummary[] {
       date: row.date,
       agent: row.agent,
       call: row.call,
+      callKey: row.callKey,
       callType: row.callType,
       questionCount: 0,
       totalScore: 0,
@@ -303,6 +305,7 @@ function MetricCard({
   visualValues = [],
   visualValue,
   threshold,
+  onClick,
 }: {
   label: string;
   value: string;
@@ -312,6 +315,7 @@ function MetricCard({
   visualValues?: number[];
   visualValue?: number | null;
   threshold?: number;
+  onClick?: () => void;
 }) {
   const positive = delta != null && delta >= 0;
   const values = visualValues.filter(Number.isFinite);
@@ -329,7 +333,15 @@ function MetricCard({
           ? TrendingDown
           : BadgeCheck;
   return (
-    <article className={`relative flex min-w-0 flex-col justify-between gap-5 overflow-hidden rounded-2xl border p-5 backdrop-blur-md transition-colors ${label === "Average call score" ? "border-lime-300/25 bg-gradient-to-b from-lime-300/[0.10] to-white/[0.025] hover:from-lime-300/[0.14]" : "border-white/10 bg-white/[0.04] hover:bg-white/[0.065]"}`}>
+    <article className={`relative flex min-w-0 flex-col justify-between gap-5 overflow-hidden rounded-2xl border p-5 backdrop-blur-md transition-colors ${label === "Average call score" ? "border-lime-300/25 bg-gradient-to-b from-lime-300/[0.10] to-white/[0.025] hover:from-lime-300/[0.14]" : "border-white/10 bg-white/[0.04] hover:bg-white/[0.065]"} ${onClick ? "cursor-pointer hover:border-lime-300/35" : ""}`}>
+      {onClick && (
+        <button
+          type="button"
+          onClick={onClick}
+          aria-label={`${label}, ${value}. View the agent and call details.`}
+          className="absolute inset-0 z-10 rounded-2xl focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-lime-300"
+        />
+      )}
       <div className="flex items-center justify-between gap-3">
         <p className="text-[13px] font-medium text-emerald-100/70">{label}</p>
         <Icon aria-hidden="true" size={17} className={label === "Average call score" ? "text-lime-300" : "text-emerald-100/55"} />
@@ -415,6 +427,7 @@ export default function DashboardPage() {
   const [agentFilter, setAgentFilter] = useState(DEFAULT_AGENT_FILTER);
   const [passThreshold, setPassThreshold] = useState(DEFAULT_PASS_THRESHOLD);
   const [sectionView, setSectionView] = useState<SectionView>("chart");
+  const [focusCallRequest, setFocusCallRequest] = useState<{ callKey: string } | null>(null);
   const [callSort, setCallSort] = useState<CallSort>({ column: "date", direction: "desc" });
   const [meterSort, setMeterSort] = useState<{ column: string; direction: "asc" | "desc" }>({ column: "label", direction: "asc" });
   const [compileSecret, setCompileSecret] = useState("");
@@ -426,6 +439,7 @@ export default function DashboardPage() {
   const [wikiPdfTitle, setWikiPdfTitle] = useState("");
   const [uploadingWikiPdf, setUploadingWikiPdf] = useState(false);
   const wikiPdfInputRef = useRef<HTMLInputElement>(null);
+  const callRowRefs = useRef(new Map<string, HTMLTableRowElement>());
 
   useEffect(() => {
     let active = true;
@@ -617,12 +631,7 @@ export default function DashboardPage() {
 
     return Array.from(weeklyScores, ([date, scores]) => ({
       date,
-      label: new Date(`${date}T12:00:00Z`).toLocaleDateString("en-US", {
-        month: "short",
-        day: "numeric",
-        year: "2-digit",
-        timeZone: "UTC",
-      }),
+      timestamp: new Date(`${date}T12:00:00Z`).getTime(),
       average: scores.reduce((sum, score) => sum + score, 0) / scores.length,
       calls: scores.length,
     })).sort((a, b) => a.date.localeCompare(b.date));
@@ -630,6 +639,14 @@ export default function DashboardPage() {
 
   const metrics = useMemo(() => {
     const percentages = calls.map((call) => call.percentage);
+    const highestCall = calls.reduce<CallSummary | null>(
+      (best, call) => !best || call.percentage > best.percentage ? call : best,
+      null,
+    );
+    const lowestCall = calls.reduce<CallSummary | null>(
+      (worst, call) => !worst || call.percentage < worst.percentage ? call : worst,
+      null,
+    );
     const passing = calls.filter((call) => call.percentage >= passThreshold).length;
     const midpoint = startDate && endDate
       ? new Date(`${startDate}T00:00:00`).getTime() + (new Date(`${endDate}T00:00:00`).getTime() - new Date(`${startDate}T00:00:00`).getTime()) / 2
@@ -650,13 +667,23 @@ export default function DashboardPage() {
     return {
       count: calls.length,
       average: percentages.length ? percentages.reduce((sum, score) => sum + score, 0) / percentages.length : null,
-      highest: percentages.length ? Math.max(...percentages) : null,
-      lowest: percentages.length ? Math.min(...percentages) : null,
+      highest: highestCall?.percentage ?? null,
+      highestCall,
+      lowest: lowestCall?.percentage ?? null,
+      lowestCall,
       passRate: calls.length ? passing / calls.length * 100 : null,
       averageDelta,
       passDelta,
     };
   }, [calls, passThreshold, startDate, endDate]);
+
+  useEffect(() => {
+    if (!focusCallRequest) return;
+    callRowRefs.current.get(focusCallRequest.callKey)?.scrollIntoView({
+      behavior: "smooth",
+      block: "center",
+    });
+  }, [focusCallRequest, sortedIndividualCalls]);
 
   const jevMetrics = useMemo(() => {
     const checkedCalls = calls.filter((call) => call.jevCount > 0);
@@ -726,6 +753,11 @@ export default function DashboardPage() {
   }
 
   const number = (value: number | null) => value == null ? "—" : `${value.toFixed(1)}%`;
+  function focusCall(call: CallSummary | null) {
+    if (!call) return;
+    setAgentFilter(call.agent);
+    setFocusCallRequest({ callKey: call.callKey });
+  }
   const sectionAverage = sections.length
     ? sections.reduce((sum, section) => sum + section.percentage, 0) / sections.length
     : null;
@@ -1044,8 +1076,8 @@ export default function DashboardPage() {
         <section aria-label="Call performance metrics" className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-5">
           <MetricCard label="Calls graded" value={loading ? "…" : metrics.count.toLocaleString()} note="Complete calls in this view" visualKind="bars" visualValues={scoreTrend.map((point) => point.calls)} />
           <MetricCard label="Average call score" value={number(metrics.average)} note="Across selected calls" delta={metrics.averageDelta} visualKind="sparkline" visualValues={scoreTrend.map((point) => point.average)} />
-          <MetricCard label="Highest call" value={number(metrics.highest)} note="Top call score" visualKind="range" visualValue={metrics.highest} threshold={passThreshold} />
-          <MetricCard label="Lowest call" value={number(metrics.lowest)} note="Lowest call score" visualKind="range" visualValue={metrics.lowest} threshold={passThreshold} />
+          <MetricCard label="Highest call" value={number(metrics.highest)} note="Top call score · click to view agent and call" visualKind="range" visualValue={metrics.highest} threshold={passThreshold} onClick={metrics.highestCall ? () => focusCall(metrics.highestCall) : undefined} />
+          <MetricCard label="Lowest call" value={number(metrics.lowest)} note="Lowest call score · click to view agent and call" visualKind="range" visualValue={metrics.lowest} threshold={passThreshold} onClick={metrics.lowestCall ? () => focusCall(metrics.lowestCall) : undefined} />
           <MetricCard label={`Pass rate · ${passThreshold}%`} value={number(metrics.passRate)} note="Calls at or above target" delta={metrics.passDelta} visualKind="segments" visualValue={metrics.passRate} />
         </section>
 
@@ -1127,7 +1159,16 @@ export default function DashboardPage() {
                       </defs>
                       <CartesianGrid vertical={false} stroke="#dce5e8" strokeDasharray="3 5" />
                       <XAxis
-                        dataKey="label"
+                        dataKey="timestamp"
+                        type="number"
+                        scale="time"
+                        domain={["dataMin", "dataMax"]}
+                        tickFormatter={(value: number) => new Date(value).toLocaleDateString("en-US", {
+                          month: "short",
+                          day: "numeric",
+                          year: "2-digit",
+                          timeZone: "UTC",
+                        })}
                         tickLine={false}
                         axisLine={false}
                         tickMargin={12}
@@ -1150,7 +1191,12 @@ export default function DashboardPage() {
                         label={{ value: `Pass ${passThreshold}%`, position: "insideTopRight", fill: "#a52d41", fontSize: 11, fontWeight: 600 }}
                       />
                       <Tooltip
-                        labelFormatter={(value) => `Week of ${value}`}
+                        labelFormatter={(value) => `Week of ${new Date(Number(value)).toLocaleDateString("en-US", {
+                          month: "short",
+                          day: "numeric",
+                          year: "numeric",
+                          timeZone: "UTC",
+                        })}`}
                         formatter={(value, _name, item) => [`${Number(value).toFixed(1)}%`, `${item.payload.calls} calls`]}
                       />
                       <Line
@@ -1178,7 +1224,7 @@ export default function DashboardPage() {
                     <h2 className="mt-2 text-lg font-semibold tracking-tight text-slate-900">Section performance</h2>
                     <p className="mt-1 text-[13px] text-slate-500">
                       {sectionView === "table"
-                        ? "Raw score across selected calls, compared with the week before the latest week in this view."
+                        ? "Average raw score across selected calls, its percentage, and the percentage from the week before the latest week in this view."
                         : "Average score by rubric section"}
                     </p>
                   </div>
@@ -1200,11 +1246,12 @@ export default function DashboardPage() {
                   {sections.length ? (
                     sectionView === "table" ? (
                       <div className="overflow-x-auto">
-                        <table className="w-full min-w-[480px] text-left text-sm">
+                        <table className="w-full min-w-[560px] text-left text-sm">
                           <thead className="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-500">
                             <tr>
                               <th scope="col" className="px-3 py-3 font-semibold">Section</th>
-                              <th scope="col" className="px-3 py-3 text-right font-semibold">Raw score %</th>
+                              <th scope="col" className="px-3 py-3 text-right font-semibold">Raw score</th>
+                              <th scope="col" className="px-3 py-3 text-right font-semibold">Percentage</th>
                               <th scope="col" className="px-3 py-3 text-right font-semibold">Previous week %</th>
                             </tr>
                           </thead>
@@ -1214,6 +1261,7 @@ export default function DashboardPage() {
                               return (
                                 <tr key={section.section} className="border-b border-dashed border-slate-200 last:border-b-0">
                                   <th scope="row" className="px-3 py-3 text-left font-medium text-slate-800">{section.section}</th>
+                                  <td className="px-3 py-3 text-right font-mono tabular-nums text-slate-700">{section.rawScore.toFixed(1)}/{section.maxScore}</td>
                                   <td className="px-3 py-3 text-right font-mono font-medium tabular-nums text-slate-900">{section.percentage.toFixed(1)}%</td>
                                   <td className="px-3 py-3 text-right font-mono tabular-nums text-slate-600">{previousPercentage == null ? "—" : `${previousPercentage.toFixed(1)}%`}</td>
                                 </tr>
@@ -1375,7 +1423,14 @@ export default function DashboardPage() {
                         </thead>
                         <tbody>
                           {sortedIndividualCalls.map((call) => (
-                            <tr key={`${call.call}-${call.date ?? "unknown"}`} className="hover:bg-slate-50">
+                            <tr
+                              key={call.callKey}
+                              ref={(element) => {
+                                if (element) callRowRefs.current.set(call.callKey, element);
+                                else callRowRefs.current.delete(call.callKey);
+                              }}
+                              className={`transition-colors ${focusCallRequest?.callKey === call.callKey ? "bg-lime-100 ring-2 ring-inset ring-lime-400" : "hover:bg-slate-50"}`}
+                            >
                               <th scope="row" className="border-b border-slate-100 px-3 py-3 text-left font-semibold text-slate-800">{call.call}</th>
                               <td className="border-b border-slate-100 px-3 py-3 text-slate-600">{call.date ?? "—"}</td>
                               <td className="border-b border-slate-100 px-3 py-3 text-slate-600">{call.callType}</td>
