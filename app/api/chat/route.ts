@@ -56,6 +56,15 @@ const CRITERION_CATEGORY_ALIASES: Record<string, string> = {
   empathy: "ARC 2",
 };
 
+const NUMBER_WORDS: Record<string, number> = {
+  zero: 0,
+  one: 1,
+  two: 2,
+  three: 3,
+  four: 4,
+  five: 5,
+};
+
 type ChatHistoryMessage = {
   role: "user" | "model";
   text: string;
@@ -110,6 +119,24 @@ function parseScoreLookupArguments(value: unknown): ScoreLookupArguments | null 
   }
   if (!parsed.category && parsed.score === undefined && !parsed.agent_name && !parsed.call_id) return null;
   return parsed;
+}
+
+function parseDirectScoreQuestion(message: string): { category: string; score: number } | null {
+  const scoreMatch = message.match(/\b(?:score(?:d|s)?|got|given|received)\s+(?:(?:a|of)\s+)?(zero|one|two|three|four|five|\d+(?:\.\d+)?)\b/i);
+  if (!scoreMatch) return null;
+  const scoreText = scoreMatch[1].toLowerCase();
+  const score = NUMBER_WORDS[scoreText] ?? Number(scoreText);
+  if (!Number.isFinite(score)) return null;
+
+  const normalizedMessage = message.toLowerCase().replace(/[^a-z0-9& ]/g, " ");
+  const category = Object.keys(SECTION_CATEGORY_PREFIXES)
+    .sort((left, right) => right.length - left.length)
+    .find((name) => normalizedMessage.includes(name));
+  const criterion = Object.keys(CRITERION_CATEGORY_ALIASES)
+    .find((name) => new RegExp(`\\b${name}\\b`, "i").test(message));
+  const rubricCode = message.match(/\b(BG|ARC|OE|PE|QC|CL|CC|COMP)\s*\d*\b/i)?.[0];
+  const matchedCategory = category ?? criterion ?? rubricCode;
+  return matchedCategory && score >= 0 && score <= 100 ? { category: matchedCategory, score } : null;
 }
 
 function parseHistory(value: unknown): ChatHistoryMessage[] | null {
@@ -168,6 +195,52 @@ export async function POST(request: Request): Promise<Response> {
   if (!history) return responseError("Chat history is invalid or exceeds the allowed size.", 400);
 
   const message = body.message.trim();
+  const supabase = createClient(supabaseUrl, supabaseServiceRoleKey, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+  const directScoreQuestion = parseDirectScoreQuestion(message);
+  if (directScoreQuestion) {
+    const category = directScoreQuestion.category.toLowerCase().replace(/\s+section$/, "").trim();
+    const alias = CRITERION_CATEGORY_ALIASES[category];
+    const sectionPrefix = SECTION_CATEGORY_PREFIXES[category];
+    const rubricCode = (alias ?? directScoreQuestion.category).match(/^(BG|ARC|OE|PE|QC|CL|CC|COMP)\s*(\d+)$/i);
+    const prefixCode = (alias ?? directScoreQuestion.category).match(/^(BG|ARC|OE|PE|QC|CL|CC|COMP)$/i);
+    let query = supabase
+      .from("call_scores")
+      .select("agent_name, call_id, date_range, category, score", { count: "exact" })
+      .eq("score", directScoreQuestion.score)
+      .limit(MAX_SCORE_LOOKUP_RESULTS);
+
+    if (sectionPrefix || prefixCode) {
+      query = query.ilike("category", `${sectionPrefix ?? prefixCode?.[1]}%`);
+    } else if (rubricCode) {
+      query = query.eq("category", `${rubricCode[1].toUpperCase()} ${rubricCode[2]}`);
+    } else {
+      query = query.eq("category", alias ?? directScoreQuestion.category);
+    }
+
+    const { data, count, error } = await query;
+    if (error) {
+      console.error("Direct call score lookup failed:", error);
+      return responseError("Could not look up call scores. Check the call_scores table fields and database permissions.", 502);
+    }
+
+    const totalMatches = count ?? 0;
+    if (totalMatches === 0) {
+      return new Response(`No ${directScoreQuestion.score}-point scores were found for ${directScoreQuestion.category}.`, {
+        headers: { "Cache-Control": "no-store", "Content-Type": "text/plain; charset=utf-8" },
+      });
+    }
+
+    const callCount = new Set((data ?? []).map((row) => row.call_id).filter(Boolean)).size;
+    const agentNames = Array.from(new Set((data ?? []).map((row) => row.agent_name).filter(Boolean))).slice(0, 5);
+    const capped = totalMatches > MAX_SCORE_LOOKUP_RESULTS;
+    const answer = `Yes. The database has ${totalMatches}${capped ? " or more" : ""} recorded ${directScoreQuestion.score}-point ${directScoreQuestion.category} score${totalMatches === 1 ? "" : "s"}${callCount ? ` across at least ${callCount} call${callCount === 1 ? "" : "s"}` : ""}.${agentNames.length ? ` Matching agents include ${agentNames.join(", ")}.` : ""}${capped ? " Showing a capped sample of matches." : ""}`;
+    return new Response(answer, {
+      headers: { "Cache-Control": "no-store", "Content-Type": "text/plain; charset=utf-8" },
+    });
+  }
+
   const embeddingResponse = await fetch(
     "https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-001:embedContent",
     {
@@ -191,9 +264,6 @@ export async function POST(request: Request): Promise<Response> {
     return responseError("Gemini returned an invalid search embedding.", 502);
   }
 
-  const supabase = createClient(supabaseUrl, supabaseServiceRoleKey, {
-    auth: { persistSession: false, autoRefreshToken: false },
-  });
   async function lookupAgentScores(args: ScoreLookupArguments): Promise<{ totalMatches: number; results: unknown[] }> {
     let query = supabase
       .from("call_scores")
