@@ -122,12 +122,6 @@ function parseScoreLookupArguments(value: unknown): ScoreLookupArguments | null 
 }
 
 function parseDirectScoreQuestion(message: string): { category: string; score: number } | null {
-  const scoreMatch = message.match(/\b(?:score(?:d|s)?|got|given|received)\s+(?:(?:a|of)\s+)?(zero|one|two|three|four|five|\d+(?:\.\d+)?)\b/i);
-  if (!scoreMatch) return null;
-  const scoreText = scoreMatch[1].toLowerCase();
-  const score = NUMBER_WORDS[scoreText] ?? Number(scoreText);
-  if (!Number.isFinite(score)) return null;
-
   const normalizedMessage = message.toLowerCase().replace(/[^a-z0-9& ]/g, " ");
   const category = Object.keys(SECTION_CATEGORY_PREFIXES)
     .sort((left, right) => right.length - left.length)
@@ -136,7 +130,17 @@ function parseDirectScoreQuestion(message: string): { category: string; score: n
     .find((name) => new RegExp(`\\b${name}\\b`, "i").test(message));
   const rubricCode = message.match(/\b(BG|ARC|OE|PE|QC|CL|CC|COMP)\s*\d*\b/i)?.[0];
   const matchedCategory = category ?? criterion ?? rubricCode;
-  return matchedCategory && score >= 0 && score <= 100 ? { category: matchedCategory, score } : null;
+  if (!matchedCategory) return null;
+
+  const scoreMatch = message.match(/\b(?:score(?:d|s)?(?:\s+(?:a|of))?|got(?:ten)?(?:\s+(?:a|an))?|get(?:ting)?(?:\s+(?:a|an))?|given(?:\s+(?:a|an))?|received(?:\s+(?:a|an))?|earned(?:\s+(?:a|an))?|(?:a|of))\s+(zero|one|two|three|four|five|\d+(?:\.\d+)?)\b/i)
+    ?? message.match(/\b(zero|one|two|three|four|five|[0-5](?:\.\d+)?)\s+(?:in|on|for)\b/i);
+  if (!scoreMatch) return null;
+
+  const scoreText = scoreMatch[1].toLowerCase();
+  const score = NUMBER_WORDS[scoreText] ?? Number(scoreText);
+  return Number.isFinite(score) && score >= 0 && score <= 100
+    ? { category: matchedCategory, score }
+    : null;
 }
 
 function parseHistory(value: unknown): ChatHistoryMessage[] | null {
