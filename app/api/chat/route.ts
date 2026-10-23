@@ -27,6 +27,11 @@ type GeminiEmbeddingResponse = {
   error?: { message?: string };
 };
 
+type ChatEnvironment = Partial<Record<
+  "GEMINI_API_KEY" | "NEXT_PUBLIC_SUPABASE_URL" | "SUPABASE_SERVICE_ROLE_KEY",
+  string
+>>;
+
 function responseError(message: string, status: number): Response {
   return Response.json({ error: message }, { status });
 }
@@ -47,18 +52,27 @@ function parseHistory(value: unknown): ChatHistoryMessage[] | null {
 }
 
 export async function POST(request: Request): Promise<Response> {
-  let geminiApiKey = process.env.GEMINI_API_KEY;
-  if (!geminiApiKey) {
-    try {
-      geminiApiKey = (getRequestContext().env as any).GEMINI_API_KEY as string;
-    } catch {
-      geminiApiKey = undefined;
-    }
+  let cloudflareEnv: ChatEnvironment = {};
+  try {
+    cloudflareEnv = getRequestContext().env as ChatEnvironment;
+  } catch {
+    // The request context is unavailable when running outside Cloudflare.
   }
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+  const geminiApiKey = cloudflareEnv.GEMINI_API_KEY || process.env.GEMINI_API_KEY;
+  const supabaseUrl = cloudflareEnv.NEXT_PUBLIC_SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const supabaseServiceRoleKey = cloudflareEnv.SUPABASE_SERVICE_ROLE_KEY
+    || process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const missingSettings = [
+    !geminiApiKey ? "GEMINI_API_KEY" : null,
+    !supabaseUrl ? "NEXT_PUBLIC_SUPABASE_URL" : null,
+    !supabaseServiceRoleKey ? "SUPABASE_SERVICE_ROLE_KEY" : null,
+  ].filter((setting): setting is string => setting !== null);
   if (!geminiApiKey || !supabaseUrl || !supabaseServiceRoleKey) {
-    return responseError("The AI Assistant is not configured on the server.", 500);
+    return responseError(
+      `The AI Assistant is not configured on the server. Missing: ${missingSettings.join(", ")}.`,
+      500,
+    );
   }
   const gemini = new GoogleGenerativeAI(geminiApiKey);
   const contentLength = Number(request.headers.get("content-length") ?? 0);
