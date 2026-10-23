@@ -201,7 +201,7 @@ export async function POST(request: Request): Promise<Response> {
       .limit(MAX_SCORE_LOOKUP_RESULTS);
 
     if (args.category) {
-      const category = args.category.toLowerCase();
+      const category = args.category.toLowerCase().replace(/\s+section$/, "").trim();
       const alias = CRITERION_CATEGORY_ALIASES[category];
       const sectionPrefix = SECTION_CATEGORY_PREFIXES[category];
       const rubricCode = (alias ?? args.category).match(/^(BG|ARC|OE|PE|QC|CL|CC|COMP)\s*(\d+)$/i);
@@ -254,12 +254,15 @@ export async function POST(request: Request): Promise<Response> {
     history: history.map((item) => ({ role: item.role, parts: [{ text: item.text }] })),
   });
   let answer: string;
+  let generationPhase = "starting the assistant";
   try {
+    generationPhase = "requesting an assistant response";
     let result = await chat.sendMessage(message);
     let functionCalls = result.response.functionCalls() ?? [];
     let lookupTurns = 0;
 
     while (functionCalls.length && lookupTurns < MAX_SCORE_LOOKUP_TURNS) {
+      generationPhase = "looking up call scores";
       const functionResponses = await Promise.all(functionCalls.map(async (functionCall) => {
         if (functionCall.name !== checkAgentScoresTool.name) {
           throw new Error("Gemini requested an unsupported function.");
@@ -275,16 +278,19 @@ export async function POST(request: Request): Promise<Response> {
         };
       }));
 
+      generationPhase = "completing the response with score data";
       result = await chat.sendMessage(functionResponses);
       functionCalls = result.response.functionCalls() ?? [];
       lookupTurns += 1;
     }
 
-    if (functionCalls.length) return responseError("The assistant could not complete the score lookup.", 502);
+    if (functionCalls.length) {
+      return responseError("The assistant requested too many score lookups. Please narrow the question and try again.", 502);
+    }
     answer = result.response.text();
   } catch (error) {
     console.error("Chat generation failed:", error);
-    return responseError("The assistant could not complete your request.", 502);
+    return responseError(`The assistant failed while ${generationPhase}. Please try again or contact support if it continues.`, 502);
   }
 
   return new Response(answer, {
