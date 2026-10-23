@@ -270,7 +270,7 @@ export async function POST(request: Request): Promise<Response> {
         return {
           functionResponse: {
             name: functionCall.name,
-            response,
+            response: { result: response },
           },
         };
       }));
