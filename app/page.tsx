@@ -631,7 +631,12 @@ export default function DashboardPage() {
 
     return Array.from(weeklyScores, ([date, scores]) => ({
       date,
-      timestamp: new Date(`${date}T12:00:00Z`).getTime(),
+      label: new Date(`${date}T12:00:00Z`).toLocaleDateString("en-US", {
+        month: "short",
+        day: "numeric",
+        year: "2-digit",
+        timeZone: "UTC",
+      }),
       average: scores.reduce((sum, score) => sum + score, 0) / scores.length,
       calls: scores.length,
     })).sort((a, b) => a.date.localeCompare(b.date));
@@ -1159,16 +1164,7 @@ export default function DashboardPage() {
                       </defs>
                       <CartesianGrid vertical={false} stroke="#dce5e8" strokeDasharray="3 5" />
                       <XAxis
-                        dataKey="timestamp"
-                        type="number"
-                        scale="time"
-                        domain={["dataMin", "dataMax"]}
-                        tickFormatter={(value: number) => new Date(value).toLocaleDateString("en-US", {
-                          month: "short",
-                          day: "numeric",
-                          year: "2-digit",
-                          timeZone: "UTC",
-                        })}
+                        dataKey="label"
                         tickLine={false}
                         axisLine={false}
                         tickMargin={12}
@@ -1191,12 +1187,7 @@ export default function DashboardPage() {
                         label={{ value: `Pass ${passThreshold}%`, position: "insideTopRight", fill: "#a52d41", fontSize: 11, fontWeight: 600 }}
                       />
                       <Tooltip
-                        labelFormatter={(value) => `Week of ${new Date(Number(value)).toLocaleDateString("en-US", {
-                          month: "short",
-                          day: "numeric",
-                          year: "numeric",
-                          timeZone: "UTC",
-                        })}`}
+                        labelFormatter={(value) => `Week of ${value}`}
                         formatter={(value, _name, item) => [`${Number(value).toFixed(1)}%`, `${item.payload.calls} calls`]}
                       />
                       <Line
