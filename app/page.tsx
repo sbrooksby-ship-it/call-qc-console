@@ -160,18 +160,41 @@ function text(value: unknown): string {
   return value == null ? "" : String(value).trim();
 }
 
+function normalizedDateYear(year: number, month: number): number {
+  return month === 10 && year === 2010 ? 2026 : year;
+}
+
+function normalizeTrendDate(date: string): string {
+  return date.replace(/^\d{4}-10-/, "2026-10-");
+}
+
 function parseDate(value: unknown): string | null {
   const raw = text(value);
   const fullDate = raw.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})/);
   if (fullDate) {
-    return `${fullDate[1]}-${fullDate[2].padStart(2, "0")}-${fullDate[3].padStart(2, "0")}`;
+    const year = normalizedDateYear(Number(fullDate[1]), Number(fullDate[2]));
+    return `${year}-${fullDate[2].padStart(2, "0")}-${fullDate[3].padStart(2, "0")}`;
+  }
+
+  const currentYear = new Date().getFullYear();
+  const datedRangeStart = raw.match(/^(\d{1,2})[/-](\d{1,2})(?:[/-]\d{1,2})?\s*(?:[-–—]|to)\s*\d{1,2}[/-]\d{1,2}/i);
+  if (datedRangeStart) {
+    return `${currentYear}-${datedRangeStart[1].padStart(2, "0")}-${datedRangeStart[2].padStart(2, "0")}`;
+  }
+
+  const compactDateRange = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{1,2})$/);
+  if (compactDateRange && Number(compactDateRange[3]) >= Number(compactDateRange[2]) && Number(compactDateRange[3]) <= 31) {
+    return `${currentYear}-${compactDateRange[1].padStart(2, "0")}-${compactDateRange[2].padStart(2, "0")}`;
   }
 
   const shortDate = raw.match(/(\d{1,2})[-/](\d{1,2})(?:[-/](\d{2,4}))?/);
   if (!shortDate) return null;
+  const month = Number(shortDate[1]);
   let year = shortDate[3] ? Number(shortDate[3]) : new Date().getFullYear();
+  if (month === 10 && year === 10) year = 2026;
   if (year < 100) year += 2000;
-  return `${year}-${shortDate[1].padStart(2, "0")}-${shortDate[2].padStart(2, "0")}`;
+  year = normalizedDateYear(year, month);
+  return `${year}-${month.toString().padStart(2, "0")}-${shortDate[2].padStart(2, "0")}`;
 }
 
 function sectionName(category: string): string {
@@ -623,7 +646,10 @@ export default function DashboardPage() {
     const weeklyScores = new Map<string, number[]>();
     for (const call of calls) {
       if (!call.date) continue;
-      const week = weekStart(call.date);
+      const normalizedDate = normalizeTrendDate(call.date);
+      const week = normalizedDate.startsWith("2026-10-")
+        ? normalizedDate
+        : weekStart(normalizedDate);
       const scores = weeklyScores.get(week) ?? [];
       scores.push(call.percentage);
       weeklyScores.set(week, scores);
