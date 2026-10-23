@@ -1,13 +1,13 @@
 "use client";
 
 import { createClient } from "@supabase/supabase-js";
-import { Activity, ArrowDown, ArrowDownRight, ArrowUp, ArrowUpRight, BadgeCheck, Flag, Gauge, Leaf, PhoneCall, RefreshCw, RotateCcw, ShieldCheck, Sparkles, TrendingDown, TrendingUp } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { Activity, ArrowDown, ArrowDownRight, ArrowUp, ArrowUpRight, BadgeCheck, Flag, Gauge, Leaf, PhoneCall, RefreshCw, RotateCcw, ShieldCheck, Sparkles, TrendingDown, TrendingUp, Upload } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import MorphOrb from "@/components/MorphOrb";
 import {
-  Area,
-  AreaChart,
   CartesianGrid,
+  Line,
+  LineChart,
   ReferenceLine,
   ResponsiveContainer,
   Tooltip,
@@ -55,6 +55,8 @@ type SectionSummary = {
   maxScore: number;
   percentage: number;
 };
+
+type SectionView = "chart" | "table";
 
 type WikiCompileEvent =
   | { type: "status"; message: string }
@@ -259,6 +261,12 @@ function summarizeSections(rows: ScoreRow[]): SectionSummary[] {
   }).sort((a, b) => SECTION_ORDER.indexOf(a.section) - SECTION_ORDER.indexOf(b.section));
 }
 
+function weekStart(dateValue: string): string {
+  const date = new Date(`${dateValue}T00:00:00Z`);
+  date.setUTCDate(date.getUTCDate() - ((date.getUTCDay() + 6) % 7));
+  return date.toISOString().slice(0, 10);
+}
+
 function scoreCellClass(score: number | undefined): string {
   if (score == null) return "bg-slate-50 text-slate-300";
   if (score >= 4) return "bg-emerald-200 text-emerald-900";
@@ -406,6 +414,7 @@ export default function DashboardPage() {
   const [endDate, setEndDate] = useState("");
   const [agentFilter, setAgentFilter] = useState(DEFAULT_AGENT_FILTER);
   const [passThreshold, setPassThreshold] = useState(DEFAULT_PASS_THRESHOLD);
+  const [sectionView, setSectionView] = useState<SectionView>("chart");
   const [callSort, setCallSort] = useState<CallSort>({ column: "date", direction: "desc" });
   const [meterSort, setMeterSort] = useState<{ column: string; direction: "asc" | "desc" }>({ column: "label", direction: "asc" });
   const [compileSecret, setCompileSecret] = useState("");
@@ -413,6 +422,10 @@ export default function DashboardPage() {
   const [compileProgress, setCompileProgress] = useState<{ processed: number; total: number; message: string } | null>(null);
   const [compileMessage, setCompileMessage] = useState("");
   const [compileError, setCompileError] = useState("");
+  const [wikiPdf, setWikiPdf] = useState<File | null>(null);
+  const [wikiPdfTitle, setWikiPdfTitle] = useState("");
+  const [uploadingWikiPdf, setUploadingWikiPdf] = useState(false);
+  const wikiPdfInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     let active = true;
@@ -486,6 +499,26 @@ export default function DashboardPage() {
 
   const calls = useMemo(() => summarizeCalls(filteredRows), [filteredRows]);
   const sections = useMemo(() => summarizeSections(filteredRows), [filteredRows]);
+  const previousWeekSections = useMemo(() => {
+    const latestDate = filteredRows.reduce<string | null>(
+      (latest, row) => row.date && (!latest || row.date > latest) ? row.date : latest,
+      null,
+    );
+    if (!latestDate) return new Map<string, number>();
+
+    const latestWeekStart = weekStart(latestDate);
+    const previousWeekDate = new Date(`${latestWeekStart}T00:00:00Z`);
+    previousWeekDate.setUTCDate(previousWeekDate.getUTCDate() - 7);
+    const previousWeekStart = previousWeekDate.toISOString().slice(0, 10);
+    const previousWeekRows = rows.filter((row) => {
+      const matchesAgent = agentFilter === "All agents"
+        || (agentFilter === "Sales" || agentFilter === "Care"
+          ? row.callType === agentFilter
+          : row.agent === agentFilter);
+      return matchesAgent && row.date && row.date >= previousWeekStart && row.date < latestWeekStart;
+    });
+    return new Map(summarizeSections(previousWeekRows).map(({ section, percentage }) => [section, percentage]));
+  }, [agentFilter, filteredRows, rows]);
   const isAgentView = !["All agents", "Sales", "Care"].includes(agentFilter);
   const coachingPriorities = useMemo(() => {
     const criteria = new Map<string, { total: number; count: number }>();
@@ -576,10 +609,7 @@ export default function DashboardPage() {
     const weeklyScores = new Map<string, number[]>();
     for (const call of calls) {
       if (!call.date) continue;
-      const date = new Date(`${call.date}T00:00:00Z`);
-      const weekday = date.getUTCDay();
-      date.setUTCDate(date.getUTCDate() - ((weekday + 6) % 7));
-      const week = date.toISOString().slice(0, 10);
+      const week = weekStart(call.date);
       const scores = weeklyScores.get(week) ?? [];
       scores.push(call.percentage);
       weeklyScores.set(week, scores);
@@ -590,6 +620,7 @@ export default function DashboardPage() {
       label: new Date(`${date}T12:00:00Z`).toLocaleDateString("en-US", {
         month: "short",
         day: "numeric",
+        year: "2-digit",
         timeZone: "UTC",
       }),
       average: scores.reduce((sum, score) => sum + score, 0) / scores.length,
@@ -783,6 +814,39 @@ export default function DashboardPage() {
     }
   }
 
+  async function uploadWikiPdf() {
+    if (!wikiPdf || !compileSecret.trim() || !wikiPdfTitle.trim()) return;
+
+    setUploadingWikiPdf(true);
+    setCompileMessage("");
+    setCompileError("");
+
+    try {
+      const formData = new FormData();
+      formData.set("secret", compileSecret);
+      formData.set("title", wikiPdfTitle.trim());
+      formData.set("file", wikiPdf);
+      const response = await fetch("/api/compile-wiki", {
+        method: "POST",
+        body: formData,
+      });
+      const result = await response.json() as { message?: string; error?: string };
+      if (!response.ok) {
+        throw new Error(result.error || `PDF upload failed (${response.status}).`);
+      }
+
+      setCompileMessage(result.message || "PDF added to the Knowledge Wiki.");
+      setWikiPdf(null);
+      setWikiPdfTitle("");
+      if (wikiPdfInputRef.current) wikiPdfInputRef.current.value = "";
+    } catch (error) {
+      setCompileError(error instanceof Error ? error.message : "PDF upload failed.");
+    } finally {
+      setUploadingWikiPdf(false);
+      setCompileSecret("");
+    }
+  }
+
   return (
     <main className="min-h-screen bg-[#f4f7fa] pb-12">
       <header className="sticky top-0 z-50 border-b border-white/[0.08] bg-[#0d211b]/95 text-white shadow-sm backdrop-blur-xl">
@@ -819,18 +883,59 @@ export default function DashboardPage() {
                 value={compileSecret}
                 onChange={(event) => setCompileSecret(event.target.value)}
                 placeholder="Compile secret"
-                disabled={compilingWiki}
+                disabled={compilingWiki || uploadingWikiPdf}
                 className="h-8 w-36 rounded-lg border border-white/10 bg-white/[0.05] px-3 text-sm text-white outline-none placeholder:text-emerald-100/60 transition focus:border-lime-300/50 focus:bg-white/[0.08] focus:ring-2 focus:ring-lime-300/20 disabled:opacity-60 sm:w-40"
               />
               <button
                 type="submit"
-                disabled={compilingWiki || !compileSecret.trim()}
+                disabled={compilingWiki || uploadingWikiPdf || !compileSecret.trim()}
                 className="inline-flex h-8 items-center justify-center gap-2 rounded-lg border border-white/15 bg-lime-300 px-3 text-sm font-bold text-[#173d32] shadow-[0_8px_24px_-8px_rgba(190,242,100,0.8)] transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {compilingWiki ? <RefreshCw size={16} className="animate-spin" aria-hidden="true" /> : <Sparkles size={16} aria-hidden="true" />}
                 <span>{compilingWiki ? "Compiling..." : "Compile Knowledge Wiki"}</span>
               </button>
             </form>
+            <input
+              ref={wikiPdfInputRef}
+              type="file"
+              accept="application/pdf,.pdf"
+              aria-label="Choose a PDF document to add to the Knowledge Wiki"
+              disabled={compilingWiki || uploadingWikiPdf}
+              onChange={(event) => {
+                const file = event.target.files?.[0] ?? null;
+                setWikiPdf(file);
+                setWikiPdfTitle(file?.name.replace(/\.pdf$/i, "").slice(0, 180) ?? "");
+                setCompileMessage("");
+                setCompileError("");
+              }}
+              className="max-w-44 text-xs text-white file:mr-2 file:rounded-md file:border-0 file:bg-white/10 file:px-2 file:py-1.5 file:text-xs file:font-medium file:text-white hover:file:bg-white/15 disabled:opacity-60"
+            />
+            {wikiPdf && (
+              <>
+                <label className="sr-only" htmlFor="wiki-pdf-title">Wiki document title</label>
+                <input
+                  id="wiki-pdf-title"
+                  type="text"
+                  maxLength={180}
+                  value={wikiPdfTitle}
+                  onChange={(event) => setWikiPdfTitle(event.target.value)}
+                  placeholder="Document title"
+                  disabled={compilingWiki || uploadingWikiPdf}
+                  className="h-8 w-36 rounded-lg border border-white/10 bg-white/[0.05] px-3 text-sm text-white outline-none placeholder:text-emerald-100/60 focus:border-lime-300/50 disabled:opacity-60"
+                />
+                <button
+                  type="button"
+                  onClick={() => void uploadWikiPdf()}
+                  disabled={compilingWiki || uploadingWikiPdf || !compileSecret.trim() || !wikiPdfTitle.trim()}
+                  className="inline-flex h-8 items-center justify-center gap-2 rounded-lg border border-white/15 bg-white/[0.08] px-3 text-sm font-semibold text-white transition hover:bg-white/[0.14] disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {uploadingWikiPdf
+                    ? <RefreshCw size={15} className="animate-spin" aria-hidden="true" />
+                    : <Upload size={15} aria-hidden="true" />}
+                  <span>{uploadingWikiPdf ? "Uploading..." : "Add PDF to Wiki"}</span>
+                </button>
+              </>
+            )}
             <button
               type="button"
               onClick={() => setRefreshCount((count) => count + 1)}
@@ -843,8 +948,13 @@ export default function DashboardPage() {
             </button>
           </div>
         </div>
-        {(compilingWiki || compileMessage || compileError) && (
+        {(compilingWiki || uploadingWikiPdf || compileMessage || compileError) && (
           <div className="mx-auto max-w-[1440px] px-5 pb-4 sm:px-8 lg:px-10" aria-live="polite">
+            {uploadingWikiPdf && (
+              <p className="rounded-md border border-white/15 bg-white/10 px-4 py-3 text-sm text-white">
+                Extracting PDF text and adding it to the Knowledge Wiki...
+              </p>
+            )}
             {compilingWiki && compileProgress && (
               <div className="rounded-md border border-white/15 bg-white/10 px-4 py-3 text-sm text-white">
                 <div className="flex flex-wrap items-center justify-between gap-2">
@@ -1008,12 +1118,8 @@ export default function DashboardPage() {
               <div className="h-80 px-3 pb-5">
                 {scoreTrend.length ? (
                   <ResponsiveContainer width="100%" height="100%">
-                    <AreaChart data={scoreTrend} margin={{ top: 16, right: 20, left: 4, bottom: 0 }}>
+                    <LineChart data={scoreTrend} margin={{ top: 16, right: 20, left: 4, bottom: 0 }}>
                       <defs>
-                        <linearGradient id="trendFill" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="0%" stopColor="#168b69" stopOpacity={0.22} />
-                          <stop offset="100%" stopColor="#168b69" stopOpacity={0} />
-                        </linearGradient>
                         <linearGradient id="trendStroke" x1="0" y1="0" x2="1" y2="0">
                           <stop offset="0%" stopColor="#39b996" />
                           <stop offset="100%" stopColor="#00875e" />
@@ -1047,16 +1153,15 @@ export default function DashboardPage() {
                         labelFormatter={(value) => `Week of ${value}`}
                         formatter={(value, _name, item) => [`${Number(value).toFixed(1)}%`, `${item.payload.calls} calls`]}
                       />
-                      <Area
+                      <Line
                         type="monotone"
                         dataKey="average"
                         stroke="url(#trendStroke)"
                         strokeWidth={2.5}
-                        fill="url(#trendFill)"
                         dot={false}
                         activeDot={{ r: 6, fill: "#00875e", stroke: "#fff", strokeWidth: 3 }}
                       />
-                    </AreaChart>
+                    </LineChart>
                   </ResponsiveContainer>
                 ) : <div className="flex h-full items-center justify-center text-sm text-slate-500">No calls in the selected date range.</div>}
               </div>
@@ -1071,66 +1176,106 @@ export default function DashboardPage() {
                       Rubric breakdown
                     </p>
                     <h2 className="mt-2 text-lg font-semibold tracking-tight text-slate-900">Section performance</h2>
-                    <p className="mt-1 text-[13px] text-slate-500">Average score by rubric section</p>
+                    <p className="mt-1 text-[13px] text-slate-500">
+                      {sectionView === "table"
+                        ? "Raw score across selected calls, compared with the week before the latest week in this view."
+                        : "Average score by rubric section"}
+                    </p>
                   </div>
-                  <ul className="flex flex-wrap items-center gap-3 text-xs text-slate-500" aria-label="Section performance legend">
-                    <li className="inline-flex items-center gap-1.5"><span className="size-2 rounded-full bg-[#00875e]" aria-hidden="true" />On track</li>
-                    <li className="inline-flex items-center gap-1.5"><span className="size-2 rounded-full bg-[#e6a23c]" aria-hidden="true" />Watch</li>
-                    <li className="inline-flex items-center gap-1.5"><span className="size-2 rounded-full bg-[#dc5264]" aria-hidden="true" />At risk</li>
-                  </ul>
+                  <div className="inline-flex rounded-lg border border-slate-200 bg-slate-50 p-1" role="group" aria-label="Section performance view">
+                    {(["chart", "table"] as const).map((view) => (
+                      <button
+                        key={view}
+                        type="button"
+                        aria-pressed={sectionView === view}
+                        onClick={() => setSectionView(view)}
+                        className={`rounded-md px-3 py-1.5 text-xs font-semibold capitalize transition ${sectionView === view ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-800"}`}
+                      >
+                        {view}
+                      </button>
+                    ))}
+                  </div>
                 </div>
-                <div className="mt-5" role="img" aria-label="Horizontal bar chart showing average call score percentage by section">
+                <div className="mt-5">
                   {sections.length ? (
-                    <>
-                      <div className="grid grid-cols-[minmax(0,180px)_1fr_52px] items-center gap-x-5">
-                        <span />
-                        <div className="relative h-6">
-                          <span
-                            className="absolute bottom-1 -translate-x-1/2 whitespace-nowrap rounded-md bg-rose-50 px-1.5 py-0.5 font-mono text-[10px] font-semibold text-rose-700"
-                            style={{ left: `${passThreshold}%` }}
-                          >
-                            Pass {passThreshold}%
-                          </span>
-                        </div>
-                        <span />
+                    sectionView === "table" ? (
+                      <div className="overflow-x-auto">
+                        <table className="w-full min-w-[480px] text-left text-sm">
+                          <thead className="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-500">
+                            <tr>
+                              <th scope="col" className="px-3 py-3 font-semibold">Section</th>
+                              <th scope="col" className="px-3 py-3 text-right font-semibold">Raw score %</th>
+                              <th scope="col" className="px-3 py-3 text-right font-semibold">Previous week %</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {sections.map((section) => {
+                              const previousPercentage = previousWeekSections.get(section.section);
+                              return (
+                                <tr key={section.section} className="border-b border-dashed border-slate-200 last:border-b-0">
+                                  <th scope="row" className="px-3 py-3 text-left font-medium text-slate-800">{section.section}</th>
+                                  <td className="px-3 py-3 text-right font-mono font-medium tabular-nums text-slate-900">{section.percentage.toFixed(1)}%</td>
+                                  <td className="px-3 py-3 text-right font-mono tabular-nums text-slate-600">{previousPercentage == null ? "—" : `${previousPercentage.toFixed(1)}%`}</td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
                       </div>
-                      <ul className="flex flex-col">
-                        {sections.map((section) => {
-                          const barColor = section.percentage < 68
-                            ? "bg-gradient-to-r from-rose-400 to-rose-600"
-                            : section.percentage < 80
-                              ? "bg-gradient-to-r from-amber-400 to-amber-500"
-                              : "bg-gradient-to-r from-emerald-400 to-emerald-600";
-                          return (
-                            <li
-                              key={section.section}
-                              className="grid grid-cols-[minmax(0,180px)_1fr_52px] items-center gap-x-5 border-b border-dashed border-slate-200 py-3 last:border-b-0"
-                            >
-                              <span className="truncate text-[13px] font-medium text-slate-800">{section.section}</span>
-                              <div
-                                className="relative h-3 rounded-full bg-slate-100"
-                                role="progressbar"
-                                aria-label={`${section.section} average score`}
-                                aria-valuenow={section.percentage}
-                                aria-valuemin={0}
-                                aria-valuemax={100}
+                    ) : (
+                      <>
+                        <div role="img" aria-label="Horizontal bar chart showing average call score percentage by section">
+                          <div className="grid grid-cols-[minmax(0,180px)_1fr_52px] items-center gap-x-5">
+                            <span />
+                            <div className="relative h-6">
+                              <span
+                                className="absolute bottom-1 -translate-x-1/2 whitespace-nowrap rounded-md bg-rose-50 px-1.5 py-0.5 font-mono text-[10px] font-semibold text-rose-700"
+                                style={{ left: `${passThreshold}%` }}
                               >
-                                <div className={`h-full rounded-full ${barColor}`} style={{ width: `${Math.min(100, Math.max(0, section.percentage))}%` }} />
-                                <span className="absolute -top-3 -bottom-3 w-px bg-rose-500/50" style={{ left: `${passThreshold}%` }} aria-hidden="true" />
-                              </div>
-                              <span className="text-right font-mono text-sm font-medium text-slate-900 tabular-nums">{section.percentage.toFixed(0)}%</span>
-                            </li>
-                          );
-                        })}
-                      </ul>
-                      <div className="mt-2 grid grid-cols-[minmax(0,180px)_1fr_52px] gap-x-5" aria-hidden="true">
-                        <span />
-                        <div className="flex justify-between font-mono text-[11px] text-slate-500">
-                          {[0, 25, 50, 75, 100].map((tick) => <span key={tick}>{tick}</span>)}
+                                Pass {passThreshold}%
+                              </span>
+                            </div>
+                            <span />
+                          </div>
+                          <ul className="flex flex-col" aria-label="Section score bars">
+                            {sections.map((section) => {
+                              const barColor = section.percentage < 68
+                                ? "bg-gradient-to-r from-rose-400 to-rose-600"
+                                : section.percentage < 80
+                                  ? "bg-gradient-to-r from-amber-400 to-amber-500"
+                                  : "bg-gradient-to-r from-emerald-400 to-emerald-600";
+                              return (
+                                <li
+                                  key={section.section}
+                                  className="grid grid-cols-[minmax(0,180px)_1fr_52px] items-center gap-x-5 border-b border-dashed border-slate-200 py-3 last:border-b-0"
+                                >
+                                  <span className="truncate text-[13px] font-medium text-slate-800">{section.section}</span>
+                                  <div
+                                    className="relative h-3 rounded-full bg-slate-100"
+                                    role="progressbar"
+                                    aria-label={`${section.section} average score`}
+                                    aria-valuenow={section.percentage}
+                                    aria-valuemin={0}
+                                    aria-valuemax={100}
+                                  >
+                                    <div className={`h-full rounded-full ${barColor}`} style={{ width: `${Math.min(100, Math.max(0, section.percentage))}%` }} />
+                                    <span className="absolute -top-3 -bottom-3 w-px bg-rose-500/50" style={{ left: `${passThreshold}%` }} aria-hidden="true" />
+                                  </div>
+                                  <span className="text-right font-mono text-sm font-medium text-slate-900 tabular-nums">{section.percentage.toFixed(0)}%</span>
+                                </li>
+                              );
+                            })}
+                          </ul>
+                          <div className="mt-2 grid grid-cols-[minmax(0,180px)_1fr_52px] gap-x-5" aria-hidden="true">
+                            <span />
+                            <div className="flex justify-between font-mono text-[11px] text-slate-500">
+                              {[0, 25, 50, 75, 100].map((tick) => <span key={tick}>{tick}</span>)}
+                            </div>
+                            <span />
+                          </div>
                         </div>
-                        <span />
-                      </div>
-                    </>
+                      </>
+                    )
                   ) : <div className="flex min-h-64 items-center justify-center text-sm text-slate-500">No section scores to chart.</div>}
                 </div>
               </article>
