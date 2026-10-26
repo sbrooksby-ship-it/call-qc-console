@@ -1,7 +1,7 @@
 "use client";
 
 import { createClient } from "@supabase/supabase-js";
-import { Activity, ArrowDown, ArrowDownRight, ArrowUp, ArrowUpRight, BadgeCheck, Check, Flag, Gauge, Leaf, Pencil, PhoneCall, RefreshCw, RotateCcw, ShieldCheck, Sparkles, TrendingDown, TrendingUp, Upload, X } from "lucide-react";
+import { Activity, ArrowDown, ArrowDownRight, ArrowUp, ArrowUpRight, BadgeCheck, Check, Flag, Gauge, Leaf, Pencil, PhoneCall, RefreshCw, RotateCcw, ShieldCheck, Sparkles, TrendingDown, TrendingUp, Trash2, Upload, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import MorphOrb from "@/components/MorphOrb";
 import {
@@ -460,6 +460,8 @@ export default function DashboardPage() {
   const [scoreDraft, setScoreDraft] = useState("");
   const [scoreOverrideError, setScoreOverrideError] = useState("");
   const [savingScore, setSavingScore] = useState(false);
+  const [removingCall, setRemovingCall] = useState(false);
+  const [removeScoreError, setRemoveScoreError] = useState("");
   const [compileSecret, setCompileSecret] = useState("");
   const [compilingWiki, setCompilingWiki] = useState(false);
   const [compileProgress, setCompileProgress] = useState<{ processed: number; total: number; message: string } | null>(null);
@@ -737,7 +739,7 @@ export default function DashboardPage() {
     const values = new Map<string, Map<string, ScoreRow[]>>();
     const teamTotals = new Map<string, { total: number; count: number }>();
     for (const row of filteredRows) {
-      const label = byCall ? `${row.call} (${row.callType})` : row.agent;
+      const label = byCall ? `${row.call} (${row.callType}) · ${row.date ?? "Unknown date"}` : row.agent;
       const categories = values.get(label) ?? new Map<string, ScoreRow[]>();
       const categoryRows = categories.get(row.category) ?? [];
       categoryRows.push(row);
@@ -800,6 +802,35 @@ export default function DashboardPage() {
     if (!compileSecret.trim()) {
       setScoreOverrideError("Enter the admin secret in the header before saving.");
       return;
+    }
+
+    async function removeCallScores(callLabel: string, recordIds: string[]) {
+      if (!compileSecret.trim()) {
+        setRemoveScoreError("Enter the admin secret in the header before removing scores.");
+        return;
+      }
+      if (!window.confirm(`Permanently delete all ${recordIds.length} score rows for ${callLabel}? This cannot be undone.`)) {
+        return;
+      }
+
+      setRemovingCall(true);
+      setRemoveScoreError("");
+      try {
+        const response = await fetch("/api/remove-call", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ids: recordIds, secret: compileSecret }),
+        });
+        const result = await response.json() as { error?: string };
+        if (!response.ok) throw new Error(result.error || `Score removal failed (${response.status}).`);
+
+        const removedIds = new Set(recordIds);
+        setRows((current) => current.filter((row) => row.id == null || !removedIds.has(row.id)));
+      } catch (error) {
+        setRemoveScoreError(error instanceof Error ? error.message : "Score removal failed.");
+      } finally {
+        setRemovingCall(false);
+      }
     }
 
     setSavingScore(true);
@@ -1668,6 +1699,11 @@ export default function DashboardPage() {
                 </div>
               </div>
               <div className="max-h-[560px] overflow-auto">
+                {removeScoreError && (
+                  <p role="alert" className="border-b border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
+                    {removeScoreError}
+                  </p>
+                )}
                 {meterBank.data.length && meterBank.categories.length ? (
                   <table className="w-full min-w-max border-separate border-spacing-0 text-left text-xs">
                     <thead className="sticky top-0 z-10 bg-slate-50 text-[10px] font-bold uppercase tracking-[0.1em] text-slate-600">
@@ -1744,7 +1780,28 @@ export default function DashboardPage() {
                               >
                                 {item.label}
                               </button>
-                            ) : item.label}
+                            ) : (
+                              <span className="inline-flex items-center gap-2">
+                                <span>{item.label}</span>
+                                {meterBank.byCall && (() => {
+                                  const callRecords = Object.values(item.records).flat();
+                                  const callRecordIds = callRecords.flatMap((row) => row.id ? [row.id] : []);
+                                  const hasEveryRecordId = callRecords.length > 0 && callRecordIds.length === callRecords.length;
+                                  return (
+                                    <button
+                                      type="button"
+                                      disabled={!compileSecret.trim() || !hasEveryRecordId || removingCall}
+                                      onClick={() => void removeCallScores(item.label, callRecordIds)}
+                                      aria-label={`Permanently remove all scores for ${item.label}`}
+                                      title={!hasEveryRecordId ? "Cannot remove: score row IDs are missing" : compileSecret.trim() ? "Permanently remove all scores for this call" : "Enter the admin secret in the header to remove scores"}
+                                      className="rounded p-1 text-slate-400 transition hover:bg-rose-50 hover:text-rose-700 disabled:cursor-not-allowed disabled:opacity-40"
+                                    >
+                                      <Trash2 size={14} aria-hidden="true" />
+                                    </button>
+                                  );
+                                })()}
+                              </span>
+                            )}
                           </th>
                           {meterBank.categories.map((category) => {
                             const score = item.scores[category];
