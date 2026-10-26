@@ -455,7 +455,7 @@ export default function DashboardPage() {
   const [callListRequest, setCallListRequest] = useState(0);
   const [passThreshold, setPassThreshold] = useState(DEFAULT_PASS_THRESHOLD);
   const [minJevFlags, setMinJevFlags] = useState(0);
-  const [maxJevConfidence, setMaxJevConfidence] = useState(100);
+  const [maxJevConfidence, setMaxJevConfidence] = useState(0);
   const [sectionView, setSectionView] = useState<SectionView>("chart");
   const [focusCallRequest, setFocusCallRequest] = useState<{ callKey: string } | null>(null);
   const [callSort, setCallSort] = useState<CallSort>({ column: "date", direction: "desc" });
@@ -539,7 +539,7 @@ export default function DashboardPage() {
     setAgentFilter(DEFAULT_AGENT_FILTER);
     setPassThreshold(DEFAULT_PASS_THRESHOLD);
     setMinJevFlags(0);
-    setMaxJevConfidence(100);
+    setMaxJevConfidence(0);
   }
 
   const baseFilteredRows = useMemo(() => rows.filter((row) => {
@@ -1226,7 +1226,7 @@ export default function DashboardPage() {
             </span>
           </label>
           <label className="group flex min-w-0 flex-col gap-1 rounded-xl px-4 py-2.5 text-[11px] font-medium uppercase tracking-[0.1em] text-emerald-100/60 transition-colors hover:bg-white/[0.05]">
-            Maximum Jev confidence
+            Maximum Jev confidence · filters calls
             <span className="flex h-7 items-center gap-3">
               <input
                 type="range"
@@ -1263,7 +1263,7 @@ export default function DashboardPage() {
           <MetricCard
             label="Calls graded"
             value={loading ? "…" : metrics.count.toLocaleString()}
-            note="Click to view these calls"
+            note="Matching calls · click to view"
             visualKind="bars"
             visualValues={scoreTrend.map((point) => point.calls)}
             onClick={() => {
@@ -1612,7 +1612,7 @@ export default function DashboardPage() {
                   <div className="border-b border-slate-200 px-5 py-4 sm:px-6">
                     <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-leaf">{isAgentView ? "Agent detail" : "Call detail"}</p>
                     <h2 className="mt-1 font-display text-lg font-bold text-slate-900">Individual Calls</h2>
-                    <p className="mt-1 text-xs text-slate-500">{isAgentView ? agentFilter : "All agents"} · {calls.length} calls</p>
+                    <p className="mt-1 text-xs text-slate-500">{isAgentView ? agentFilter : "All agents"} · {calls.length} calls matching current filters</p>
                   </div>
                   <div className="max-h-[520px] overflow-auto">
                     {calls.length ? (
