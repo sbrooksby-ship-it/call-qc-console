@@ -455,7 +455,7 @@ export default function DashboardPage() {
   const [callListRequest, setCallListRequest] = useState(0);
   const [passThreshold, setPassThreshold] = useState(DEFAULT_PASS_THRESHOLD);
   const [minJevFlags, setMinJevFlags] = useState(0);
-  const [minJevConfidence, setMinJevConfidence] = useState(0);
+  const [maxJevConfidence, setMaxJevConfidence] = useState(100);
   const [sectionView, setSectionView] = useState<SectionView>("chart");
   const [focusCallRequest, setFocusCallRequest] = useState<{ callKey: string } | null>(null);
   const [callSort, setCallSort] = useState<CallSort>({ column: "date", direction: "desc" });
@@ -539,7 +539,7 @@ export default function DashboardPage() {
     setAgentFilter(DEFAULT_AGENT_FILTER);
     setPassThreshold(DEFAULT_PASS_THRESHOLD);
     setMinJevFlags(0);
-    setMinJevConfidence(0);
+    setMaxJevConfidence(100);
   }
 
   const baseFilteredRows = useMemo(() => rows.filter((row) => {
@@ -571,8 +571,8 @@ export default function DashboardPage() {
     const confidence = stats && stats.confidenceCount > 0
       ? stats.confidenceTotal / stats.confidenceCount * 100
       : 0;
-    return (stats?.flags ?? 0) >= minJevFlags && confidence >= minJevConfidence;
-  }), [baseFilteredRows, callJevStats, minJevFlags, minJevConfidence]);
+    return (stats?.flags ?? 0) >= minJevFlags && confidence <= maxJevConfidence;
+  }), [baseFilteredRows, callJevStats, minJevFlags, maxJevConfidence]);
 
   const calls = useMemo(() => summarizeCalls(filteredRows), [filteredRows]);
   const sections = useMemo(() => summarizeSections(filteredRows), [filteredRows]);
@@ -1226,19 +1226,19 @@ export default function DashboardPage() {
             </span>
           </label>
           <label className="group flex min-w-0 flex-col gap-1 rounded-xl px-4 py-2.5 text-[11px] font-medium uppercase tracking-[0.1em] text-emerald-100/60 transition-colors hover:bg-white/[0.05]">
-            Minimum Jev confidence
+            Maximum Jev confidence
             <span className="flex h-7 items-center gap-3">
               <input
                 type="range"
                 min="0"
                 max="100"
                 step="1"
-                value={minJevConfidence}
-                onChange={(event) => setMinJevConfidence(Number(event.target.value))}
-                aria-label="Minimum Jev confidence percentage per call"
+                value={maxJevConfidence}
+                onChange={(event) => setMaxJevConfidence(Number(event.target.value))}
+                aria-label="Maximum Jev confidence percentage per call"
                 className="h-1 min-w-0 flex-1 accent-lime-300"
               />
-              <span className="w-11 text-right font-mono text-sm font-semibold tabular-nums text-lime-300">{minJevConfidence}%</span>
+              <span className="w-11 text-right font-mono text-sm font-semibold tabular-nums text-lime-300">{maxJevConfidence}%</span>
             </span>
           </label>
           <button
