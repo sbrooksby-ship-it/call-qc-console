@@ -738,7 +738,7 @@ export default function DashboardPage() {
     const teamTotals = new Map<string, { total: number; count: number }>();
     for (const row of filteredRows) {
       const label = byCall ? `${row.call} (${row.callType})` : row.agent;
-      const categories = values.get(label) ?? new Map<string, number[]>();
+      const categories = values.get(label) ?? new Map<string, ScoreRow[]>();
       const categoryRows = categories.get(row.category) ?? [];
       categoryRows.push(row);
       categories.set(row.category, categoryRows);
