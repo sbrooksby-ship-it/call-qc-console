@@ -451,6 +451,7 @@ export default function DashboardPage() {
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
   const [agentFilter, setAgentFilter] = useState(DEFAULT_AGENT_FILTER);
+  const [showAllIndividualCalls, setShowAllIndividualCalls] = useState(false);
   const [passThreshold, setPassThreshold] = useState(DEFAULT_PASS_THRESHOLD);
   const [minJevFlags, setMinJevFlags] = useState(0);
   const [minJevConfidence, setMinJevConfidence] = useState(0);
@@ -1556,22 +1557,46 @@ export default function DashboardPage() {
               </article>
             </section>
 
+            {agentFilter === "All agents" && (
+              <div className="mt-6 flex items-center justify-end">
+                <div className="inline-flex rounded-lg border border-slate-200 bg-white p-1 shadow-sm" role="group" aria-label="Team view">
+                  <button
+                    type="button"
+                    aria-pressed={!showAllIndividualCalls}
+                    onClick={() => setShowAllIndividualCalls(false)}
+                    className={`rounded-md px-3 py-1.5 text-xs font-semibold transition ${!showAllIndividualCalls ? "bg-forest text-white" : "text-slate-500 hover:text-slate-800"}`}
+                  >
+                    Agent leaderboard
+                  </button>
+                  <button
+                    type="button"
+                    aria-pressed={showAllIndividualCalls}
+                    onClick={() => setShowAllIndividualCalls(true)}
+                    className={`rounded-md px-3 py-1.5 text-xs font-semibold transition ${showAllIndividualCalls ? "bg-forest text-white" : "text-slate-500 hover:text-slate-800"}`}
+                  >
+                    Individual calls
+                  </button>
+                </div>
+              </div>
+            )}
+
             <section
               aria-label="Coaching priorities and agent call breakdown"
               className={`mt-6 grid gap-6 ${isAgentView || agentFilter === "All agents" ? "xl:grid-cols-[minmax(0,2fr)_minmax(280px,1fr)]" : "xl:grid-cols-1"}`}
             >
-              {isAgentView && (
+              {(isAgentView || (agentFilter === "All agents" && showAllIndividualCalls)) && (
                 <article className="min-w-0 overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04),0_16px_40px_-20px_rgba(15,23,42,0.16)]">
                   <div className="border-b border-slate-200 px-5 py-4 sm:px-6">
-                    <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-leaf">Agent detail</p>
-                    <h2 className="mt-1 font-display text-lg font-bold text-slate-900">Individual Call Breakdown</h2>
-                    <p className="mt-1 text-xs text-slate-500">{agentFilter} · {calls.length} calls</p>
+                    <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-leaf">{isAgentView ? "Agent detail" : "Call detail"}</p>
+                    <h2 className="mt-1 font-display text-lg font-bold text-slate-900">Individual Calls</h2>
+                    <p className="mt-1 text-xs text-slate-500">{isAgentView ? agentFilter : "All agents"} · {calls.length} calls</p>
                   </div>
                   <div className="max-h-[520px] overflow-auto">
                     {calls.length ? (
                       <table className="w-full min-w-[900px] border-separate border-spacing-0 text-left text-xs">
                         <thead className="sticky top-0 z-10 bg-slate-50 text-[10px] font-bold uppercase tracking-[0.08em] text-slate-600">
                           <tr>
+                            {!isAgentView && <th scope="col" className="border-b border-slate-200 px-3 py-3">Agent</th>}
                             <SortableHeader label="Call ID" column="call" sort={callSort} onSort={changeCallSort} />
                             <SortableHeader label="Date" column="date" sort={callSort} onSort={changeCallSort} />
                             <SortableHeader label="Call Type" column="callType" sort={callSort} onSort={changeCallSort} />
@@ -1592,6 +1617,7 @@ export default function DashboardPage() {
                               }}
                               className={`transition-colors ${focusCallRequest?.callKey === call.callKey ? "bg-lime-100 ring-2 ring-inset ring-lime-400" : "hover:bg-slate-50"}`}
                             >
+                              {!isAgentView && <td className="border-b border-slate-100 px-3 py-3 font-medium text-slate-700">{call.agent}</td>}
                               <th scope="row" className="border-b border-slate-100 px-3 py-3 text-left font-semibold text-slate-800">{call.call}</th>
                               <td className="border-b border-slate-100 px-3 py-3 text-slate-600">{call.date ?? "—"}</td>
                               <td className="border-b border-slate-100 px-3 py-3 text-slate-600">{call.callType}</td>
@@ -1612,12 +1638,12 @@ export default function DashboardPage() {
                           ))}
                         </tbody>
                       </table>
-                    ) : <p className="px-6 py-12 text-center text-sm text-slate-500">No completed calls match this agent and date range.</p>}
+                    ) : <p className="px-6 py-12 text-center text-sm text-slate-500">No completed calls match the current filters.</p>}
                   </div>
                 </article>
               )}
 
-              {agentFilter === "All agents" && (
+              {agentFilter === "All agents" && !showAllIndividualCalls && (
                 <article className="min-w-0 overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04),0_16px_40px_-20px_rgba(15,23,42,0.16)]">
                   <div className="border-b border-slate-200 px-6 py-5">
                     <p className="mb-2 flex items-center gap-2 font-mono text-[11px] font-medium uppercase tracking-[0.14em] text-forest">
