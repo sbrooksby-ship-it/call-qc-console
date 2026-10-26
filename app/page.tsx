@@ -455,7 +455,7 @@ export default function DashboardPage() {
   const [callListRequest, setCallListRequest] = useState(0);
   const [passThreshold, setPassThreshold] = useState(DEFAULT_PASS_THRESHOLD);
   const [minJevFlags, setMinJevFlags] = useState(0);
-  const [maxJevConfidence, setMaxJevConfidence] = useState(0);
+  const [maxJevConfidence, setMaxJevConfidence] = useState(100);
   const [sectionView, setSectionView] = useState<SectionView>("chart");
   const [focusCallRequest, setFocusCallRequest] = useState<{ callKey: string } | null>(null);
   const [callSort, setCallSort] = useState<CallSort>({ column: "date", direction: "desc" });
@@ -539,7 +539,7 @@ export default function DashboardPage() {
     setAgentFilter(DEFAULT_AGENT_FILTER);
     setPassThreshold(DEFAULT_PASS_THRESHOLD);
     setMinJevFlags(0);
-    setMaxJevConfidence(0);
+    setMaxJevConfidence(100);
   }
 
   const baseFilteredRows = useMemo(() => rows.filter((row) => {
