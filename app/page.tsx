@@ -1,7 +1,7 @@
 "use client";
 
 import { createClient } from "@supabase/supabase-js";
-import { Activity, ArrowDown, ArrowDownRight, ArrowUp, ArrowUpRight, BadgeCheck, Flag, Gauge, Leaf, PhoneCall, RefreshCw, RotateCcw, ShieldCheck, Sparkles, TrendingDown, TrendingUp, Upload } from "lucide-react";
+import { Activity, ArrowDown, ArrowDownRight, ArrowUp, ArrowUpRight, BadgeCheck, Check, Flag, Gauge, Leaf, Pencil, PhoneCall, RefreshCw, RotateCcw, ShieldCheck, Sparkles, TrendingDown, TrendingUp, Upload, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import MorphOrb from "@/components/MorphOrb";
 import {
@@ -18,6 +18,7 @@ import {
 type RawScoreRow = Record<string, unknown>;
 
 type ScoreRow = {
+  id: string | null;
   date: string | null;
   agent: string;
   call: string;
@@ -205,6 +206,7 @@ function sectionName(category: string): string {
 
 function normalizeRows(rows: RawScoreRow[]): ScoreRow[] {
   return rows.map((row) => {
+    const id = typeof row.id === "string" || typeof row.id === "number" ? String(row.id) : "";
     const agent = text(row.agent_name ?? row.Agent) || "Unknown agent";
     const call = text(row.call_id ?? row.Call) || "Unknown call";
     const category = text(row.category ?? row.Category) || "Other";
@@ -218,6 +220,7 @@ function normalizeRows(rows: RawScoreRow[]): ScoreRow[] {
     const jevValue = row.jev_prob == null || text(row.jev_prob) === "" ? null : Number(row.jev_prob);
 
     return {
+      id: id || null,
       date,
       agent,
       call,
@@ -453,6 +456,10 @@ export default function DashboardPage() {
   const [focusCallRequest, setFocusCallRequest] = useState<{ callKey: string } | null>(null);
   const [callSort, setCallSort] = useState<CallSort>({ column: "date", direction: "desc" });
   const [meterSort, setMeterSort] = useState<{ column: string; direction: "asc" | "desc" }>({ column: "label", direction: "asc" });
+  const [editingScore, setEditingScore] = useState<{ id: string } | null>(null);
+  const [scoreDraft, setScoreDraft] = useState("");
+  const [scoreOverrideError, setScoreOverrideError] = useState("");
+  const [savingScore, setSavingScore] = useState(false);
   const [compileSecret, setCompileSecret] = useState("");
   const [compilingWiki, setCompilingWiki] = useState(false);
   const [compileProgress, setCompileProgress] = useState<{ processed: number; total: number; message: string } | null>(null);
@@ -727,14 +734,14 @@ export default function DashboardPage() {
 
   const meterBank = useMemo(() => {
     const byCall = !["All agents", "Sales", "Care"].includes(agentFilter);
-    const values = new Map<string, Map<string, number[]>>();
+    const values = new Map<string, Map<string, ScoreRow[]>>();
     const teamTotals = new Map<string, { total: number; count: number }>();
     for (const row of filteredRows) {
       const label = byCall ? `${row.call} (${row.callType})` : row.agent;
       const categories = values.get(label) ?? new Map<string, number[]>();
-      const scores = categories.get(row.category) ?? [];
-      scores.push(row.score);
-      categories.set(row.category, scores);
+      const categoryRows = categories.get(row.category) ?? [];
+      categoryRows.push(row);
+      categories.set(row.category, categoryRows);
       values.set(label, categories);
       const total = teamTotals.get(row.category) ?? { total: 0, count: 0 };
       total.total += row.score;
@@ -750,14 +757,15 @@ export default function DashboardPage() {
       label,
       scores: Object.fromEntries(Array.from(scores, ([category, items]) => [
         category,
-        items.reduce((sum, score) => sum + score, 0) / items.length,
+        items.reduce((sum, row) => sum + row.score, 0) / items.length,
       ])),
+      records: Object.fromEntries(scores),
     })).sort((a, b) => a.label.localeCompare(b.label));
     const teamAverage = Object.fromEntries(categories.map((category) => {
       const values = teamTotals.get(category);
       return [category, values ? values.total / values.count : null] as const;
     }));
-    return { categories, data, teamAverage };
+    return { categories, data, teamAverage, byCall };
   }, [filteredRows, agentFilter]);
 
   const sortedMeterData = useMemo(() => {
@@ -781,6 +789,38 @@ export default function DashboardPage() {
       column,
       direction: current.column === column && current.direction === "asc" ? "desc" : "asc",
     }));
+  }
+
+  async function saveScoreOverride(recordId: string) {
+    const score = Number(scoreDraft);
+    if (!Number.isFinite(score) || score < 1 || score > 5) {
+      setScoreOverrideError("Enter a score between 1 and 5.");
+      return;
+    }
+    if (!compileSecret.trim()) {
+      setScoreOverrideError("Enter the admin secret in the header before saving.");
+      return;
+    }
+
+    setSavingScore(true);
+    setScoreOverrideError("");
+    try {
+      const response = await fetch("/api/update-score", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: recordId, newScore: score, secret: compileSecret }),
+      });
+      const result = await response.json() as { error?: string };
+      if (!response.ok) throw new Error(result.error || `Score update failed (${response.status}).`);
+
+      setRows((current) => current.map((row) => row.id === recordId ? { ...row, score } : row));
+      setEditingScore(null);
+      setScoreDraft("");
+    } catch (error) {
+      setScoreOverrideError(error instanceof Error ? error.message : "Score update failed.");
+    } finally {
+      setSavingScore(false);
+    }
   }
 
   const number = (value: number | null) => value == null ? "—" : `${value.toFixed(1)}%`;
@@ -1612,6 +1652,7 @@ export default function DashboardPage() {
                   </p>
                   <h2 className="mt-1 font-display text-lg font-bold text-slate-900">Meter bank</h2>
                   <p className="mt-1 text-xs text-slate-500">Average score by criterion · scale of 1 to 5</p>
+                  <p className="mt-1 text-xs text-slate-500">Select an agent to edit an individual call score. Enter the admin secret in the header to enable editing.</p>
                 </div>
                 <div className="flex items-center gap-3 text-xs text-slate-500" aria-label="Score legend">
                   <span>Critical</span>
@@ -1706,7 +1747,85 @@ export default function DashboardPage() {
                           </th>
                           {meterBank.categories.map((category) => {
                             const score = item.scores[category];
-                            return <td key={category} className="border-b border-slate-100 px-1.5 py-1 text-center"><span className={`inline-flex min-w-12 justify-center rounded-sm px-2 py-2 font-semibold tabular-nums ${scoreCellClass(score)}`}>{score == null ? "—" : score.toFixed(1)}</span></td>;
+                            const records = item.records[category] ?? [];
+                            const candidateRecord = meterBank.byCall && records.length === 1 ? records[0] : null;
+                            const editableRecord = candidateRecord?.id != null
+                              ? { row: candidateRecord, id: candidateRecord.id }
+                              : null;
+                            const isEditing = editableRecord != null && editingScore?.id === editableRecord.id;
+                            return (
+                              <td key={category} className="border-b border-slate-100 px-1.5 py-1 text-center">
+                                {isEditing ? (
+                                  <form
+                                    className="flex min-w-32 items-center justify-center gap-1"
+                                    onSubmit={(event) => {
+                                      event.preventDefault();
+                                      void saveScoreOverride(editableRecord.id);
+                                    }}
+                                  >
+                                    <label className="sr-only" htmlFor={`score-override-${editableRecord.id}`}>New score for {category} on {item.label}</label>
+                                    <input
+                                      id={`score-override-${editableRecord.id}`}
+                                      type="number"
+                                      min="1"
+                                      max="5"
+                                      step="0.1"
+                                      required
+                                      autoFocus
+                                      value={scoreDraft}
+                                      onChange={(event) => setScoreDraft(event.target.value)}
+                                      className="w-16 rounded border border-slate-300 px-1.5 py-1 text-center font-mono text-xs text-slate-900 focus:border-emerald-600 focus:outline-none focus:ring-2 focus:ring-emerald-600/20"
+                                    />
+                                    <button
+                                      type="submit"
+                                      disabled={savingScore || !compileSecret.trim()}
+                                      aria-label={`Save ${category} score for ${item.label}`}
+                                      title="Save score"
+                                      className="rounded p-1 text-emerald-700 hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-50"
+                                    >
+                                      <Check size={14} aria-hidden="true" />
+                                    </button>
+                                    <button
+                                      type="button"
+                                      disabled={savingScore}
+                                      onClick={() => {
+                                        setEditingScore(null);
+                                        setScoreOverrideError("");
+                                      }}
+                                      aria-label="Cancel score edit"
+                                      title="Cancel"
+                                      className="rounded p-1 text-slate-500 hover:bg-slate-100 disabled:opacity-50"
+                                    >
+                                      <X size={14} aria-hidden="true" />
+                                    </button>
+                                    {scoreOverrideError && <span role="alert" className="sr-only">{scoreOverrideError}</span>}
+                                  </form>
+                                ) : (
+                                  <span className="inline-flex items-center justify-center gap-1">
+                                    <span className={`inline-flex min-w-12 justify-center rounded-sm px-2 py-2 font-semibold tabular-nums ${scoreCellClass(score)}`}>{score == null ? "—" : score.toFixed(1)}</span>
+                                    {editableRecord && (
+                                      <button
+                                        type="button"
+                                        disabled={!compileSecret.trim() || savingScore}
+                                        onClick={() => {
+                                          setEditingScore({ id: editableRecord.id });
+                                          setScoreDraft(String(editableRecord.row.score));
+                                          setScoreOverrideError("");
+                                        }}
+                                        aria-label={`Edit ${category} score for ${item.label}`}
+                                        title={compileSecret.trim() ? "Edit this call score" : "Enter the admin secret in the header to edit"}
+                                        className="rounded p-1 text-slate-400 transition hover:bg-emerald-50 hover:text-emerald-700 disabled:cursor-not-allowed disabled:opacity-40"
+                                      >
+                                        <Pencil size={13} aria-hidden="true" />
+                                      </button>
+                                    )}
+                                  </span>
+                                )}
+                                {scoreOverrideError && editableRecord && editingScore?.id === editableRecord.id && (
+                                  <p role="alert" className="mt-1 max-w-40 text-left text-[10px] text-rose-700">{scoreOverrideError}</p>
+                                )}
+                              </td>
+                            );
                           })}
                         </tr>
                       ))}

@@ -1,5 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 import { getRequestContext } from "@cloudflare/next-on-pages";
+import { secretsMatch } from "@/lib/server/secrets";
 
 export const runtime = "edge";
 
@@ -26,18 +27,6 @@ function responseError(message: string, status: number): Response {
 
 function progressEvent(event: Record<string, string | number>): Uint8Array {
   return encoder.encode(`${JSON.stringify(event)}\n`);
-}
-
-async function secretsMatch(provided: string, expected: string): Promise<boolean> {
-  const digest = async (value: string) => new Uint8Array(
-    await crypto.subtle.digest("SHA-256", encoder.encode(value)),
-  );
-  const [providedDigest, expectedDigest] = await Promise.all([digest(provided), digest(expected)]);
-  let difference = 0;
-  for (let index = 0; index < expectedDigest.length; index += 1) {
-    difference |= providedDigest[index] ^ expectedDigest[index];
-  }
-  return difference === 0;
 }
 
 export async function POST(request: Request): Promise<Response> {
