@@ -971,13 +971,7 @@ export default function DashboardPage() {
               {!loading && <span className="font-mono text-white tabular-nums">{rows.length.toLocaleString()}</span>}
               {!loading && " score rows"}
             </span>
-            <form
-              className="flex flex-wrap items-center gap-2"
-              onSubmit={(event) => {
-                event.preventDefault();
-                void compileKnowledgeWiki();
-              }}
-            >
+            <div className="flex flex-wrap items-center gap-2">
               <label className="sr-only" htmlFor="compile-wiki-secret">Wiki compilation secret</label>
               <input
                 id="compile-wiki-secret"
@@ -989,15 +983,22 @@ export default function DashboardPage() {
                 disabled={compilingWiki || uploadingWikiPdf}
                 className="h-8 w-36 rounded-lg border border-white/10 bg-white/[0.05] px-3 text-sm text-white outline-none placeholder:text-emerald-100/60 transition focus:border-lime-300/50 focus:bg-white/[0.08] focus:ring-2 focus:ring-lime-300/20 disabled:opacity-60 sm:w-40"
               />
-              <button
-                type="submit"
-                disabled={compilingWiki || uploadingWikiPdf || !compileSecret.trim()}
-                className="inline-flex h-8 items-center justify-center gap-2 rounded-lg border border-white/15 bg-lime-300 px-3 text-sm font-bold text-[#173d32] shadow-[0_8px_24px_-8px_rgba(190,242,100,0.8)] transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-60"
+              <form
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  void compileKnowledgeWiki();
+                }}
               >
-                {compilingWiki ? <RefreshCw size={16} className="animate-spin" aria-hidden="true" /> : <Sparkles size={16} aria-hidden="true" />}
-                <span>{compilingWiki ? "Compiling..." : "Compile Knowledge Wiki"}</span>
-              </button>
-            </form>
+                <button
+                  type="submit"
+                  disabled={compilingWiki || uploadingWikiPdf || !compileSecret.trim()}
+                  className="inline-flex h-8 items-center justify-center gap-2 rounded-lg border border-white/15 bg-lime-300 px-3 text-sm font-bold text-[#173d32] shadow-[0_8px_24px_-8px_rgba(190,242,100,0.8)] transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {compilingWiki ? <RefreshCw size={16} className="animate-spin" aria-hidden="true" /> : <Sparkles size={16} aria-hidden="true" />}
+                  <span>{compilingWiki ? "Compiling..." : "Compile Knowledge Wiki"}</span>
+                </button>
+              </form>
+            </div>
             <input
               ref={wikiPdfInputRef}
               type="file"
