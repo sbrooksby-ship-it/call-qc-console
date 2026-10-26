@@ -1056,10 +1056,22 @@ export default function DashboardPage() {
               Every call, scored. <span className="text-emerald-100/65">Every agent, coached.</span>
             </h1>
           </div>
-          <p className="max-w-xs text-sm leading-relaxed text-emerald-100/70">
-            Viewing <span className="font-medium text-white">{agentFilter.toLowerCase()}</span>
-            {startDate && endDate && <> from <span className="font-mono text-white">{startDate}</span> to <span className="font-mono text-white">{endDate}</span></>}.
-          </p>
+          {isAgentView ? (
+            <div className="max-w-xs text-right">
+              <p className="font-mono text-[11px] font-medium uppercase tracking-[0.14em] text-emerald-100/60">Viewing agent</p>
+              <p className="mt-1 break-words text-3xl font-semibold leading-tight text-white">{agentFilter}</p>
+              {startDate && endDate && (
+                <p className="mt-2 text-xs leading-relaxed text-emerald-100/70">
+                  <span className="font-mono text-white">{startDate}</span> to <span className="font-mono text-white">{endDate}</span>
+                </p>
+              )}
+            </div>
+          ) : (
+            <p className="max-w-xs text-sm leading-relaxed text-emerald-100/70">
+              Viewing <span className="font-medium text-white">{agentFilter.toLowerCase()}</span>
+              {startDate && endDate && <> from <span className="font-mono text-white">{startDate}</span> to <span className="font-mono text-white">{endDate}</span></>}.
+            </p>
+          )}
         </div>
         <section aria-label="Dashboard filters" className="grid gap-1 rounded-2xl border border-white/10 bg-white/[0.035] p-2 backdrop-blur-md [color-scheme:dark] sm:grid-cols-2 lg:grid-cols-[1fr_1fr_1.4fr_1.2fr_auto] lg:items-center lg:divide-x lg:divide-white/[0.06]">
           <label className="group flex min-w-0 flex-col gap-1 rounded-xl px-4 py-2.5 text-[11px] font-medium uppercase tracking-[0.1em] text-emerald-100/60 transition-colors hover:bg-white/[0.05]">
@@ -1513,7 +1525,14 @@ export default function DashboardPage() {
                                   >
                                     {agentInitials(agent.agent)}
                                   </span>
-                                  {agent.agent}
+                                  <button
+                                    type="button"
+                                    onClick={() => setAgentFilter(agent.agent)}
+                                    className="text-left transition hover:text-emerald-700 hover:underline focus:outline-none focus-visible:rounded-sm focus-visible:ring-2 focus-visible:ring-lime-600"
+                                    aria-label={`Show dashboard for ${agent.agent}`}
+                                  >
+                                    {agent.agent}
+                                  </button>
                                 </span>
                               </th>
                               <td className="border-b border-slate-100 px-3 py-2.5 text-right font-mono text-slate-500 tabular-nums">{agent.callsGraded}</td>
