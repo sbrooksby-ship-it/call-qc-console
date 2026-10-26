@@ -452,6 +452,8 @@ export default function DashboardPage() {
   const [endDate, setEndDate] = useState("");
   const [agentFilter, setAgentFilter] = useState(DEFAULT_AGENT_FILTER);
   const [passThreshold, setPassThreshold] = useState(DEFAULT_PASS_THRESHOLD);
+  const [minJevFlags, setMinJevFlags] = useState(0);
+  const [minJevConfidence, setMinJevConfidence] = useState(0);
   const [sectionView, setSectionView] = useState<SectionView>("chart");
   const [focusCallRequest, setFocusCallRequest] = useState<{ callKey: string } | null>(null);
   const [callSort, setCallSort] = useState<CallSort>({ column: "date", direction: "desc" });
@@ -533,15 +535,41 @@ export default function DashboardPage() {
     setEndDate(defaultDateRange.end);
     setAgentFilter(DEFAULT_AGENT_FILTER);
     setPassThreshold(DEFAULT_PASS_THRESHOLD);
+    setMinJevFlags(0);
+    setMinJevConfidence(0);
   }
 
-  const filteredRows = useMemo(() => rows.filter((row) => {
+  const baseFilteredRows = useMemo(() => rows.filter((row) => {
     if ((startDate || endDate) && !row.date) return false;
     if (startDate && row.date && row.date < startDate) return false;
     if (endDate && row.date && row.date > endDate) return false;
     if (agentFilter === "Sales" || agentFilter === "Care") return row.callType === agentFilter;
     return agentFilter === "All agents" || row.agent === agentFilter;
   }), [rows, startDate, endDate, agentFilter]);
+
+  const callJevStats = useMemo(() => {
+    const stats = new Map<string, { flags: number; confidenceTotal: number; confidenceCount: number }>();
+    for (const row of baseFilteredRows) {
+      const current = stats.get(row.callKey) ?? { flags: 0, confidenceTotal: 0, confidenceCount: 0 };
+      if (row.jevStatus === "flag") current.flags += 1;
+      if (row.jevProbability != null) {
+        current.confidenceTotal += row.jevProbability;
+        current.confidenceCount += 1;
+      }
+      stats.set(row.callKey, current);
+    }
+    return stats;
+  }, [baseFilteredRows]);
+
+  const maxJevFlags = Array.from(callJevStats.values())
+    .reduce((maximum, { flags }) => Math.max(maximum, flags), 1);
+  const filteredRows = useMemo(() => baseFilteredRows.filter((row) => {
+    const stats = callJevStats.get(row.callKey);
+    const confidence = stats && stats.confidenceCount > 0
+      ? stats.confidenceTotal / stats.confidenceCount * 100
+      : 0;
+    return (stats?.flags ?? 0) >= minJevFlags && confidence >= minJevConfidence;
+  }), [baseFilteredRows, callJevStats, minJevFlags, minJevConfidence]);
 
   const calls = useMemo(() => summarizeCalls(filteredRows), [filteredRows]);
   const sections = useMemo(() => summarizeSections(filteredRows), [filteredRows]);
@@ -804,35 +832,6 @@ export default function DashboardPage() {
       return;
     }
 
-    async function removeCallScores(callLabel: string, recordIds: string[]) {
-      if (!compileSecret.trim()) {
-        setRemoveScoreError("Enter the admin secret in the header before removing scores.");
-        return;
-      }
-      if (!window.confirm(`Permanently delete all ${recordIds.length} score rows for ${callLabel}? This cannot be undone.`)) {
-        return;
-      }
-
-      setRemovingCall(true);
-      setRemoveScoreError("");
-      try {
-        const response = await fetch("/api/remove-call", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ ids: recordIds, secret: compileSecret }),
-        });
-        const result = await response.json() as { error?: string };
-        if (!response.ok) throw new Error(result.error || `Score removal failed (${response.status}).`);
-
-        const removedIds = new Set(recordIds);
-        setRows((current) => current.filter((row) => row.id == null || !removedIds.has(row.id)));
-      } catch (error) {
-        setRemoveScoreError(error instanceof Error ? error.message : "Score removal failed.");
-      } finally {
-        setRemovingCall(false);
-      }
-    }
-
     setSavingScore(true);
     setScoreOverrideError("");
     try {
@@ -851,6 +850,35 @@ export default function DashboardPage() {
       setScoreOverrideError(error instanceof Error ? error.message : "Score update failed.");
     } finally {
       setSavingScore(false);
+    }
+  }
+
+  async function removeCallScores(label: string, callRecordIds: string[]) {
+    if (!compileSecret.trim()) {
+      setRemoveScoreError("Enter the admin secret in the header before removing scores.");
+      return;
+    }
+    if (!window.confirm(`Permanently delete all ${callRecordIds.length} score rows for ${label}? This cannot be undone.`)) {
+      return;
+    }
+
+    setRemovingCall(true);
+    setRemoveScoreError("");
+    try {
+      const response = await fetch("/api/remove-call", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids: callRecordIds, secret: compileSecret }),
+      });
+      const result = await response.json() as { error?: string };
+      if (!response.ok) throw new Error(result.error || `Score removal failed (${response.status}).`);
+
+      const removedIds = new Set(callRecordIds);
+      setRows((current) => current.filter((row) => row.id == null || !removedIds.has(row.id)));
+    } catch (error) {
+      setRemoveScoreError(error instanceof Error ? error.message : "Score removal failed.");
+    } finally {
+      setRemovingCall(false);
     }
   }
 
@@ -1145,7 +1173,7 @@ export default function DashboardPage() {
             </p>
           )}
         </div>
-        <section aria-label="Dashboard filters" className="grid gap-1 rounded-2xl border border-white/10 bg-white/[0.035] p-2 backdrop-blur-md [color-scheme:dark] sm:grid-cols-2 lg:grid-cols-[1fr_1fr_1.4fr_1.2fr_auto] lg:items-center lg:divide-x lg:divide-white/[0.06]">
+        <section aria-label="Dashboard filters" className="grid gap-1 rounded-2xl border border-white/10 bg-white/[0.035] p-2 backdrop-blur-md [color-scheme:dark] sm:grid-cols-2 lg:grid-cols-4 lg:items-center lg:divide-x lg:divide-white/[0.06]">
           <label className="group flex min-w-0 flex-col gap-1 rounded-xl px-4 py-2.5 text-[11px] font-medium uppercase tracking-[0.1em] text-emerald-100/60 transition-colors hover:bg-white/[0.05]">
             From
             <input type="date" value={startDate} onChange={(event) => setStartDate(event.target.value)} className="w-full bg-transparent text-sm font-medium normal-case tracking-normal text-white outline-none focus:text-white [&::-webkit-calendar-picker-indicator]:cursor-pointer [&::-webkit-calendar-picker-indicator]:opacity-70" />
@@ -1168,6 +1196,38 @@ export default function DashboardPage() {
             <span className="flex h-7 items-center gap-3">
               <input type="range" min="0" max="100" step="1" value={passThreshold} onChange={(event) => setPassThreshold(Number(event.target.value))} aria-label="Pass threshold percentage" className="h-1 min-w-0 flex-1 accent-lime-300" />
               <span className="w-11 text-right font-mono text-sm font-semibold tabular-nums text-lime-300">{passThreshold}%</span>
+            </span>
+          </label>
+          <label className="group flex min-w-0 flex-col gap-1 rounded-xl px-4 py-2.5 text-[11px] font-medium uppercase tracking-[0.1em] text-emerald-100/60 transition-colors hover:bg-white/[0.05]">
+            Minimum Jev flags
+            <span className="flex h-7 items-center gap-3">
+              <input
+                type="range"
+                min="0"
+                max={maxJevFlags}
+                step="1"
+                value={minJevFlags}
+                onChange={(event) => setMinJevFlags(Number(event.target.value))}
+                aria-label="Minimum Jev flags per call"
+                className="h-1 min-w-0 flex-1 accent-lime-300"
+              />
+              <span className="w-11 text-right font-mono text-sm font-semibold tabular-nums text-lime-300">{minJevFlags}</span>
+            </span>
+          </label>
+          <label className="group flex min-w-0 flex-col gap-1 rounded-xl px-4 py-2.5 text-[11px] font-medium uppercase tracking-[0.1em] text-emerald-100/60 transition-colors hover:bg-white/[0.05]">
+            Minimum Jev confidence
+            <span className="flex h-7 items-center gap-3">
+              <input
+                type="range"
+                min="0"
+                max="100"
+                step="1"
+                value={minJevConfidence}
+                onChange={(event) => setMinJevConfidence(Number(event.target.value))}
+                aria-label="Minimum Jev confidence percentage per call"
+                className="h-1 min-w-0 flex-1 accent-lime-300"
+              />
+              <span className="w-11 text-right font-mono text-sm font-semibold tabular-nums text-lime-300">{minJevConfidence}%</span>
             </span>
           </label>
           <button
