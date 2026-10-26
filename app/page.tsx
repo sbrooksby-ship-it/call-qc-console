@@ -452,6 +452,7 @@ export default function DashboardPage() {
   const [endDate, setEndDate] = useState("");
   const [agentFilter, setAgentFilter] = useState(DEFAULT_AGENT_FILTER);
   const [showAllIndividualCalls, setShowAllIndividualCalls] = useState(false);
+  const [callListRequest, setCallListRequest] = useState(0);
   const [passThreshold, setPassThreshold] = useState(DEFAULT_PASS_THRESHOLD);
   const [minJevFlags, setMinJevFlags] = useState(0);
   const [minJevConfidence, setMinJevConfidence] = useState(0);
@@ -475,6 +476,7 @@ export default function DashboardPage() {
   const [uploadingWikiPdf, setUploadingWikiPdf] = useState(false);
   const wikiPdfInputRef = useRef<HTMLInputElement>(null);
   const callRowRefs = useRef(new Map<string, HTMLTableRowElement>());
+  const individualCallsRef = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -753,6 +755,14 @@ export default function DashboardPage() {
       block: "center",
     });
   }, [focusCallRequest, sortedIndividualCalls]);
+
+  useEffect(() => {
+    if (callListRequest === 0) return;
+    const frame = window.requestAnimationFrame(() => {
+      individualCallsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [callListRequest, showAllIndividualCalls, agentFilter]);
 
   const jevMetrics = useMemo(() => {
     const checkedCalls = calls.filter((call) => call.jevCount > 0);
@@ -1250,7 +1260,17 @@ export default function DashboardPage() {
         )}
 
         <section aria-label="Call performance metrics" className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-5">
-          <MetricCard label="Calls graded" value={loading ? "…" : metrics.count.toLocaleString()} note="Complete calls in this view" visualKind="bars" visualValues={scoreTrend.map((point) => point.calls)} />
+          <MetricCard
+            label="Calls graded"
+            value={loading ? "…" : metrics.count.toLocaleString()}
+            note="Click to view these calls"
+            visualKind="bars"
+            visualValues={scoreTrend.map((point) => point.calls)}
+            onClick={() => {
+              if (agentFilter === "All agents") setShowAllIndividualCalls(true);
+              setCallListRequest((current) => current + 1);
+            }}
+          />
           <MetricCard label="Average call score" value={number(metrics.average)} note="Across selected calls" delta={metrics.averageDelta} visualKind="sparkline" visualValues={scoreTrend.map((point) => point.average)} />
           <MetricCard label="Highest call" value={number(metrics.highest)} note="Top call score · click to view agent and call" visualKind="range" visualValue={metrics.highest} threshold={passThreshold} onClick={metrics.highestCall ? () => focusCall(metrics.highestCall) : undefined} />
           <MetricCard label="Lowest call" value={number(metrics.lowest)} note="Lowest call score · click to view agent and call" visualKind="range" visualValue={metrics.lowest} threshold={passThreshold} onClick={metrics.lowestCall ? () => focusCall(metrics.lowestCall) : undefined} />
@@ -1585,7 +1605,10 @@ export default function DashboardPage() {
               className={`mt-6 grid gap-6 ${isAgentView || agentFilter === "All agents" ? "xl:grid-cols-[minmax(0,2fr)_minmax(280px,1fr)]" : "xl:grid-cols-1"}`}
             >
               {(isAgentView || (agentFilter === "All agents" && showAllIndividualCalls)) && (
-                <article className="min-w-0 overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04),0_16px_40px_-20px_rgba(15,23,42,0.16)]">
+                <article
+                  ref={individualCallsRef}
+                  className="min-w-0 overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04),0_16px_40px_-20px_rgba(15,23,42,0.16)]"
+                >
                   <div className="border-b border-slate-200 px-5 py-4 sm:px-6">
                     <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-leaf">{isAgentView ? "Agent detail" : "Call detail"}</p>
                     <h2 className="mt-1 font-display text-lg font-bold text-slate-900">Individual Calls</h2>
