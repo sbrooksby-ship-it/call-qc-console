@@ -2,7 +2,7 @@
 
 import { createClient } from "@supabase/supabase-js";
 import { Activity, ArrowDown, ArrowDownRight, ArrowUp, ArrowUpRight, BadgeCheck, Flag, Gauge, Leaf, PhoneCall, RefreshCw, RotateCcw, ShieldCheck, Sparkles, TrendingDown, TrendingUp, Trash2, Upload } from "lucide-react";
-import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import MorphOrb from "@/components/MorphOrb";
 import {
   CartesianGrid,
@@ -502,7 +502,6 @@ export default function DashboardPage() {
   const [meterSort, setMeterSort] = useState<{ column: string; direction: "asc" | "desc" }>({ column: "label", direction: "asc" });
   const [compileSecret, setCompileSecret] = useState("");
   const [removingCallKey, setRemovingCallKey] = useState<string | null>(null);
-  const [callActionKey, setCallActionKey] = useState<string | null>(null);
   const [removeCallError, setRemoveCallError] = useState("");
   const [removeCallMessage, setRemoveCallMessage] = useState("");
   const [compilingWiki, setCompilingWiki] = useState(false);
@@ -1774,7 +1773,7 @@ export default function DashboardPage() {
                     <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-leaf">{isAgentView ? "Agent detail" : "Call detail"}</p>
                     <h2 className="mt-1 font-display text-lg font-bold text-slate-900">Individual Calls</h2>
                     <p className="mt-1 text-xs text-slate-500">{agentFilter} · {calls.length} calls</p>
-                    <p className="mt-1 text-xs text-slate-500">Click a call ID to open its remove action. Enter the admin secret above to permanently delete its score records.</p>
+                    <p className="mt-1 text-xs text-slate-500">Use the trash button to permanently delete a call and its score records. Enter the admin secret above first.</p>
                   </div>
                   <div className="max-h-[520px] overflow-auto">
                     {calls.length ? (
@@ -1795,8 +1794,8 @@ export default function DashboardPage() {
                         </thead>
                         <tbody>
                           {sortedIndividualCalls.map((call) => (
-                            <Fragment key={call.callKey}>
                               <tr
+                                key={call.callKey}
                                 ref={(element) => {
                                   if (element) callRowRefs.current.set(call.callKey, element);
                                   else callRowRefs.current.delete(call.callKey);
@@ -1804,21 +1803,7 @@ export default function DashboardPage() {
                                 className={`transition-colors ${focusCallRequest?.callKey === call.callKey ? "bg-lime-100 ring-2 ring-inset ring-lime-400" : "hover:bg-slate-50"}`}
                               >
                                 {!isAgentView && <td className="border-b border-slate-100 px-3 py-3 font-medium text-slate-700">{call.agent}</td>}
-                                <th scope="row" className="border-b border-slate-100 px-3 py-3 text-left font-semibold text-slate-800">
-                                  <button
-                                    type="button"
-                                    aria-expanded={callActionKey === call.callKey}
-                                    aria-controls={callActionKey === call.callKey ? `call-actions-${encodeURIComponent(call.callKey)}` : undefined}
-                                    onClick={() => {
-                                      setCallActionKey((current) => current === call.callKey ? null : call.callKey);
-                                      setRemoveCallError("");
-                                      setRemoveCallMessage("");
-                                    }}
-                                    className="text-left transition hover:text-emerald-700 hover:underline focus:outline-none focus-visible:rounded-sm focus-visible:ring-2 focus-visible:ring-lime-600"
-                                  >
-                                    {call.call}
-                                  </button>
-                                </th>
+                                <th scope="row" className="border-b border-slate-100 px-3 py-3 text-left font-semibold text-slate-800">{call.call}</th>
                                 <td className="border-b border-slate-100 px-3 py-3 text-slate-600">{call.date ?? "—"}</td>
                                 <td className="border-b border-slate-100 px-3 py-3 text-slate-600">{call.callType}</td>
                                 <td className="border-b border-slate-100 px-3 py-3 text-right tabular-nums text-slate-700">{call.totalScore}</td>
@@ -1849,36 +1834,6 @@ export default function DashboardPage() {
                                   </button>
                                 </td>
                               </tr>
-                              {callActionKey === call.callKey && (
-                                <tr>
-                                  <td
-                                    id={`call-actions-${encodeURIComponent(call.callKey)}`}
-                                    colSpan={isAgentView ? 9 : 10}
-                                    className="border-b border-slate-200 bg-rose-50/60 px-4 py-3"
-                                  >
-                                    <div className="flex flex-wrap items-center justify-between gap-3">
-                                      <p className="text-xs text-slate-600">
-                                        Remove <strong className="text-slate-800">{call.call}</strong> for <strong className="text-slate-800">{call.agent}</strong>? This permanently deletes all score records for this call across the website.
-                                      </p>
-                                      <button
-                                        type="button"
-                                        disabled={!compileSecret.trim() || removingCallKey != null}
-                                        onClick={() => void removeIndividualCall(call)}
-                                        className="inline-flex h-9 items-center justify-center gap-2 rounded-lg bg-rose-700 px-3 text-xs font-semibold text-white transition hover:bg-rose-800 focus:outline-none focus:ring-2 focus:ring-rose-500/40 disabled:cursor-not-allowed disabled:opacity-50"
-                                      >
-                                        {removingCallKey === call.callKey
-                                          ? <RefreshCw size={14} className="animate-spin" aria-hidden="true" />
-                                          : <Trash2 size={14} aria-hidden="true" />}
-                                        Remove call
-                                      </button>
-                                    </div>
-                                    {!compileSecret.trim() && (
-                                      <p className="mt-2 text-xs text-slate-500">Enter the admin secret in the header to enable permanent removal.</p>
-                                    )}
-                                  </td>
-                                </tr>
-                              )}
-                            </Fragment>
                           ))}
                         </tbody>
                       </table>
