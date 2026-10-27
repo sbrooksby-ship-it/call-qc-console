@@ -1,8 +1,8 @@
 "use client";
 
 import { createClient } from "@supabase/supabase-js";
-import { Activity, ArrowDown, ArrowDownRight, ArrowUp, ArrowUpRight, BadgeCheck, Flag, Gauge, Leaf, PhoneCall, RefreshCw, RotateCcw, ShieldCheck, Sparkles, TrendingDown, TrendingUp, Upload } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Activity, ArrowDown, ArrowDownRight, ArrowUp, ArrowUpRight, BadgeCheck, Flag, Gauge, Leaf, PhoneCall, RefreshCw, RotateCcw, ShieldCheck, Sparkles, TrendingDown, TrendingUp, Trash2, Upload } from "lucide-react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import MorphOrb from "@/components/MorphOrb";
 import {
   CartesianGrid,
@@ -18,6 +18,7 @@ import {
 type RawScoreRow = Record<string, unknown>;
 
 type ScoreRow = {
+  id: string | null;
   date: string | null;
   agent: string;
   call: string;
@@ -213,6 +214,7 @@ function normalizeRows(rows: RawScoreRow[]): ScoreRow[] {
   return rows.map((row) => {
     const agent = text(row.agent_name ?? row.Agent) || "Unknown agent";
     const call = text(row.call_id ?? row.Call) || "Unknown call";
+    const id = typeof row.id === "string" || typeof row.id === "number" ? String(row.id) : "";
     const category = text(row.category ?? row.Category) || "Other";
     const date = parseDate(row.date_range ?? row.Date);
     const callTypeText = text(row["Call Type"] ?? row.call_type).toLowerCase();
@@ -224,6 +226,7 @@ function normalizeRows(rows: RawScoreRow[]): ScoreRow[] {
     const jevValue = row.jev_prob == null || text(row.jev_prob) === "" ? null : Number(row.jev_prob);
 
     return {
+      id: id || null,
       date,
       agent,
       call,
@@ -490,11 +493,18 @@ export default function DashboardPage() {
   const [comparisonMonthA, setComparisonMonthA] = useState("");
   const [comparisonMonthB, setComparisonMonthB] = useState("");
   const [passThreshold, setPassThreshold] = useState(DEFAULT_PASS_THRESHOLD);
+  const [minJevFlags, setMinJevFlags] = useState(0);
+  const [maxJevConfidence, setMaxJevConfidence] = useState(100);
+  const [showAllIndividualCalls, setShowAllIndividualCalls] = useState(false);
   const [sectionView, setSectionView] = useState<SectionView>("chart");
   const [focusCallRequest, setFocusCallRequest] = useState<{ callKey: string } | null>(null);
   const [callSort, setCallSort] = useState<CallSort>({ column: "date", direction: "desc" });
   const [meterSort, setMeterSort] = useState<{ column: string; direction: "asc" | "desc" }>({ column: "label", direction: "asc" });
   const [compileSecret, setCompileSecret] = useState("");
+  const [removingCallKey, setRemovingCallKey] = useState<string | null>(null);
+  const [callActionKey, setCallActionKey] = useState<string | null>(null);
+  const [removeCallError, setRemoveCallError] = useState("");
+  const [removeCallMessage, setRemoveCallMessage] = useState("");
   const [compilingWiki, setCompilingWiki] = useState(false);
   const [compileProgress, setCompileProgress] = useState<{ processed: number; total: number; message: string } | null>(null);
   const [compileMessage, setCompileMessage] = useState("");
@@ -579,17 +589,43 @@ export default function DashboardPage() {
     setEndDate(defaultDateRange.end);
     setAgentFilter(DEFAULT_AGENT_FILTER);
     setPassThreshold(DEFAULT_PASS_THRESHOLD);
+    setMinJevFlags(0);
+    setMaxJevConfidence(100);
   }
 
   const isTeamFilter = Object.prototype.hasOwnProperty.call(TEAM_AGENTS, agentFilter);
   const isAgentView = !["All agents", "Sales", "Care"].includes(agentFilter) && !isTeamFilter;
   const isAgentGroupFilter = agentFilter === "All agents" || isTeamFilter;
-  const filteredRows = useMemo(() => rows.filter((row) => {
+  const baseFilteredRows = useMemo(() => rows.filter((row) => {
     if ((startDate || endDate) && !row.date) return false;
     if (startDate && row.date && row.date < startDate) return false;
     if (endDate && row.date && row.date > endDate) return false;
     return matchesAgentFilter(row.agent, row.callType, agentFilter);
   }), [rows, startDate, endDate, agentFilter]);
+
+  const callJevStats = useMemo(() => {
+    const stats = new Map<string, { flags: number; confidenceTotal: number; confidenceCount: number }>();
+    for (const row of baseFilteredRows) {
+      const current = stats.get(row.callKey) ?? { flags: 0, confidenceTotal: 0, confidenceCount: 0 };
+      if (row.jevStatus === "flag") current.flags += 1;
+      if (row.jevProbability != null) {
+        current.confidenceTotal += row.jevProbability;
+        current.confidenceCount += 1;
+      }
+      stats.set(row.callKey, current);
+    }
+    return stats;
+  }, [baseFilteredRows]);
+  const maxJevFlags = Array.from(callJevStats.values())
+    .reduce((maximum, { flags }) => Math.max(maximum, flags), 1);
+  const activeMinJevFlags = Math.min(minJevFlags, maxJevFlags);
+  const filteredRows = useMemo(() => baseFilteredRows.filter((row) => {
+    const stats = callJevStats.get(row.callKey);
+    const confidence = stats && stats.confidenceCount > 0
+      ? stats.confidenceTotal / stats.confidenceCount * 100
+      : 0;
+    return (stats?.flags ?? 0) >= activeMinJevFlags && confidence <= maxJevConfidence;
+  }), [baseFilteredRows, callJevStats, activeMinJevFlags, maxJevConfidence]);
 
   const calls = useMemo(() => summarizeCalls(filteredRows), [filteredRows]);
   const teamMonthComparison = useMemo(() => {
@@ -690,6 +726,50 @@ export default function DashboardPage() {
       column,
       direction: current.column === column && current.direction === "asc" ? "desc" : "asc",
     }));
+  }
+
+  async function removeIndividualCall(call: CallSummary) {
+    const callRows = rows.filter((row) => row.callKey === call.callKey);
+    const ids = callRows.flatMap((row) => row.id ? [row.id] : []);
+    if (ids.length !== callRows.length) {
+      setRemoveCallError(`Cannot remove ${call.call}: one or more score row IDs are missing. Refresh the dashboard and try again.`);
+      setRemoveCallMessage("");
+      return;
+    }
+    if (!ids.length || ids.length > 500) {
+      setRemoveCallError(`Cannot remove ${call.call}: expected 1–500 score rows, found ${ids.length}.`);
+      setRemoveCallMessage("");
+      return;
+    }
+
+    const label = `${call.call}${call.date ? ` (${call.date})` : ""} for ${call.agent}`;
+    if (!window.confirm(`Permanently remove ${label} and all ${ids.length} of its score records from the dashboard? This cannot be undone.`)) {
+      return;
+    }
+
+    setRemovingCallKey(call.callKey);
+    setRemoveCallError("");
+    setRemoveCallMessage("");
+    try {
+      const response = await fetch("/api/remove-call", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids, secret: compileSecret }),
+      });
+      const result = await response.json() as { error?: string; deleted?: number };
+      if (!response.ok) throw new Error(result.error || `Call removal failed (${response.status}).`);
+      if (result.deleted !== ids.length) {
+        throw new Error("The server did not confirm removal of every score record. Refresh the dashboard to verify the call.");
+      }
+
+      setRows((current) => current.filter((row) => row.callKey !== call.callKey));
+      setCallActionKey(null);
+      setRemoveCallMessage(`${label} and all ${ids.length} score records were removed.`);
+    } catch (error) {
+      setRemoveCallError(error instanceof Error ? error.message : "Call removal failed.");
+    } finally {
+      setRemovingCallKey(null);
+    }
   }
 
   const agentLeaderboard = useMemo(() => {
@@ -1015,13 +1095,7 @@ export default function DashboardPage() {
               {!loading && <span className="font-mono text-white tabular-nums">{rows.length.toLocaleString()}</span>}
               {!loading && " score rows"}
             </span>
-            <form
-              className="flex flex-wrap items-center gap-2"
-              onSubmit={(event) => {
-                event.preventDefault();
-                void compileKnowledgeWiki();
-              }}
-            >
+            <div className="flex flex-wrap items-center gap-2">
               <label className="sr-only" htmlFor="compile-wiki-secret">Wiki compilation secret</label>
               <input
                 id="compile-wiki-secret"
@@ -1034,14 +1108,15 @@ export default function DashboardPage() {
                 className="h-8 w-36 rounded-lg border border-white/10 bg-white/[0.05] px-3 text-sm text-white outline-none placeholder:text-emerald-100/60 transition focus:border-lime-300/50 focus:bg-white/[0.08] focus:ring-2 focus:ring-lime-300/20 disabled:opacity-60 sm:w-40"
               />
               <button
-                type="submit"
+                type="button"
+                onClick={() => void compileKnowledgeWiki()}
                 disabled={compilingWiki || uploadingWikiPdf || !compileSecret.trim()}
                 className="inline-flex h-8 items-center justify-center gap-2 rounded-lg border border-white/15 bg-lime-300 px-3 text-sm font-bold text-[#173d32] shadow-[0_8px_24px_-8px_rgba(190,242,100,0.8)] transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {compilingWiki ? <RefreshCw size={16} className="animate-spin" aria-hidden="true" /> : <Sparkles size={16} aria-hidden="true" />}
                 <span>{compilingWiki ? "Compiling..." : "Compile Knowledge Wiki"}</span>
               </button>
-            </form>
+            </div>
             <input
               ref={wikiPdfInputRef}
               type="file"
@@ -1157,7 +1232,7 @@ export default function DashboardPage() {
             </p>
           )}
         </div>
-        <section aria-label="Dashboard filters" className="grid gap-1 rounded-2xl border border-white/10 bg-white/[0.035] p-2 backdrop-blur-md [color-scheme:dark] sm:grid-cols-2 lg:grid-cols-[1fr_1fr_1.4fr_1.2fr_auto] lg:items-center lg:divide-x lg:divide-white/[0.06]">
+        <section aria-label="Dashboard filters" className="grid gap-1 rounded-2xl border border-white/10 bg-white/[0.035] p-2 backdrop-blur-md [color-scheme:dark] sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-[1fr_1fr_1.4fr_1fr_1fr_1.3fr_auto] lg:items-center lg:divide-x lg:divide-white/[0.06]">
           <label className="group flex min-w-0 flex-col gap-1 rounded-xl px-4 py-2.5 text-[11px] font-medium uppercase tracking-[0.1em] text-emerald-100/60 transition-colors hover:bg-white/[0.05]">
             From
             <input type="date" value={startDate} onChange={(event) => setStartDate(event.target.value)} className="w-full bg-transparent text-sm font-medium normal-case tracking-normal text-white outline-none focus:text-white [&::-webkit-calendar-picker-indicator]:cursor-pointer [&::-webkit-calendar-picker-indicator]:opacity-70" />
@@ -1187,10 +1262,42 @@ export default function DashboardPage() {
               <span className="w-11 text-right font-mono text-sm font-semibold tabular-nums text-lime-300">{passThreshold}%</span>
             </span>
           </label>
+          <label className="group flex min-w-0 flex-col gap-1 rounded-xl px-4 py-2.5 text-[11px] font-medium uppercase tracking-[0.1em] text-emerald-100/60 transition-colors hover:bg-white/[0.05]">
+            Minimum Jev flags
+            <span className="flex h-7 items-center gap-3">
+              <input
+                type="range"
+                min="0"
+                max={maxJevFlags}
+                step="1"
+                value={activeMinJevFlags}
+                onChange={(event) => setMinJevFlags(Number(event.target.value))}
+                aria-label="Minimum Jev flags per call"
+                className="h-1 min-w-0 flex-1 accent-lime-300"
+              />
+              <span className="w-8 text-right font-mono text-sm font-semibold tabular-nums text-lime-300">{activeMinJevFlags}</span>
+            </span>
+          </label>
+          <label className="group flex min-w-0 flex-col gap-1 rounded-xl px-4 py-2.5 text-[11px] font-medium uppercase tracking-[0.1em] text-emerald-100/60 transition-colors hover:bg-white/[0.05]">
+            Maximum Jev confidence
+            <span className="flex h-7 items-center gap-3">
+              <input
+                type="range"
+                min="0"
+                max="100"
+                step="1"
+                value={maxJevConfidence}
+                onChange={(event) => setMaxJevConfidence(Number(event.target.value))}
+                aria-label="Maximum Jev confidence percentage"
+                className="h-1 min-w-0 flex-1 accent-lime-300"
+              />
+              <span className="w-11 text-right font-mono text-sm font-semibold tabular-nums text-lime-300">{maxJevConfidence}%</span>
+            </span>
+          </label>
           <button
             type="button"
             onClick={resetFilters}
-            title="Restore the full date range, all agents, and the default pass threshold"
+            title="Restore the full date range, all agents, the default pass threshold, and Jev filters"
             className="inline-flex h-10 items-center justify-center gap-2 self-end rounded-xl px-4 text-sm font-medium text-emerald-100/65 transition hover:bg-white/[0.07] hover:text-white focus:outline-none focus:ring-2 focus:ring-lime-300/40"
           >
             <RotateCcw size={15} aria-hidden="true" />
@@ -1238,6 +1345,16 @@ export default function DashboardPage() {
       </section>
 
       <div className="relative z-10 -mt-16 mx-auto max-w-[1440px] px-5 sm:px-8 lg:px-10">
+        {removeCallError && (
+          <div role="alert" className="mb-4 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-900">
+            {removeCallError}
+          </div>
+        )}
+        {removeCallMessage && (
+          <div role="status" className="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
+            {removeCallMessage}
+          </div>
+        )}
         {loading ? (
           <div className="mt-6 flex min-h-64 items-center justify-center rounded-2xl border border-slate-200 bg-white text-sm font-medium text-slate-500 shadow-sm">
             <Activity className="mr-2 animate-pulse text-leaf" size={18} /> Loading performance data…
@@ -1624,22 +1741,47 @@ export default function DashboardPage() {
               </article>
             </section>
 
+            {isAgentGroupFilter && (
+              <div className="mt-6 flex items-center justify-end">
+                <div className="inline-flex rounded-lg border border-slate-200 bg-white p-1 shadow-sm" role="group" aria-label="Team view">
+                  <button
+                    type="button"
+                    aria-pressed={!showAllIndividualCalls}
+                    onClick={() => setShowAllIndividualCalls(false)}
+                    className={`rounded-md px-3 py-1.5 text-xs font-semibold transition ${!showAllIndividualCalls ? "bg-forest text-white" : "text-slate-500 hover:text-slate-800"}`}
+                  >
+                    Agent leaderboard
+                  </button>
+                  <button
+                    type="button"
+                    aria-pressed={showAllIndividualCalls}
+                    onClick={() => setShowAllIndividualCalls(true)}
+                    className={`rounded-md px-3 py-1.5 text-xs font-semibold transition ${showAllIndividualCalls ? "bg-forest text-white" : "text-slate-500 hover:text-slate-800"}`}
+                  >
+                    Individual calls
+                  </button>
+                </div>
+              </div>
+            )}
+
             <section
               aria-label="Coaching priorities and agent call breakdown"
               className={`mt-6 grid gap-6 ${isAgentView || isAgentGroupFilter ? "xl:grid-cols-[minmax(0,2fr)_minmax(280px,1fr)]" : "xl:grid-cols-1"}`}
             >
-              {isAgentView && (
+              {(isAgentView || (isAgentGroupFilter && showAllIndividualCalls)) && (
                 <article className="min-w-0 overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04),0_16px_40px_-20px_rgba(15,23,42,0.16)]">
                   <div className="border-b border-slate-200 px-5 py-4 sm:px-6">
-                    <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-leaf">Agent detail</p>
-                    <h2 className="mt-1 font-display text-lg font-bold text-slate-900">Individual Call Breakdown</h2>
+                    <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-leaf">{isAgentView ? "Agent detail" : "Call detail"}</p>
+                    <h2 className="mt-1 font-display text-lg font-bold text-slate-900">Individual Calls</h2>
                     <p className="mt-1 text-xs text-slate-500">{agentFilter} · {calls.length} calls</p>
+                    <p className="mt-1 text-xs text-slate-500">Click a call ID to open its remove action. Enter the admin secret above to permanently delete its score records.</p>
                   </div>
                   <div className="max-h-[520px] overflow-auto">
                     {calls.length ? (
-                      <table className="w-full min-w-[900px] border-separate border-spacing-0 text-left text-xs">
+                      <table className="w-full min-w-[960px] border-separate border-spacing-0 text-left text-xs">
                         <thead className="sticky top-0 z-10 bg-slate-50 text-[10px] font-bold uppercase tracking-[0.08em] text-slate-600">
                           <tr>
+                            {!isAgentView && <th scope="col" className="border-b border-slate-200 px-3 py-3">Agent</th>}
                             <SortableHeader label="Call ID" column="call" sort={callSort} onSort={changeCallSort} />
                             <SortableHeader label="Date" column="date" sort={callSort} onSort={changeCallSort} />
                             <SortableHeader label="Call Type" column="callType" sort={callSort} onSort={changeCallSort} />
@@ -1648,44 +1790,104 @@ export default function DashboardPage() {
                             <SortableHeader label="Status" column="status" sort={callSort} onSort={changeCallSort} />
                             <th scope="col" className="border-b border-slate-200 px-3 py-3">Jev Confidence</th>
                             <th scope="col" className="border-b border-slate-200 px-3 py-3">Jev Flags</th>
+                            <th scope="col" className="border-b border-slate-200 px-3 py-3 text-center">Remove</th>
                           </tr>
                         </thead>
                         <tbody>
                           {sortedIndividualCalls.map((call) => (
-                            <tr
-                              key={call.callKey}
-                              ref={(element) => {
-                                if (element) callRowRefs.current.set(call.callKey, element);
-                                else callRowRefs.current.delete(call.callKey);
-                              }}
-                              className={`transition-colors ${focusCallRequest?.callKey === call.callKey ? "bg-lime-100 ring-2 ring-inset ring-lime-400" : "hover:bg-slate-50"}`}
-                            >
-                              <th scope="row" className="border-b border-slate-100 px-3 py-3 text-left font-semibold text-slate-800">{call.call}</th>
-                              <td className="border-b border-slate-100 px-3 py-3 text-slate-600">{call.date ?? "—"}</td>
-                              <td className="border-b border-slate-100 px-3 py-3 text-slate-600">{call.callType}</td>
-                              <td className="border-b border-slate-100 px-3 py-3 text-right tabular-nums text-slate-700">{call.totalScore}</td>
-                              <td className="border-b border-slate-100 px-3 py-3 text-right font-semibold tabular-nums text-slate-800">{call.percentage.toFixed(1)}%</td>
-                              <td className="border-b border-slate-100 px-3 py-3">
-                                <span className={`rounded px-2 py-1 font-semibold ${call.percentage >= passThreshold ? "bg-emerald-100 text-emerald-800" : "bg-rose-100 text-rose-800"}`}>
-                                  {call.percentage >= passThreshold ? "Pass" : "Fail"}
-                                </span>
-                              </td>
-                              <td className="border-b border-slate-100 px-3 py-3 text-slate-600">
-                                {call.jevCount ? `${((call.jevProbabilityTotal / call.jevCount) * 100).toFixed(0)}%` : "Pending"}
-                              </td>
-                              <td className="border-b border-slate-100 px-3 py-3 tabular-nums text-slate-600">
-                                {call.jevCount ? `${call.jevFlags}/${call.jevCount}` : "—"}
-                              </td>
-                            </tr>
+                            <Fragment key={call.callKey}>
+                              <tr
+                                ref={(element) => {
+                                  if (element) callRowRefs.current.set(call.callKey, element);
+                                  else callRowRefs.current.delete(call.callKey);
+                                }}
+                                className={`transition-colors ${focusCallRequest?.callKey === call.callKey ? "bg-lime-100 ring-2 ring-inset ring-lime-400" : "hover:bg-slate-50"}`}
+                              >
+                                {!isAgentView && <td className="border-b border-slate-100 px-3 py-3 font-medium text-slate-700">{call.agent}</td>}
+                                <th scope="row" className="border-b border-slate-100 px-3 py-3 text-left font-semibold text-slate-800">
+                                  <button
+                                    type="button"
+                                    aria-expanded={callActionKey === call.callKey}
+                                    aria-controls={callActionKey === call.callKey ? `call-actions-${encodeURIComponent(call.callKey)}` : undefined}
+                                    onClick={() => {
+                                      setCallActionKey((current) => current === call.callKey ? null : call.callKey);
+                                      setRemoveCallError("");
+                                      setRemoveCallMessage("");
+                                    }}
+                                    className="text-left transition hover:text-emerald-700 hover:underline focus:outline-none focus-visible:rounded-sm focus-visible:ring-2 focus-visible:ring-lime-600"
+                                  >
+                                    {call.call}
+                                  </button>
+                                </th>
+                                <td className="border-b border-slate-100 px-3 py-3 text-slate-600">{call.date ?? "—"}</td>
+                                <td className="border-b border-slate-100 px-3 py-3 text-slate-600">{call.callType}</td>
+                                <td className="border-b border-slate-100 px-3 py-3 text-right tabular-nums text-slate-700">{call.totalScore}</td>
+                                <td className="border-b border-slate-100 px-3 py-3 text-right font-semibold tabular-nums text-slate-800">{call.percentage.toFixed(1)}%</td>
+                                <td className="border-b border-slate-100 px-3 py-3">
+                                  <span className={`rounded px-2 py-1 font-semibold ${call.percentage >= passThreshold ? "bg-emerald-100 text-emerald-800" : "bg-rose-100 text-rose-800"}`}>
+                                    {call.percentage >= passThreshold ? "Pass" : "Fail"}
+                                  </span>
+                                </td>
+                                <td className="border-b border-slate-100 px-3 py-3 text-slate-600">
+                                  {call.jevCount ? `${((call.jevProbabilityTotal / call.jevCount) * 100).toFixed(0)}%` : "Pending"}
+                                </td>
+                                <td className="border-b border-slate-100 px-3 py-3 tabular-nums text-slate-600">
+                                  {call.jevCount ? `${call.jevFlags}/${call.jevCount}` : "—"}
+                                </td>
+                                <td className="border-b border-slate-100 px-3 py-3 text-center">
+                                  <button
+                                    type="button"
+                                    disabled={!compileSecret.trim() || removingCallKey != null}
+                                    onClick={() => void removeIndividualCall(call)}
+                                    aria-label={`Permanently remove ${call.call} for ${call.agent}`}
+                                    title={compileSecret.trim() ? "Permanently remove this call and all its scores" : "Enter the admin secret above to remove calls"}
+                                    className="inline-flex size-8 items-center justify-center rounded-md text-rose-700 transition hover:bg-rose-50 hover:text-rose-900 focus:outline-none focus:ring-2 focus:ring-rose-500/40 disabled:cursor-not-allowed disabled:opacity-40"
+                                  >
+                                    {removingCallKey === call.callKey
+                                      ? <RefreshCw size={15} className="animate-spin" aria-hidden="true" />
+                                      : <Trash2 size={15} aria-hidden="true" />}
+                                  </button>
+                                </td>
+                              </tr>
+                              {callActionKey === call.callKey && (
+                                <tr>
+                                  <td
+                                    id={`call-actions-${encodeURIComponent(call.callKey)}`}
+                                    colSpan={isAgentView ? 9 : 10}
+                                    className="border-b border-slate-200 bg-rose-50/60 px-4 py-3"
+                                  >
+                                    <div className="flex flex-wrap items-center justify-between gap-3">
+                                      <p className="text-xs text-slate-600">
+                                        Remove <strong className="text-slate-800">{call.call}</strong> for <strong className="text-slate-800">{call.agent}</strong>? This permanently deletes all score records for this call across the website.
+                                      </p>
+                                      <button
+                                        type="button"
+                                        disabled={!compileSecret.trim() || removingCallKey != null}
+                                        onClick={() => void removeIndividualCall(call)}
+                                        className="inline-flex h-9 items-center justify-center gap-2 rounded-lg bg-rose-700 px-3 text-xs font-semibold text-white transition hover:bg-rose-800 focus:outline-none focus:ring-2 focus:ring-rose-500/40 disabled:cursor-not-allowed disabled:opacity-50"
+                                      >
+                                        {removingCallKey === call.callKey
+                                          ? <RefreshCw size={14} className="animate-spin" aria-hidden="true" />
+                                          : <Trash2 size={14} aria-hidden="true" />}
+                                        Remove call
+                                      </button>
+                                    </div>
+                                    {!compileSecret.trim() && (
+                                      <p className="mt-2 text-xs text-slate-500">Enter the admin secret in the header to enable permanent removal.</p>
+                                    )}
+                                  </td>
+                                </tr>
+                              )}
+                            </Fragment>
                           ))}
                         </tbody>
                       </table>
-                    ) : <p className="px-6 py-12 text-center text-sm text-slate-500">No completed calls match this agent and date range.</p>}
+                    ) : <p className="px-6 py-12 text-center text-sm text-slate-500">No completed calls match the current filters.</p>}
                   </div>
                 </article>
               )}
 
-              {isAgentGroupFilter && (
+              {isAgentGroupFilter && !showAllIndividualCalls && (
                 <article className="min-w-0 overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04),0_16px_40px_-20px_rgba(15,23,42,0.16)]">
                   <div className="border-b border-slate-200 px-6 py-5">
                     <p className="mb-2 flex items-center gap-2 font-mono text-[11px] font-medium uppercase tracking-[0.14em] text-forest">
