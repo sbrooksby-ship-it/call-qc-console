@@ -94,7 +94,7 @@ async function submitChatMessage(message: string, signal: AbortSignal): Promise<
 
 const SECTION_NAMES: Record<string, string> = {
   BG: "Beginning",
-  ARC: "Responsibility & Effort",
+  ARC: "ARC",
   OE: "Ownership & Effort",
   PE: "Personalization & Education",
   QC: "Quality Communication",
@@ -105,7 +105,7 @@ const SECTION_NAMES: Record<string, string> = {
 
 const SECTION_MAX: Record<string, number> = {
   Beginning: 10,
-  "Responsibility & Effort": 20,
+  ARC: 20,
   "Ownership & Effort": 15,
   "Personalization & Education": 25,
   "Quality Communication": 40,
@@ -118,6 +118,12 @@ const SECTION_ORDER = Object.values(SECTION_NAMES);
 const PREFIX_ORDER = ["BG", "ARC", "OE", "PE", "QC", "CL", "CC", "COMP"];
 const DEFAULT_AGENT_FILTER = "All agents";
 const DEFAULT_PASS_THRESHOLD = 80;
+const TEAM_AGENTS: Record<string, string[]> = {
+  "Team Oswaldo": ["Raul", "Alondra", "Julius", "Bernadetter", "Miguel Huerta", "Adriel"],
+  "Team Jose": ["Denia", "Felix", "Vivian", "Miguel Rodriguez", "Nestor", "Franscisco"],
+  "Team Evansen": ["Carlos", "Tyrone", "Rose", "Karl", "Michael"],
+  "Team Tamara": ["Roma", "Jesus", "Patrick", "Elaine", "Imelda", "Michel"],
+};
 const CRITERION_DESCRIPTIONS: Record<string, string> = {
   "ARC 1": "Did the team member create genuine ARC with the customer early in the call?",
   "ARC 2": "Did the team member recognize the customer's emotional state and adjust responses appropriately?",
@@ -313,6 +319,21 @@ function agentHue(name: string): number {
   let hue = 0;
   for (const character of name) hue = (hue * 31 + character.charCodeAt(0)) % 360;
   return hue;
+}
+
+function canonicalAgentName(name: string): string {
+  const normalized = name.trim().toLocaleLowerCase();
+  return normalized === "franscisco" ? "francisco" : normalized;
+}
+
+function matchesAgentFilter(agent: string, callType: ScoreRow["callType"], filter: string): boolean {
+  if (filter === DEFAULT_AGENT_FILTER) return true;
+  if (filter === "Sales" || filter === "Care") return callType === filter;
+  const teamAgents = TEAM_AGENTS[filter];
+  if (teamAgents) {
+    return teamAgents.some((teamAgent) => canonicalAgentName(teamAgent) === canonicalAgentName(agent));
+  }
+  return agent === filter;
 }
 
 function criterionDescription(category: string): string {
@@ -542,12 +563,14 @@ export default function DashboardPage() {
     setMaxJevConfidence(100);
   }
 
+  const isTeamFilter = Object.prototype.hasOwnProperty.call(TEAM_AGENTS, agentFilter);
+  const isAgentView = !["All agents", "Sales", "Care"].includes(agentFilter) && !isTeamFilter;
+  const isAgentGroupFilter = agentFilter === "All agents" || isTeamFilter;
   const baseFilteredRows = useMemo(() => rows.filter((row) => {
     if ((startDate || endDate) && !row.date) return false;
     if (startDate && row.date && row.date < startDate) return false;
     if (endDate && row.date && row.date > endDate) return false;
-    if (agentFilter === "Sales" || agentFilter === "Care") return row.callType === agentFilter;
-    return agentFilter === "All agents" || row.agent === agentFilter;
+    return matchesAgentFilter(row.agent, row.callType, agentFilter);
   }), [rows, startDate, endDate, agentFilter]);
 
   const callJevStats = useMemo(() => {
@@ -587,16 +610,13 @@ export default function DashboardPage() {
     const previousWeekDate = new Date(`${latestWeekStart}T00:00:00Z`);
     previousWeekDate.setUTCDate(previousWeekDate.getUTCDate() - 7);
     const previousWeekStart = previousWeekDate.toISOString().slice(0, 10);
-    const previousWeekRows = rows.filter((row) => {
-      const matchesAgent = agentFilter === "All agents"
-        || (agentFilter === "Sales" || agentFilter === "Care"
-          ? row.callType === agentFilter
-          : row.agent === agentFilter);
-      return matchesAgent && row.date && row.date >= previousWeekStart && row.date < latestWeekStart;
-    });
+    const previousWeekRows = rows.filter((row) =>
+      matchesAgentFilter(row.agent, row.callType, agentFilter)
+      && row.date
+      && row.date >= previousWeekStart
+      && row.date < latestWeekStart);
     return new Map(summarizeSections(previousWeekRows).map(({ section, percentage }) => [section, percentage]));
   }, [agentFilter, filteredRows, rows]);
-  const isAgentView = !["All agents", "Sales", "Care"].includes(agentFilter);
   const coachingPriorities = useMemo(() => {
     const criteria = new Map<string, { total: number; count: number }>();
     for (const row of filteredRows) {
@@ -774,7 +794,7 @@ export default function DashboardPage() {
   }, [calls]);
 
   const meterBank = useMemo(() => {
-    const byCall = !["All agents", "Sales", "Care"].includes(agentFilter);
+    const byCall = isAgentView;
     const values = new Map<string, Map<string, ScoreRow[]>>();
     const teamTotals = new Map<string, { total: number; count: number }>();
     for (const row of filteredRows) {
@@ -807,7 +827,7 @@ export default function DashboardPage() {
       return [category, values ? values.total / values.count : null] as const;
     }));
     return { categories, data, teamAverage, byCall };
-  }, [filteredRows, agentFilter]);
+  }, [filteredRows, isAgentView]);
 
   const sortedMeterData = useMemo(() => {
     const direction = meterSort.direction === "asc" ? 1 : -1;
@@ -1194,12 +1214,17 @@ export default function DashboardPage() {
             <input type="date" value={endDate} min={startDate || undefined} onChange={(event) => setEndDate(event.target.value)} className="w-full bg-transparent text-sm font-medium normal-case tracking-normal text-white outline-none focus:text-white [&::-webkit-calendar-picker-indicator]:cursor-pointer [&::-webkit-calendar-picker-indicator]:opacity-70" />
           </label>
           <label className="group flex min-w-0 flex-col gap-1 rounded-xl px-4 py-2.5 text-[11px] font-medium uppercase tracking-[0.1em] text-emerald-100/60 transition-colors hover:bg-white/[0.05]">
-            Agent / call type
+            Agent / team / call type
             <select value={agentFilter} onChange={(event) => setAgentFilter(event.target.value)} className="w-full cursor-pointer bg-transparent text-sm font-medium normal-case tracking-normal text-white outline-none [&>option]:bg-[#132b23]">
               <option>All agents</option>
               <option>Sales</option>
               <option>Care</option>
+              <optgroup label="Teams">
+                {Object.keys(TEAM_AGENTS).map((team) => <option key={team}>{team}</option>)}
+              </optgroup>
+              <optgroup label="Agents">
               {agents.map((agent) => <option key={agent}>{agent}</option>)}
+              </optgroup>
             </select>
           </label>
           <label className="group flex min-w-0 flex-col gap-1 rounded-xl px-4 py-2.5 text-[11px] font-medium uppercase tracking-[0.1em] text-emerald-100/60 transition-colors hover:bg-white/[0.05]">
@@ -1267,7 +1292,7 @@ export default function DashboardPage() {
             visualKind="bars"
             visualValues={scoreTrend.map((point) => point.calls)}
             onClick={() => {
-              if (agentFilter === "All agents") setShowAllIndividualCalls(true);
+              if (isAgentGroupFilter) setShowAllIndividualCalls(true);
               setCallListRequest((current) => current + 1);
             }}
           />
@@ -1577,7 +1602,7 @@ export default function DashboardPage() {
               </article>
             </section>
 
-            {agentFilter === "All agents" && (
+            {isAgentGroupFilter && (
               <div className="mt-6 flex items-center justify-end">
                 <div className="inline-flex rounded-lg border border-slate-200 bg-white p-1 shadow-sm" role="group" aria-label="Team view">
                   <button
@@ -1602,9 +1627,9 @@ export default function DashboardPage() {
 
             <section
               aria-label="Coaching priorities and agent call breakdown"
-              className={`mt-6 grid gap-6 ${isAgentView || agentFilter === "All agents" ? "xl:grid-cols-[minmax(0,2fr)_minmax(280px,1fr)]" : "xl:grid-cols-1"}`}
+              className={`mt-6 grid gap-6 ${isAgentView || isAgentGroupFilter ? "xl:grid-cols-[minmax(0,2fr)_minmax(280px,1fr)]" : "xl:grid-cols-1"}`}
             >
-              {(isAgentView || (agentFilter === "All agents" && showAllIndividualCalls)) && (
+              {(isAgentView || (isAgentGroupFilter && showAllIndividualCalls)) && (
                 <article
                   ref={individualCallsRef}
                   className="min-w-0 overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04),0_16px_40px_-20px_rgba(15,23,42,0.16)]"
@@ -1612,7 +1637,7 @@ export default function DashboardPage() {
                   <div className="border-b border-slate-200 px-5 py-4 sm:px-6">
                     <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-leaf">{isAgentView ? "Agent detail" : "Call detail"}</p>
                     <h2 className="mt-1 font-display text-lg font-bold text-slate-900">Individual Calls</h2>
-                    <p className="mt-1 text-xs text-slate-500">{isAgentView ? agentFilter : "All agents"} · {calls.length} calls matching current filters</p>
+                    <p className="mt-1 text-xs text-slate-500">{agentFilter} · {calls.length} calls matching current filters</p>
                   </div>
                   <div className="max-h-[520px] overflow-auto">
                     {calls.length ? (
@@ -1666,7 +1691,7 @@ export default function DashboardPage() {
                 </article>
               )}
 
-              {agentFilter === "All agents" && !showAllIndividualCalls && (
+              {isAgentGroupFilter && !showAllIndividualCalls && (
                 <article className="min-w-0 overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04),0_16px_40px_-20px_rgba(15,23,42,0.16)]">
                   <div className="border-b border-slate-200 px-6 py-5">
                     <p className="mb-2 flex items-center gap-2 font-mono text-[11px] font-medium uppercase tracking-[0.14em] text-forest">
@@ -1828,7 +1853,7 @@ export default function DashboardPage() {
                             onClick={() => changeMeterSort("label")}
                             className="inline-flex items-center gap-1.5 font-bold text-slate-600 transition hover:text-forest"
                           >
-                            {agentFilter === "All agents" || agentFilter === "Sales" || agentFilter === "Care" ? "Agent" : "Call"}
+                            {isAgentView ? "Call" : "Agent"}
                             <span aria-hidden="true" className={meterSort.column === "label" ? "text-forest" : "text-slate-300"}>
                               {meterSort.column === "label" ? (meterSort.direction === "asc" ? "▲" : "▼") : "↕"}
                             </span>
@@ -1880,7 +1905,7 @@ export default function DashboardPage() {
                       {sortedMeterData.map((item) => (
                         <tr key={item.label} className="group">
                           <th scope="row" className="sticky left-0 z-[1] max-w-56 truncate border-b border-r border-slate-100 bg-white px-4 py-3 text-left font-semibold text-slate-800 group-hover:bg-emerald-50" title={item.label}>
-                            {agentFilter === "All agents" || agentFilter === "Sales" || agentFilter === "Care" ? (
+                            {!isAgentView ? (
                               <button
                                 type="button"
                                 onClick={() => setAgentFilter(item.label)}
@@ -2013,7 +2038,7 @@ export default function DashboardPage() {
                 ) : <p className="px-6 py-12 text-center text-sm text-slate-500">No category scores match these filters.</p>}
               </div>
               <div className="border-t border-slate-200 bg-slate-50/70 px-5 py-3 text-xs text-slate-500 sm:px-6">
-                Showing {meterBank.data.length} {agentFilter === "All agents" || agentFilter === "Sales" || agentFilter === "Care" ? "agents" : "calls"} · {meterBank.categories.length} criteria
+                Showing {meterBank.data.length} {isAgentView ? "calls" : "agents"} · {meterBank.categories.length} criteria
               </div>
             </section>
           </>
