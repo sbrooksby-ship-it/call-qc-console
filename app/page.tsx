@@ -762,7 +762,6 @@ export default function DashboardPage() {
       }
 
       setRows((current) => current.filter((row) => row.callKey !== call.callKey));
-      setCallActionKey(null);
       setRemoveCallMessage(`${label} and all ${ids.length} score records were removed.`);
     } catch (error) {
       setRemoveCallError(error instanceof Error ? error.message : "Call removal failed.");
