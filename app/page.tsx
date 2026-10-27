@@ -298,6 +298,14 @@ function weekStart(dateValue: string): string {
   return date.toISOString().slice(0, 10);
 }
 
+function formatMonth(month: string): string {
+  return new Date(`${month}-01T00:00:00Z`).toLocaleDateString("en-US", {
+    month: "long",
+    year: "numeric",
+    timeZone: "UTC",
+  });
+}
+
 function scoreCellClass(score: number | undefined): string {
   if (score == null) return "bg-slate-50 text-slate-300";
   if (score >= 4) return "bg-emerald-200 text-emerald-900";
@@ -478,6 +486,9 @@ export default function DashboardPage() {
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
   const [agentFilter, setAgentFilter] = useState(DEFAULT_AGENT_FILTER);
+  const [comparisonTeams, setComparisonTeams] = useState<string[]>(() => Object.keys(TEAM_AGENTS));
+  const [comparisonMonthA, setComparisonMonthA] = useState("");
+  const [comparisonMonthB, setComparisonMonthB] = useState("");
   const [passThreshold, setPassThreshold] = useState(DEFAULT_PASS_THRESHOLD);
   const [sectionView, setSectionView] = useState<SectionView>("chart");
   const [focusCallRequest, setFocusCallRequest] = useState<{ callKey: string } | null>(null);
@@ -544,6 +555,20 @@ export default function DashboardPage() {
   }, [refreshCount]);
 
   const agents = useMemo(() => Array.from(new Set(rows.map((row) => row.agent))).sort((a, b) => a.localeCompare(b)), [rows]);
+  const comparisonMonthOptions = useMemo(
+    () => Array.from(new Set(rows.flatMap((row) => row.date ? [row.date.slice(0, 7)] : []))).sort((a, b) => b.localeCompare(a)),
+    [rows],
+  );
+  const activeComparisonMonthA = comparisonMonthOptions.includes(comparisonMonthA)
+    ? comparisonMonthA
+    : comparisonMonthOptions[0] ?? "";
+  const activeComparisonMonthB = comparisonMonthOptions.includes(comparisonMonthB) && comparisonMonthB !== activeComparisonMonthA
+    ? comparisonMonthB
+    : comparisonMonthOptions.find((month) => month !== activeComparisonMonthA) ?? "";
+  const selectedComparisonTeams = useMemo(
+    () => Object.keys(TEAM_AGENTS).filter((team) => comparisonTeams.includes(team)),
+    [comparisonTeams],
+  );
   const defaultDateRange = useMemo(() => {
     const dates = rows.map((row) => row.date).filter((date): date is string => date != null).sort();
     return { start: dates[0] ?? "", end: dates[dates.length - 1] ?? "" };
@@ -567,6 +592,36 @@ export default function DashboardPage() {
   }), [rows, startDate, endDate, agentFilter]);
 
   const calls = useMemo(() => summarizeCalls(filteredRows), [filteredRows]);
+  const teamMonthComparison = useMemo(() => {
+    const summarizeTeamMonth = (team: string, month: string) => {
+      if (!month) return { average: null, passRate: null, callCount: 0 };
+      const monthCalls = summarizeCalls(rows.filter((row) =>
+        row.date?.startsWith(`${month}-`)
+        && matchesAgentFilter(row.agent, row.callType, team)));
+      return {
+        average: monthCalls.length
+          ? monthCalls.reduce((sum, call) => sum + call.percentage, 0) / monthCalls.length
+          : null,
+        passRate: monthCalls.length
+          ? monthCalls.filter((call) => call.percentage >= passThreshold).length / monthCalls.length * 100
+          : null,
+        callCount: monthCalls.length,
+      };
+    };
+
+    return selectedComparisonTeams.map((team) => {
+      const firstMonth = summarizeTeamMonth(team, activeComparisonMonthA);
+      const secondMonth = summarizeTeamMonth(team, activeComparisonMonthB);
+      return {
+        team,
+        firstMonth,
+        secondMonth,
+        change: firstMonth.average != null && secondMonth.average != null
+          ? secondMonth.average - firstMonth.average
+          : null,
+      };
+    });
+  }, [activeComparisonMonthA, activeComparisonMonthB, passThreshold, rows, selectedComparisonTeams]);
   const sections = useMemo(() => summarizeSections(filteredRows), [filteredRows]);
   const previousWeekSections = useMemo(() => {
     const latestDate = filteredRows.reduce<string | null>(
@@ -1187,13 +1242,124 @@ export default function DashboardPage() {
           <div className="mt-6 flex min-h-64 items-center justify-center rounded-2xl border border-slate-200 bg-white text-sm font-medium text-slate-500 shadow-sm">
             <Activity className="mr-2 animate-pulse text-leaf" size={18} /> Loading performance data…
           </div>
-        ) : !error && calls.length === 0 ? (
-          <div className="mt-6 rounded-md border border-dashed border-slate-300 bg-white px-6 py-16 text-center">
-            <p className="font-display text-lg font-bold text-slate-800">No completed calls in this view</p>
-            <p className="mt-1 text-sm text-slate-500">Try a different date range or agent filter.</p>
-          </div>
         ) : !error && (
           <>
+            <details className="mb-6 overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04),0_16px_40px_-20px_rgba(15,23,42,0.16)]">
+              <summary className="cursor-pointer px-5 py-4 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-forest sm:px-6">
+                <span className="flex flex-wrap items-center justify-between gap-3">
+                  <span>
+                    <span className="block font-mono text-[11px] font-medium uppercase tracking-[0.14em] text-forest">Compare performance</span>
+                    <span className="mt-1 block text-sm font-semibold text-slate-900">Teams and months</span>
+                  </span>
+                  <span className="text-xs text-slate-500">Select months and teams</span>
+                </span>
+              </summary>
+              <div className="border-t border-slate-200 px-5 py-5 sm:px-6">
+                <p className="text-xs leading-relaxed text-slate-500">
+                  Compare each selected team across two complete calendar months, independent of the dashboard filters. Score change is Month B minus Month A; passing uses the current {passThreshold}% threshold.
+                </p>
+                <div className="mt-4 grid gap-4 sm:grid-cols-2">
+                  <label className="flex flex-col gap-1.5 text-xs font-semibold text-slate-600">
+                    Month A
+                    <select
+                      value={activeComparisonMonthA}
+                      disabled={!comparisonMonthOptions.length}
+                      onChange={(event) => {
+                        const nextMonth = event.target.value;
+                        setComparisonMonthA(nextMonth);
+                        if (nextMonth === activeComparisonMonthB) setComparisonMonthB(activeComparisonMonthA);
+                      }}
+                      className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm font-medium text-slate-800 outline-none focus:border-forest focus:ring-2 focus:ring-emerald-100 disabled:bg-slate-50"
+                    >
+                      {comparisonMonthOptions.map((month) => <option key={month} value={month}>{formatMonth(month)}</option>)}
+                    </select>
+                  </label>
+                  <label className="flex flex-col gap-1.5 text-xs font-semibold text-slate-600">
+                    Month B
+                    <select
+                      value={activeComparisonMonthB}
+                      disabled={comparisonMonthOptions.length < 2}
+                      onChange={(event) => {
+                        const nextMonth = event.target.value;
+                        setComparisonMonthB(nextMonth);
+                        if (nextMonth === activeComparisonMonthA) setComparisonMonthA(activeComparisonMonthB);
+                      }}
+                      className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm font-medium text-slate-800 outline-none focus:border-forest focus:ring-2 focus:ring-emerald-100 disabled:bg-slate-50"
+                    >
+                      {comparisonMonthOptions.length < 2
+                        ? <option value="">A second month is needed</option>
+                        : comparisonMonthOptions.filter((month) => month !== activeComparisonMonthA).map((month) => <option key={month} value={month}>{formatMonth(month)}</option>)}
+                    </select>
+                  </label>
+                </div>
+                <fieldset className="mt-5">
+                  <legend className="text-xs font-semibold text-slate-600">Teams to compare</legend>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {Object.keys(TEAM_AGENTS).map((team) => {
+                      const selected = comparisonTeams.includes(team);
+                      return (
+                        <button
+                          key={team}
+                          type="button"
+                          aria-pressed={selected}
+                          onClick={() => setComparisonTeams((current) =>
+                            current.includes(team) ? current.filter((item) => item !== team) : [...current, team])}
+                          className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forest ${selected ? "border-forest bg-emerald-50 text-forest" : "border-slate-200 bg-white text-slate-500 hover:border-slate-300 hover:text-slate-800"}`}
+                        >
+                          {team}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </fieldset>
+                {comparisonMonthOptions.length < 2 ? (
+                  <p className="mt-5 rounded-lg bg-amber-50 px-4 py-3 text-sm text-amber-900">Scores from at least two different months are needed to compare month to month.</p>
+                ) : !selectedComparisonTeams.length ? (
+                  <p className="mt-5 rounded-lg bg-slate-50 px-4 py-3 text-sm text-slate-600">Select at least one team to compare.</p>
+                ) : (
+                  <div className="mt-5 overflow-x-auto rounded-xl border border-slate-200">
+                    <table className="w-full min-w-[680px] border-separate border-spacing-0 text-left text-sm">
+                      <thead className="bg-slate-50 text-[10px] font-bold uppercase tracking-[0.08em] text-slate-500">
+                        <tr>
+                          <th scope="col" className="border-b border-slate-200 px-4 py-3">Team</th>
+                          <th scope="col" className="border-b border-slate-200 px-4 py-3">{formatMonth(activeComparisonMonthA)}</th>
+                          <th scope="col" className="border-b border-slate-200 px-4 py-3">{formatMonth(activeComparisonMonthB)}</th>
+                          <th scope="col" className="border-b border-slate-200 px-4 py-3">Score change (B - A)</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {teamMonthComparison.map(({ team, firstMonth, secondMonth, change }) => (
+                          <tr key={team}>
+                            <th scope="row" className="border-b border-slate-100 px-4 py-3 font-semibold text-slate-800">{team}</th>
+                            {[firstMonth, secondMonth].map((monthSummary, index) => (
+                              <td key={index} className="border-b border-slate-100 px-4 py-3">
+                                <span className="block font-mono font-semibold tabular-nums text-slate-900">{monthSummary.average == null ? "—" : `${monthSummary.average.toFixed(1)}%`}</span>
+                                <span className="mt-0.5 block text-xs text-slate-500">
+                                  {monthSummary.passRate == null ? "No completed calls" : `${monthSummary.passRate.toFixed(1)}% pass · ${monthSummary.callCount} calls`}
+                                </span>
+                              </td>
+                            ))}
+                            <td className="border-b border-slate-100 px-4 py-3 font-mono text-sm font-semibold tabular-nums">
+                              {change == null ? "—" : (
+                                <span className={change > 0 ? "text-emerald-700" : change < 0 ? "text-rose-700" : "text-slate-500"}>
+                                  {change > 0 ? "+" : ""}{change.toFixed(1)} pts
+                                </span>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            </details>
+            {calls.length === 0 ? (
+              <div className="rounded-md border border-dashed border-slate-300 bg-white px-6 py-16 text-center">
+                <p className="font-display text-lg font-bold text-slate-800">No completed calls in this view</p>
+                <p className="mt-1 text-sm text-slate-500">Try a different date range or agent filter.</p>
+              </div>
+            ) : <>
             <section aria-labelledby="score-trend-heading" className="mt-6 overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04),0_16px_40px_-20px_rgba(15,23,42,0.16)]">
               <div className="flex flex-wrap items-start justify-between gap-4 px-5 pt-5 sm:px-6">
                 <div>
@@ -1764,6 +1930,7 @@ export default function DashboardPage() {
                 Showing {meterBank.data.length} {isAgentView ? "calls" : "agents"} · {meterBank.categories.length} criteria
               </div>
             </section>
+            </>}
           </>
         )}
       </div>
