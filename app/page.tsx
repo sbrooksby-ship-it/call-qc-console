@@ -1,7 +1,7 @@
 "use client";
 
 import { createClient } from "@supabase/supabase-js";
-import { Activity, ArrowDown, ArrowDownRight, ArrowUp, ArrowUpRight, BadgeCheck, Check, Flag, Gauge, Leaf, Pencil, PhoneCall, RefreshCw, RotateCcw, ShieldCheck, Sparkles, TrendingDown, TrendingUp, Trash2, Upload, X } from "lucide-react";
+import { Activity, ArrowDown, ArrowDownRight, ArrowUp, ArrowUpRight, BadgeCheck, Flag, Gauge, Leaf, PhoneCall, RefreshCw, RotateCcw, ShieldCheck, Sparkles, TrendingDown, TrendingUp, Upload } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import MorphOrb from "@/components/MorphOrb";
 import {
@@ -18,7 +18,6 @@ import {
 type RawScoreRow = Record<string, unknown>;
 
 type ScoreRow = {
-  id: string | null;
   date: string | null;
   agent: string;
   call: string;
@@ -94,7 +93,7 @@ async function submitChatMessage(message: string, signal: AbortSignal): Promise<
 
 const SECTION_NAMES: Record<string, string> = {
   BG: "Beginning",
-  ARC: "ARC",
+  ARC: "Responsibility & Effort",
   OE: "Ownership & Effort",
   PE: "Personalization & Education",
   QC: "Quality Communication",
@@ -105,7 +104,7 @@ const SECTION_NAMES: Record<string, string> = {
 
 const SECTION_MAX: Record<string, number> = {
   Beginning: 10,
-  ARC: 20,
+  "Responsibility & Effort": 20,
   "Ownership & Effort": 15,
   "Personalization & Education": 25,
   "Quality Communication": 40,
@@ -119,8 +118,8 @@ const PREFIX_ORDER = ["BG", "ARC", "OE", "PE", "QC", "CL", "CC", "COMP"];
 const DEFAULT_AGENT_FILTER = "All agents";
 const DEFAULT_PASS_THRESHOLD = 80;
 const TEAM_AGENTS: Record<string, string[]> = {
-  "Team Oswaldo": ["Raul", "Alondra", "Julius", "Bernadetter", "Miguel Huerta", "Adriel"],
-  "Team Jose": ["Denia", "Felix", "Vivian", "Miguel Rodriguez", "Nestor", "Franscisco"],
+  "Team Oswaldo": ["Raul", "Alondra", "Julius", "Bernadetter", "Miguel H", "Adriel"],
+  "Team Jose": ["Denia", "Felix", "Vivian", "Miguel R", "Nestor", "Franscisco"],
   "Team Evansen": ["Carlos", "Tyrone", "Rose", "Karl", "Michael"],
   "Team Tamara": ["Roma", "Jesus", "Patrick", "Elaine", "Imelda", "Michel"],
 };
@@ -212,7 +211,6 @@ function sectionName(category: string): string {
 
 function normalizeRows(rows: RawScoreRow[]): ScoreRow[] {
   return rows.map((row) => {
-    const id = typeof row.id === "string" || typeof row.id === "number" ? String(row.id) : "";
     const agent = text(row.agent_name ?? row.Agent) || "Unknown agent";
     const call = text(row.call_id ?? row.Call) || "Unknown call";
     const category = text(row.category ?? row.Category) || "Other";
@@ -226,7 +224,6 @@ function normalizeRows(rows: RawScoreRow[]): ScoreRow[] {
     const jevValue = row.jev_prob == null || text(row.jev_prob) === "" ? null : Number(row.jev_prob);
 
     return {
-      id: id || null,
       date,
       agent,
       call,
@@ -322,18 +319,27 @@ function agentHue(name: string): number {
 }
 
 function canonicalAgentName(name: string): string {
-  const normalized = name.trim().toLocaleLowerCase();
-  return normalized === "franscisco" ? "francisco" : normalized;
+  const normalized = name.trim().toLocaleLowerCase().replace(/\s+/g, " ");
+  return normalized.startsWith("franscisco") ? `francisco${normalized.slice("franscisco".length)}` : normalized;
 }
 
 function matchesAgentFilter(agent: string, callType: ScoreRow["callType"], filter: string): boolean {
   if (filter === DEFAULT_AGENT_FILTER) return true;
   if (filter === "Sales" || filter === "Care") return callType === filter;
+
   const teamAgents = TEAM_AGENTS[filter];
-  if (teamAgents) {
-    return teamAgents.some((teamAgent) => canonicalAgentName(teamAgent) === canonicalAgentName(agent));
-  }
-  return agent === filter;
+  if (!teamAgents) return agent === filter;
+
+  const normalizedAgent = canonicalAgentName(agent);
+  const agentTokens = normalizedAgent.split(" ");
+  return teamAgents.some((teamAgent) => {
+    const teamAgentTokens = canonicalAgentName(teamAgent).split(" ");
+    return teamAgentTokens.every((token, index) => {
+      const agentToken = agentTokens[index];
+      return agentToken != null
+        && (token === agentToken || (token.length === 1 && agentToken.startsWith(token)));
+    });
+  });
 }
 
 function criterionDescription(category: string): string {
@@ -472,21 +478,11 @@ export default function DashboardPage() {
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
   const [agentFilter, setAgentFilter] = useState(DEFAULT_AGENT_FILTER);
-  const [showAllIndividualCalls, setShowAllIndividualCalls] = useState(false);
-  const [callListRequest, setCallListRequest] = useState(0);
   const [passThreshold, setPassThreshold] = useState(DEFAULT_PASS_THRESHOLD);
-  const [minJevFlags, setMinJevFlags] = useState(0);
-  const [maxJevConfidence, setMaxJevConfidence] = useState(100);
   const [sectionView, setSectionView] = useState<SectionView>("chart");
   const [focusCallRequest, setFocusCallRequest] = useState<{ callKey: string } | null>(null);
   const [callSort, setCallSort] = useState<CallSort>({ column: "date", direction: "desc" });
   const [meterSort, setMeterSort] = useState<{ column: string; direction: "asc" | "desc" }>({ column: "label", direction: "asc" });
-  const [editingScore, setEditingScore] = useState<{ id: string } | null>(null);
-  const [scoreDraft, setScoreDraft] = useState("");
-  const [scoreOverrideError, setScoreOverrideError] = useState("");
-  const [savingScore, setSavingScore] = useState(false);
-  const [removingCall, setRemovingCall] = useState(false);
-  const [removeScoreError, setRemoveScoreError] = useState("");
   const [compileSecret, setCompileSecret] = useState("");
   const [compilingWiki, setCompilingWiki] = useState(false);
   const [compileProgress, setCompileProgress] = useState<{ processed: number; total: number; message: string } | null>(null);
@@ -497,7 +493,6 @@ export default function DashboardPage() {
   const [uploadingWikiPdf, setUploadingWikiPdf] = useState(false);
   const wikiPdfInputRef = useRef<HTMLInputElement>(null);
   const callRowRefs = useRef(new Map<string, HTMLTableRowElement>());
-  const individualCallsRef = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -559,43 +554,17 @@ export default function DashboardPage() {
     setEndDate(defaultDateRange.end);
     setAgentFilter(DEFAULT_AGENT_FILTER);
     setPassThreshold(DEFAULT_PASS_THRESHOLD);
-    setMinJevFlags(0);
-    setMaxJevConfidence(100);
   }
 
   const isTeamFilter = Object.prototype.hasOwnProperty.call(TEAM_AGENTS, agentFilter);
   const isAgentView = !["All agents", "Sales", "Care"].includes(agentFilter) && !isTeamFilter;
   const isAgentGroupFilter = agentFilter === "All agents" || isTeamFilter;
-  const baseFilteredRows = useMemo(() => rows.filter((row) => {
+  const filteredRows = useMemo(() => rows.filter((row) => {
     if ((startDate || endDate) && !row.date) return false;
     if (startDate && row.date && row.date < startDate) return false;
     if (endDate && row.date && row.date > endDate) return false;
     return matchesAgentFilter(row.agent, row.callType, agentFilter);
   }), [rows, startDate, endDate, agentFilter]);
-
-  const callJevStats = useMemo(() => {
-    const stats = new Map<string, { flags: number; confidenceTotal: number; confidenceCount: number }>();
-    for (const row of baseFilteredRows) {
-      const current = stats.get(row.callKey) ?? { flags: 0, confidenceTotal: 0, confidenceCount: 0 };
-      if (row.jevStatus === "flag") current.flags += 1;
-      if (row.jevProbability != null) {
-        current.confidenceTotal += row.jevProbability;
-        current.confidenceCount += 1;
-      }
-      stats.set(row.callKey, current);
-    }
-    return stats;
-  }, [baseFilteredRows]);
-
-  const maxJevFlags = Array.from(callJevStats.values())
-    .reduce((maximum, { flags }) => Math.max(maximum, flags), 1);
-  const filteredRows = useMemo(() => baseFilteredRows.filter((row) => {
-    const stats = callJevStats.get(row.callKey);
-    const confidence = stats && stats.confidenceCount > 0
-      ? stats.confidenceTotal / stats.confidenceCount * 100
-      : 0;
-    return (stats?.flags ?? 0) >= minJevFlags && confidence <= maxJevConfidence;
-  }), [baseFilteredRows, callJevStats, minJevFlags, maxJevConfidence]);
 
   const calls = useMemo(() => summarizeCalls(filteredRows), [filteredRows]);
   const sections = useMemo(() => summarizeSections(filteredRows), [filteredRows]);
@@ -776,14 +745,6 @@ export default function DashboardPage() {
     });
   }, [focusCallRequest, sortedIndividualCalls]);
 
-  useEffect(() => {
-    if (callListRequest === 0) return;
-    const frame = window.requestAnimationFrame(() => {
-      individualCallsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-    });
-    return () => window.cancelAnimationFrame(frame);
-  }, [callListRequest, showAllIndividualCalls, agentFilter]);
-
   const jevMetrics = useMemo(() => {
     const checkedCalls = calls.filter((call) => call.jevCount > 0);
     const averageConfidence = checkedCalls.length
@@ -795,14 +756,14 @@ export default function DashboardPage() {
 
   const meterBank = useMemo(() => {
     const byCall = isAgentView;
-    const values = new Map<string, Map<string, ScoreRow[]>>();
+    const values = new Map<string, Map<string, number[]>>();
     const teamTotals = new Map<string, { total: number; count: number }>();
     for (const row of filteredRows) {
-      const label = byCall ? `${row.call} (${row.callType}) · ${row.date ?? "Unknown date"}` : row.agent;
-      const categories = values.get(label) ?? new Map<string, ScoreRow[]>();
-      const categoryRows = categories.get(row.category) ?? [];
-      categoryRows.push(row);
-      categories.set(row.category, categoryRows);
+      const label = byCall ? `${row.call} (${row.callType})` : row.agent;
+      const categories = values.get(label) ?? new Map<string, number[]>();
+      const scores = categories.get(row.category) ?? [];
+      scores.push(row.score);
+      categories.set(row.category, scores);
       values.set(label, categories);
       const total = teamTotals.get(row.category) ?? { total: 0, count: 0 };
       total.total += row.score;
@@ -818,15 +779,14 @@ export default function DashboardPage() {
       label,
       scores: Object.fromEntries(Array.from(scores, ([category, items]) => [
         category,
-        items.reduce((sum, row) => sum + row.score, 0) / items.length,
+        items.reduce((sum, score) => sum + score, 0) / items.length,
       ])),
-      records: Object.fromEntries(scores),
     })).sort((a, b) => a.label.localeCompare(b.label));
     const teamAverage = Object.fromEntries(categories.map((category) => {
       const values = teamTotals.get(category);
       return [category, values ? values.total / values.count : null] as const;
     }));
-    return { categories, data, teamAverage, byCall };
+    return { categories, data, teamAverage };
   }, [filteredRows, isAgentView]);
 
   const sortedMeterData = useMemo(() => {
@@ -850,67 +810,6 @@ export default function DashboardPage() {
       column,
       direction: current.column === column && current.direction === "asc" ? "desc" : "asc",
     }));
-  }
-
-  async function saveScoreOverride(recordId: string) {
-    const score = Number(scoreDraft);
-    if (!Number.isFinite(score) || score < 1 || score > 5) {
-      setScoreOverrideError("Enter a score between 1 and 5.");
-      return;
-    }
-    if (!compileSecret.trim()) {
-      setScoreOverrideError("Enter the admin secret in the header before saving.");
-      return;
-    }
-
-    setSavingScore(true);
-    setScoreOverrideError("");
-    try {
-      const response = await fetch("/api/update-score", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: recordId, newScore: score, secret: compileSecret }),
-      });
-      const result = await response.json() as { error?: string };
-      if (!response.ok) throw new Error(result.error || `Score update failed (${response.status}).`);
-
-      setRows((current) => current.map((row) => row.id === recordId ? { ...row, score } : row));
-      setEditingScore(null);
-      setScoreDraft("");
-    } catch (error) {
-      setScoreOverrideError(error instanceof Error ? error.message : "Score update failed.");
-    } finally {
-      setSavingScore(false);
-    }
-  }
-
-  async function removeCallScores(label: string, callRecordIds: string[]) {
-    if (!compileSecret.trim()) {
-      setRemoveScoreError("Enter the admin secret in the header before removing scores.");
-      return;
-    }
-    if (!window.confirm(`Permanently delete all ${callRecordIds.length} score rows for ${label}? This cannot be undone.`)) {
-      return;
-    }
-
-    setRemovingCall(true);
-    setRemoveScoreError("");
-    try {
-      const response = await fetch("/api/remove-call", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ids: callRecordIds, secret: compileSecret }),
-      });
-      const result = await response.json() as { error?: string };
-      if (!response.ok) throw new Error(result.error || `Score removal failed (${response.status}).`);
-
-      const removedIds = new Set(callRecordIds);
-      setRows((current) => current.filter((row) => row.id == null || !removedIds.has(row.id)));
-    } catch (error) {
-      setRemoveScoreError(error instanceof Error ? error.message : "Score removal failed.");
-    } finally {
-      setRemovingCall(false);
-    }
   }
 
   const number = (value: number | null) => value == null ? "—" : `${value.toFixed(1)}%`;
@@ -1061,7 +960,13 @@ export default function DashboardPage() {
               {!loading && <span className="font-mono text-white tabular-nums">{rows.length.toLocaleString()}</span>}
               {!loading && " score rows"}
             </span>
-            <div className="flex flex-wrap items-center gap-2">
+            <form
+              className="flex flex-wrap items-center gap-2"
+              onSubmit={(event) => {
+                event.preventDefault();
+                void compileKnowledgeWiki();
+              }}
+            >
               <label className="sr-only" htmlFor="compile-wiki-secret">Wiki compilation secret</label>
               <input
                 id="compile-wiki-secret"
@@ -1073,22 +978,15 @@ export default function DashboardPage() {
                 disabled={compilingWiki || uploadingWikiPdf}
                 className="h-8 w-36 rounded-lg border border-white/10 bg-white/[0.05] px-3 text-sm text-white outline-none placeholder:text-emerald-100/60 transition focus:border-lime-300/50 focus:bg-white/[0.08] focus:ring-2 focus:ring-lime-300/20 disabled:opacity-60 sm:w-40"
               />
-              <form
-                onSubmit={(event) => {
-                  event.preventDefault();
-                  void compileKnowledgeWiki();
-                }}
+              <button
+                type="submit"
+                disabled={compilingWiki || uploadingWikiPdf || !compileSecret.trim()}
+                className="inline-flex h-8 items-center justify-center gap-2 rounded-lg border border-white/15 bg-lime-300 px-3 text-sm font-bold text-[#173d32] shadow-[0_8px_24px_-8px_rgba(190,242,100,0.8)] transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-60"
               >
-                <button
-                  type="submit"
-                  disabled={compilingWiki || uploadingWikiPdf || !compileSecret.trim()}
-                  className="inline-flex h-8 items-center justify-center gap-2 rounded-lg border border-white/15 bg-lime-300 px-3 text-sm font-bold text-[#173d32] shadow-[0_8px_24px_-8px_rgba(190,242,100,0.8)] transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  {compilingWiki ? <RefreshCw size={16} className="animate-spin" aria-hidden="true" /> : <Sparkles size={16} aria-hidden="true" />}
-                  <span>{compilingWiki ? "Compiling..." : "Compile Knowledge Wiki"}</span>
-                </button>
-              </form>
-            </div>
+                {compilingWiki ? <RefreshCw size={16} className="animate-spin" aria-hidden="true" /> : <Sparkles size={16} aria-hidden="true" />}
+                <span>{compilingWiki ? "Compiling..." : "Compile Knowledge Wiki"}</span>
+              </button>
+            </form>
             <input
               ref={wikiPdfInputRef}
               type="file"
@@ -1204,7 +1102,7 @@ export default function DashboardPage() {
             </p>
           )}
         </div>
-        <section aria-label="Dashboard filters" className="grid gap-1 rounded-2xl border border-white/10 bg-white/[0.035] p-2 backdrop-blur-md [color-scheme:dark] sm:grid-cols-2 lg:grid-cols-4 lg:items-center lg:divide-x lg:divide-white/[0.06]">
+        <section aria-label="Dashboard filters" className="grid gap-1 rounded-2xl border border-white/10 bg-white/[0.035] p-2 backdrop-blur-md [color-scheme:dark] sm:grid-cols-2 lg:grid-cols-[1fr_1fr_1.4fr_1.2fr_auto] lg:items-center lg:divide-x lg:divide-white/[0.06]">
           <label className="group flex min-w-0 flex-col gap-1 rounded-xl px-4 py-2.5 text-[11px] font-medium uppercase tracking-[0.1em] text-emerald-100/60 transition-colors hover:bg-white/[0.05]">
             From
             <input type="date" value={startDate} onChange={(event) => setStartDate(event.target.value)} className="w-full bg-transparent text-sm font-medium normal-case tracking-normal text-white outline-none focus:text-white [&::-webkit-calendar-picker-indicator]:cursor-pointer [&::-webkit-calendar-picker-indicator]:opacity-70" />
@@ -1214,7 +1112,7 @@ export default function DashboardPage() {
             <input type="date" value={endDate} min={startDate || undefined} onChange={(event) => setEndDate(event.target.value)} className="w-full bg-transparent text-sm font-medium normal-case tracking-normal text-white outline-none focus:text-white [&::-webkit-calendar-picker-indicator]:cursor-pointer [&::-webkit-calendar-picker-indicator]:opacity-70" />
           </label>
           <label className="group flex min-w-0 flex-col gap-1 rounded-xl px-4 py-2.5 text-[11px] font-medium uppercase tracking-[0.1em] text-emerald-100/60 transition-colors hover:bg-white/[0.05]">
-            Agent / team / call type
+            Agent / call type
             <select value={agentFilter} onChange={(event) => setAgentFilter(event.target.value)} className="w-full cursor-pointer bg-transparent text-sm font-medium normal-case tracking-normal text-white outline-none [&_option]:bg-[#132b23] [&_option]:text-white [&_optgroup]:bg-[#132b23] [&_optgroup]:text-emerald-100">
               <option>All agents</option>
               <option>Sales</option>
@@ -1232,38 +1130,6 @@ export default function DashboardPage() {
             <span className="flex h-7 items-center gap-3">
               <input type="range" min="0" max="100" step="1" value={passThreshold} onChange={(event) => setPassThreshold(Number(event.target.value))} aria-label="Pass threshold percentage" className="h-1 min-w-0 flex-1 accent-lime-300" />
               <span className="w-11 text-right font-mono text-sm font-semibold tabular-nums text-lime-300">{passThreshold}%</span>
-            </span>
-          </label>
-          <label className="group flex min-w-0 flex-col gap-1 rounded-xl px-4 py-2.5 text-[11px] font-medium uppercase tracking-[0.1em] text-emerald-100/60 transition-colors hover:bg-white/[0.05]">
-            Minimum Jev flags
-            <span className="flex h-7 items-center gap-3">
-              <input
-                type="range"
-                min="0"
-                max={maxJevFlags}
-                step="1"
-                value={minJevFlags}
-                onChange={(event) => setMinJevFlags(Number(event.target.value))}
-                aria-label="Minimum Jev flags per call"
-                className="h-1 min-w-0 flex-1 accent-lime-300"
-              />
-              <span className="w-11 text-right font-mono text-sm font-semibold tabular-nums text-lime-300">{minJevFlags}</span>
-            </span>
-          </label>
-          <label className="group flex min-w-0 flex-col gap-1 rounded-xl px-4 py-2.5 text-[11px] font-medium uppercase tracking-[0.1em] text-emerald-100/60 transition-colors hover:bg-white/[0.05]">
-            Maximum Jev confidence · filters calls
-            <span className="flex h-7 items-center gap-3">
-              <input
-                type="range"
-                min="0"
-                max="100"
-                step="1"
-                value={maxJevConfidence}
-                onChange={(event) => setMaxJevConfidence(Number(event.target.value))}
-                aria-label="Maximum Jev confidence percentage per call"
-                className="h-1 min-w-0 flex-1 accent-lime-300"
-              />
-              <span className="w-11 text-right font-mono text-sm font-semibold tabular-nums text-lime-300">{maxJevConfidence}%</span>
             </span>
           </label>
           <button
@@ -1285,17 +1151,7 @@ export default function DashboardPage() {
         )}
 
         <section aria-label="Call performance metrics" className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-5">
-          <MetricCard
-            label="Calls graded"
-            value={loading ? "…" : metrics.count.toLocaleString()}
-            note="Matching calls · click to view"
-            visualKind="bars"
-            visualValues={scoreTrend.map((point) => point.calls)}
-            onClick={() => {
-              if (isAgentGroupFilter) setShowAllIndividualCalls(true);
-              setCallListRequest((current) => current + 1);
-            }}
-          />
+          <MetricCard label="Calls graded" value={loading ? "…" : metrics.count.toLocaleString()} note="Complete calls in this view" visualKind="bars" visualValues={scoreTrend.map((point) => point.calls)} />
           <MetricCard label="Average call score" value={number(metrics.average)} note="Across selected calls" delta={metrics.averageDelta} visualKind="sparkline" visualValues={scoreTrend.map((point) => point.average)} />
           <MetricCard label="Highest call" value={number(metrics.highest)} note="Top call score · click to view agent and call" visualKind="range" visualValue={metrics.highest} threshold={passThreshold} onClick={metrics.highestCall ? () => focusCall(metrics.highestCall) : undefined} />
           <MetricCard label="Lowest call" value={number(metrics.lowest)} note="Lowest call score · click to view agent and call" visualKind="range" visualValue={metrics.lowest} threshold={passThreshold} onClick={metrics.lowestCall ? () => focusCall(metrics.lowestCall) : undefined} />
@@ -1602,49 +1458,22 @@ export default function DashboardPage() {
               </article>
             </section>
 
-            {isAgentGroupFilter && (
-              <div className="mt-6 flex items-center justify-end">
-                <div className="inline-flex rounded-lg border border-slate-200 bg-white p-1 shadow-sm" role="group" aria-label="Team view">
-                  <button
-                    type="button"
-                    aria-pressed={!showAllIndividualCalls}
-                    onClick={() => setShowAllIndividualCalls(false)}
-                    className={`rounded-md px-3 py-1.5 text-xs font-semibold transition ${!showAllIndividualCalls ? "bg-forest text-white" : "text-slate-500 hover:text-slate-800"}`}
-                  >
-                    Agent leaderboard
-                  </button>
-                  <button
-                    type="button"
-                    aria-pressed={showAllIndividualCalls}
-                    onClick={() => setShowAllIndividualCalls(true)}
-                    className={`rounded-md px-3 py-1.5 text-xs font-semibold transition ${showAllIndividualCalls ? "bg-forest text-white" : "text-slate-500 hover:text-slate-800"}`}
-                  >
-                    Individual calls
-                  </button>
-                </div>
-              </div>
-            )}
-
             <section
               aria-label="Coaching priorities and agent call breakdown"
               className={`mt-6 grid gap-6 ${isAgentView || isAgentGroupFilter ? "xl:grid-cols-[minmax(0,2fr)_minmax(280px,1fr)]" : "xl:grid-cols-1"}`}
             >
-              {(isAgentView || (isAgentGroupFilter && showAllIndividualCalls)) && (
-                <article
-                  ref={individualCallsRef}
-                  className="min-w-0 overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04),0_16px_40px_-20px_rgba(15,23,42,0.16)]"
-                >
+              {isAgentView && (
+                <article className="min-w-0 overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04),0_16px_40px_-20px_rgba(15,23,42,0.16)]">
                   <div className="border-b border-slate-200 px-5 py-4 sm:px-6">
-                    <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-leaf">{isAgentView ? "Agent detail" : "Call detail"}</p>
-                    <h2 className="mt-1 font-display text-lg font-bold text-slate-900">Individual Calls</h2>
-                    <p className="mt-1 text-xs text-slate-500">{agentFilter} · {calls.length} calls matching current filters</p>
+                    <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-leaf">Agent detail</p>
+                    <h2 className="mt-1 font-display text-lg font-bold text-slate-900">Individual Call Breakdown</h2>
+                    <p className="mt-1 text-xs text-slate-500">{agentFilter} · {calls.length} calls</p>
                   </div>
                   <div className="max-h-[520px] overflow-auto">
                     {calls.length ? (
                       <table className="w-full min-w-[900px] border-separate border-spacing-0 text-left text-xs">
                         <thead className="sticky top-0 z-10 bg-slate-50 text-[10px] font-bold uppercase tracking-[0.08em] text-slate-600">
                           <tr>
-                            {!isAgentView && <th scope="col" className="border-b border-slate-200 px-3 py-3">Agent</th>}
                             <SortableHeader label="Call ID" column="call" sort={callSort} onSort={changeCallSort} />
                             <SortableHeader label="Date" column="date" sort={callSort} onSort={changeCallSort} />
                             <SortableHeader label="Call Type" column="callType" sort={callSort} onSort={changeCallSort} />
@@ -1665,7 +1494,6 @@ export default function DashboardPage() {
                               }}
                               className={`transition-colors ${focusCallRequest?.callKey === call.callKey ? "bg-lime-100 ring-2 ring-inset ring-lime-400" : "hover:bg-slate-50"}`}
                             >
-                              {!isAgentView && <td className="border-b border-slate-100 px-3 py-3 font-medium text-slate-700">{call.agent}</td>}
                               <th scope="row" className="border-b border-slate-100 px-3 py-3 text-left font-semibold text-slate-800">{call.call}</th>
                               <td className="border-b border-slate-100 px-3 py-3 text-slate-600">{call.date ?? "—"}</td>
                               <td className="border-b border-slate-100 px-3 py-3 text-slate-600">{call.callType}</td>
@@ -1686,12 +1514,12 @@ export default function DashboardPage() {
                           ))}
                         </tbody>
                       </table>
-                    ) : <p className="px-6 py-12 text-center text-sm text-slate-500">No completed calls match the current filters.</p>}
+                    ) : <p className="px-6 py-12 text-center text-sm text-slate-500">No completed calls match this agent and date range.</p>}
                   </div>
                 </article>
               )}
 
-              {isAgentGroupFilter && !showAllIndividualCalls && (
+              {isAgentGroupFilter && (
                 <article className="min-w-0 overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04),0_16px_40px_-20px_rgba(15,23,42,0.16)]">
                   <div className="border-b border-slate-200 px-6 py-5">
                     <p className="mb-2 flex items-center gap-2 font-mono text-[11px] font-medium uppercase tracking-[0.14em] text-forest">
@@ -1818,7 +1646,6 @@ export default function DashboardPage() {
                   </p>
                   <h2 className="mt-1 font-display text-lg font-bold text-slate-900">Meter bank</h2>
                   <p className="mt-1 text-xs text-slate-500">Average score by criterion · scale of 1 to 5</p>
-                  <p className="mt-1 text-xs text-slate-500">Select an agent to edit an individual call score. Enter the admin secret in the header to enable editing.</p>
                 </div>
                 <div className="flex items-center gap-3 text-xs text-slate-500" aria-label="Score legend">
                   <span>Critical</span>
@@ -1833,11 +1660,6 @@ export default function DashboardPage() {
                 </div>
               </div>
               <div className="max-h-[560px] overflow-auto">
-                {removeScoreError && (
-                  <p role="alert" className="border-b border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
-                    {removeScoreError}
-                  </p>
-                )}
                 {meterBank.data.length && meterBank.categories.length ? (
                   <table className="w-full min-w-max border-separate border-spacing-0 text-left text-xs">
                     <thead className="sticky top-0 z-10 bg-slate-50 text-[10px] font-bold uppercase tracking-[0.1em] text-slate-600">
@@ -1914,110 +1736,11 @@ export default function DashboardPage() {
                               >
                                 {item.label}
                               </button>
-                            ) : (
-                              <span className="inline-flex items-center gap-2">
-                                <span>{item.label}</span>
-                                {meterBank.byCall && (() => {
-                                  const callRecords = Object.values(item.records).flat();
-                                  const callRecordIds = callRecords.flatMap((row) => row.id ? [row.id] : []);
-                                  const hasEveryRecordId = callRecords.length > 0 && callRecordIds.length === callRecords.length;
-                                  return (
-                                    <button
-                                      type="button"
-                                      disabled={!compileSecret.trim() || !hasEveryRecordId || removingCall}
-                                      onClick={() => void removeCallScores(item.label, callRecordIds)}
-                                      aria-label={`Permanently remove all scores for ${item.label}`}
-                                      title={!hasEveryRecordId ? "Cannot remove: score row IDs are missing" : compileSecret.trim() ? "Permanently remove all scores for this call" : "Enter the admin secret in the header to remove scores"}
-                                      className="rounded p-1 text-slate-400 transition hover:bg-rose-50 hover:text-rose-700 disabled:cursor-not-allowed disabled:opacity-40"
-                                    >
-                                      <Trash2 size={14} aria-hidden="true" />
-                                    </button>
-                                  );
-                                })()}
-                              </span>
-                            )}
+                            ) : item.label}
                           </th>
                           {meterBank.categories.map((category) => {
                             const score = item.scores[category];
-                            const records = item.records[category] ?? [];
-                            const candidateRecord = meterBank.byCall && records.length === 1 ? records[0] : null;
-                            const editableRecord = candidateRecord?.id != null
-                              ? { row: candidateRecord, id: candidateRecord.id }
-                              : null;
-                            const isEditing = editableRecord != null && editingScore?.id === editableRecord.id;
-                            return (
-                              <td key={category} className="border-b border-slate-100 px-1.5 py-1 text-center">
-                                {isEditing ? (
-                                  <form
-                                    className="flex min-w-32 items-center justify-center gap-1"
-                                    onSubmit={(event) => {
-                                      event.preventDefault();
-                                      void saveScoreOverride(editableRecord.id);
-                                    }}
-                                  >
-                                    <label className="sr-only" htmlFor={`score-override-${editableRecord.id}`}>New score for {category} on {item.label}</label>
-                                    <input
-                                      id={`score-override-${editableRecord.id}`}
-                                      type="number"
-                                      min="1"
-                                      max="5"
-                                      step="0.1"
-                                      required
-                                      autoFocus
-                                      value={scoreDraft}
-                                      onChange={(event) => setScoreDraft(event.target.value)}
-                                      className="w-16 rounded border border-slate-300 px-1.5 py-1 text-center font-mono text-xs text-slate-900 focus:border-emerald-600 focus:outline-none focus:ring-2 focus:ring-emerald-600/20"
-                                    />
-                                    <button
-                                      type="submit"
-                                      disabled={savingScore || !compileSecret.trim()}
-                                      aria-label={`Save ${category} score for ${item.label}`}
-                                      title="Save score"
-                                      className="rounded p-1 text-emerald-700 hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-50"
-                                    >
-                                      <Check size={14} aria-hidden="true" />
-                                    </button>
-                                    <button
-                                      type="button"
-                                      disabled={savingScore}
-                                      onClick={() => {
-                                        setEditingScore(null);
-                                        setScoreOverrideError("");
-                                      }}
-                                      aria-label="Cancel score edit"
-                                      title="Cancel"
-                                      className="rounded p-1 text-slate-500 hover:bg-slate-100 disabled:opacity-50"
-                                    >
-                                      <X size={14} aria-hidden="true" />
-                                    </button>
-                                    {scoreOverrideError && <span role="alert" className="sr-only">{scoreOverrideError}</span>}
-                                  </form>
-                                ) : (
-                                  <span className="inline-flex items-center justify-center gap-1">
-                                    <span className={`inline-flex min-w-12 justify-center rounded-sm px-2 py-2 font-semibold tabular-nums ${scoreCellClass(score)}`}>{score == null ? "—" : score.toFixed(1)}</span>
-                                    {editableRecord && (
-                                      <button
-                                        type="button"
-                                        disabled={!compileSecret.trim() || savingScore}
-                                        onClick={() => {
-                                          setEditingScore({ id: editableRecord.id });
-                                          setScoreDraft(String(editableRecord.row.score));
-                                          setScoreOverrideError("");
-                                        }}
-                                        aria-label={`Edit ${category} score for ${item.label}`}
-                                        title={compileSecret.trim() ? "Edit this call score" : "Enter the admin secret in the header to edit"}
-                                        className="rounded p-1 text-slate-400 transition hover:bg-emerald-50 hover:text-emerald-700 disabled:cursor-not-allowed disabled:opacity-40"
-                                      >
-                                        <Pencil size={13} aria-hidden="true" />
-                                      </button>
-                                    )}
-                                  </span>
-                                )}
-                                {scoreOverrideError && editableRecord && editingScore?.id === editableRecord.id && (
-                                  <p role="alert" className="mt-1 max-w-40 text-left text-[10px] text-rose-700">{scoreOverrideError}</p>
-                                )}
-                              </td>
-                            );
+                            return <td key={category} className="border-b border-slate-100 px-1.5 py-1 text-center"><span className={`inline-flex min-w-12 justify-center rounded-sm px-2 py-2 font-semibold tabular-nums ${scoreCellClass(score)}`}>{score == null ? "—" : score.toFixed(1)}</span></td>;
                           })}
                         </tr>
                       ))}
