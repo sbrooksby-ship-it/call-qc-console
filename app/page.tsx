@@ -1215,7 +1215,7 @@ export default function DashboardPage() {
           </label>
           <label className="group flex min-w-0 flex-col gap-1 rounded-xl px-4 py-2.5 text-[11px] font-medium uppercase tracking-[0.1em] text-emerald-100/60 transition-colors hover:bg-white/[0.05]">
             Agent / team / call type
-            <select value={agentFilter} onChange={(event) => setAgentFilter(event.target.value)} className="w-full cursor-pointer bg-transparent text-sm font-medium normal-case tracking-normal text-white outline-none [&>option]:bg-[#132b23]">
+            <select value={agentFilter} onChange={(event) => setAgentFilter(event.target.value)} className="w-full cursor-pointer bg-transparent text-sm font-medium normal-case tracking-normal text-white outline-none [&_option]:bg-[#132b23] [&_option]:text-white [&_optgroup]:bg-[#132b23] [&_optgroup]:text-emerald-100">
               <option>All agents</option>
               <option>Sales</option>
               <option>Care</option>
@@ -1223,7 +1223,7 @@ export default function DashboardPage() {
                 {Object.keys(TEAM_AGENTS).map((team) => <option key={team}>{team}</option>)}
               </optgroup>
               <optgroup label="Agents">
-              {agents.map((agent) => <option key={agent}>{agent}</option>)}
+                {agents.map((agent) => <option key={agent}>{agent}</option>)}
               </optgroup>
             </select>
           </label>
