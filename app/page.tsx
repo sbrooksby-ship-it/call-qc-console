@@ -1244,7 +1244,7 @@ export default function DashboardPage() {
           </div>
         ) : !error && (
           <>
-            <details className="mb-6 overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04),0_16px_40px_-20px_rgba(15,23,42,0.16)]">
+            <details className="mt-16 mb-6 overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04),0_16px_40px_-20px_rgba(15,23,42,0.16)]">
               <summary className="cursor-pointer px-5 py-4 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-forest sm:px-6">
                 <span className="flex flex-wrap items-center justify-between gap-3">
                   <span>
