@@ -1018,7 +1018,7 @@ else:
                     loader_placeholder = st.empty()
                     
                     try:
-                        model = genai.GenerativeModel('gemini-3.1-flash-lite')
+                        model = genai.GenerativeModel('gemini-3.5-flash-lite')
                         total_calls = len(transcripts_list)
                         chunk_size = 50
                         
@@ -1153,7 +1153,7 @@ else:
                 """, unsafe_allow_html=True)
                 
                 try:
-                    model = genai.GenerativeModel('gemini-3.1-flash-lite')
+                    model = genai.GenerativeModel('gemini-3.5-flash-lite')
                     all_json_data = []
                     total_calls = len(transcripts_list)
                     chunk_size = 45
