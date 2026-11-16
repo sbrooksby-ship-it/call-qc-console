@@ -895,9 +895,11 @@ export default function DashboardPage() {
 
   const meterBank = useMemo(() => {
     const byCall = isAgentView;
+    const completeCallKeys = new Set(calls.map((call) => call.callKey));
+    const completeRows = filteredRows.filter((row) => completeCallKeys.has(row.callKey));
     const values = new Map<string, Map<string, number[]>>();
     const teamTotals = new Map<string, { total: number; count: number }>();
-    for (const row of filteredRows) {
+    for (const row of completeRows) {
       const label = byCall ? `${row.call} (${row.callType})` : row.agent;
       const categories = values.get(label) ?? new Map<string, number[]>();
       const scores = categories.get(row.category) ?? [];
@@ -909,7 +911,7 @@ export default function DashboardPage() {
       total.count += 1;
       teamTotals.set(row.category, total);
     }
-    const categories = Array.from(new Set(filteredRows.map((row) => row.category))).sort((a, b) => {
+    const categories = Array.from(new Set(completeRows.map((row) => row.category))).sort((a, b) => {
       const aPrefix = PREFIX_ORDER.findIndex((prefix) => a.toUpperCase().startsWith(prefix));
       const bPrefix = PREFIX_ORDER.findIndex((prefix) => b.toUpperCase().startsWith(prefix));
       return (aPrefix < 0 ? PREFIX_ORDER.length : aPrefix) - (bPrefix < 0 ? PREFIX_ORDER.length : bPrefix) || a.localeCompare(b);
@@ -926,7 +928,7 @@ export default function DashboardPage() {
       return [category, values ? values.total / values.count : null] as const;
     }));
     return { categories, data, teamAverage };
-  }, [filteredRows, isAgentView]);
+  }, [calls, filteredRows, isAgentView]);
 
   const sortedMeterData = useMemo(() => {
     const direction = meterSort.direction === "asc" ? 1 : -1;
@@ -1973,7 +1975,7 @@ export default function DashboardPage() {
                     Coaching detail
                   </p>
                   <h2 className="mt-1 font-display text-lg font-bold text-slate-900">Meter bank</h2>
-                  <p className="mt-1 text-xs text-slate-500">Average score by criterion · scale of 1 to 5</p>
+                  <p className="mt-1 text-xs text-slate-500">Average score by criterion · scale of 1 to 5 · calls with more than five scored items</p>
                 </div>
                 <div className="flex items-center gap-3 text-xs text-slate-500" aria-label="Score legend">
                   <span>Critical</span>
