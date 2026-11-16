@@ -94,7 +94,7 @@ async function submitChatMessage(message: string, signal: AbortSignal): Promise<
 
 const SECTION_NAMES: Record<string, string> = {
   BG: "Beginning",
-  ARC: "Responsibility & Effort",
+  ARC: "ARC",
   OE: "Ownership & Effort",
   PE: "Personalization & Education",
   QC: "Quality Communication",
@@ -105,7 +105,7 @@ const SECTION_NAMES: Record<string, string> = {
 
 const SECTION_MAX: Record<string, number> = {
   Beginning: 10,
-  "Responsibility & Effort": 20,
+  ARC: 20,
   "Ownership & Effort": 15,
   "Personalization & Education": 25,
   "Quality Communication": 40,
@@ -272,8 +272,14 @@ function summarizeCalls(rows: ScoreRow[]): CallSummary[] {
 }
 
 function summarizeSections(rows: ScoreRow[]): SectionSummary[] {
+  const callRowCounts = new Map<string, number>();
+  for (const row of rows) {
+    callRowCounts.set(row.callKey, (callRowCounts.get(row.callKey) ?? 0) + 1);
+  }
+
   const callSections = new Map<string, { section: string; score: number }>();
   for (const row of rows) {
+    if ((callRowCounts.get(row.callKey) ?? 0) <= 5) continue;
     const section = sectionName(row.category);
     const key = `${row.callKey}||${section}`;
     const current = callSections.get(key) ?? { section, score: 0 };
@@ -1568,8 +1574,8 @@ export default function DashboardPage() {
                     <h2 className="mt-2 text-lg font-semibold tracking-tight text-slate-900">Section performance</h2>
                     <p className="mt-1 text-[13px] text-slate-500">
                       {sectionView === "table"
-                        ? "Average raw score across selected calls, its percentage, and the percentage from the week before the latest week in this view."
-                        : "Average score by rubric section"}
+                        ? "Average raw score across selected calls with more than five scored items, its percentage, and the percentage from the week before the latest week in this view."
+                        : "Average score by rubric section across calls with more than five scored items"}
                     </p>
                   </div>
                   <div className="inline-flex rounded-lg border border-slate-200 bg-slate-50 p-1" role="group" aria-label="Section performance view">
